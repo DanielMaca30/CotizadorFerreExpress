@@ -15,16 +15,16 @@ const theme = extendTheme({
   },
   colors: {
     brand: {
-      50:  "#fffbeb",
-      100: "#fef3c7",
-      200: "#fde68a",
-      300: "#fcd34d",
-      400: "#fbbf24",
+      50:  "#fff8e1",
+      100: "#ffedb3",
+      200: "#ffe082",
+      300: "#ffd54f",
+      400: "#ffca28",
       500: "#F9BF20",  /* ferreYellow */
-      600: "#d97706",
-      700: "#b45309",
-      800: "#92400e",
-      900: "#1A2B45",  /* ferreDark */
+      600: "#e21219",  /* ferreRed   */
+      700: "#3a3a38",  /* ferreDark  */
+      800: "#2a2a28",
+      900: "#1a1a18",
     },
   },
   components: {

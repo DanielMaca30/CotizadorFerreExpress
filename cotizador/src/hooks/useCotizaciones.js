@@ -3,7 +3,7 @@ import { uid } from "../utils";
 
 const STORAGE_KEY  = "ferreexpress_cotizaciones_v2";
 const COUNTER_KEY  = "ferreexpress_cot_counter";
-const INIT_COUNTER = 31; // continúa desde COT-030
+const INIT_COUNTER = 31; // continúa desde COT-031
 
 /* ─── Leer localStorage con fallback ─── */
 const loadFromStorage = () => {
@@ -55,18 +55,28 @@ export function useCotizaciones() {
     if (payload.id) {
       /* ── Actualizar existente ── */
       setCotizaciones((prev) =>
-        prev.map((c) =>
-          c.id === payload.id ? { ...payload, updatedAt: now } : c
-        )
+        prev.map((c) => {
+          if (c.id !== payload.id) return c;
+          // Preservar numero si ya existe (no sobreescribir con vacío)
+          const numero = c.numero || c.config?.numero || "";
+          return {
+            ...payload,
+            numero,
+            config: { ...payload.config, numero },
+            updatedAt: now,
+          };
+        })
       );
       return payload.id;
     } else {
-      /* ── Crear nueva ── */
+      /* ── Crear nueva — asignar número automático ── */
+      const numero = nextNumero();
       const nueva = {
         ...payload,
         id:        uid(),
-        numero:    nextNumero(),
-        estado:    payload.estado || "borrador",
+        numero,                                  // en raíz para historial
+        config:    { ...payload.config, numero }, // en config para cotizador
+        estado:    payload.config?.estado || "borrador",
         createdAt: now,
         updatedAt: now,
       };
@@ -86,11 +96,13 @@ export function useCotizaciones() {
       const original = cotizaciones.find((c) => c.id === id);
       if (!original) return null;
 
-      const now = new Date().toISOString();
-      const copia = {
+      const now    = new Date().toISOString();
+      const numero = nextNumero();
+      const copia  = {
         ...original,
         id:        uid(),
-        numero:    nextNumero(),
+        numero,
+        config:    { ...original.config, numero, estado: "borrador" },
         estado:    "borrador",
         createdAt: now,
         updatedAt: now,
@@ -106,18 +118,24 @@ export function useCotizaciones() {
     const now = new Date().toISOString();
     setCotizaciones((prev) =>
       prev.map((c) =>
-        c.id === id ? { ...c, estado, updatedAt: now } : c
+        c.id === id
+          ? { ...c, estado, config: { ...c.config, estado }, updatedAt: now }
+          : c
       )
     );
   }, []);
 
-  /* ── Estadísticas rápidas ── */
+  /* ── Estadísticas rápidas ──
+     Usa total (alias de totalPagar) o totalPagar directamente */
   const stats = {
     total:      cotizaciones.length,
-    borradores: cotizaciones.filter((c) => c.estado === "borrador").length,
-    enviadas:   cotizaciones.filter((c) => c.estado === "enviada").length,
-    aceptadas:  cotizaciones.filter((c) => c.estado === "aceptada").length,
-    valorTotal: cotizaciones.reduce((a, c) => a + (c.totals?.total || 0), 0),
+    borradores: cotizaciones.filter((c) => (c.config?.estado || c.estado) === "borrador").length,
+    enviadas:   cotizaciones.filter((c) => (c.config?.estado || c.estado) === "enviada").length,
+    aceptadas:  cotizaciones.filter((c) => (c.config?.estado || c.estado) === "aceptada").length,
+    valorTotal: cotizaciones.reduce(
+      (a, c) => a + (c.totals?.totalPagar ?? c.totals?.total ?? 0),
+      0
+    ),
   };
 
   return {
