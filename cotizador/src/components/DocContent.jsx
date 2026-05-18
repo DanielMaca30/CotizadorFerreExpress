@@ -36,7 +36,7 @@ function DocLogo({ src }) {
   if (phase === 0 && src)
     return <img src={src} alt="Logo" style={imgSt} onError={() => setPhase(1)} />;
   if (phase === 1)
-    return <img src="/logo.png" alt="FerreExpress" style={imgSt} onError={() => setPhase(2)} />;
+    return <img src="/logo.jpg" alt="FerreExpress" style={imgSt} onError={() => setPhase(2)} />;
   return <div style={boxSt}>FE</div>;
 }
 

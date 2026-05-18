@@ -54,7 +54,9 @@ const plusDaysISO = (days) => {
 /* ── IDs ─────────────────────────────────────────────────────── */
 
 export const uid = () =>
-  Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 
 /* ── Fila en blanco ──────────────────────────────────────────── */
 
@@ -182,14 +184,17 @@ const EMPRESA_KEY = "ferreexpress_empresa";
 export const saveEmpresaLocal = (empresa) => {
   try {
     localStorage.setItem(EMPRESA_KEY, JSON.stringify(empresa));
-  } catch (_) {}
+  } catch {
+    // silencioso — localStorage puede estar bloqueado en modo privado
+  }
 };
 
 export const loadEmpresaLocal = () => {
   try {
     const raw = localStorage.getItem(EMPRESA_KEY);
-    return raw ? { ...DEFAULT_EMPRESA, ...JSON.parse(raw) } : DEFAULT_EMPRESA;
-  } catch (_) {
+    if (!raw) return DEFAULT_EMPRESA;
+    return { ...DEFAULT_EMPRESA, ...JSON.parse(raw) };
+  } catch {
     return DEFAULT_EMPRESA;
   }
 };
