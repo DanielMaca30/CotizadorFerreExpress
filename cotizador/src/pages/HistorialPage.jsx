@@ -28,7 +28,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCotizaciones }  from "../hooks/useCotizaciones";
 import { usePDF }           from "../hooks/usePDF";
 import DocContent            from "../components/DocContent";
-import { money, fmtDateShort, calcTotals, ESTADO_META, ESTADOS, loadEmpresaLocal } from "../utils";
+import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU } from "../utils";
 
 const FY   = "#F9BF20";
 const DARK = "#3A3A38";
@@ -310,8 +310,9 @@ export default function HistorialPage() {
             cli={pdfCot.cliente || {}}
             items={pdfCot.items || []}
             descG={pdfCot.descG || 0}
-            totals={pdfCot.totals || calcTotals(pdfCot.items || [], pdfCot.descG || 0, pdfCot.config?.iva || 19)}
+            totals={pdfCot.totals || (pdfCot.config?.tipo === 'obra' ? calcTotalsObra(pdfCot.items || [], pdfCot.descG || 0, pdfCot.aiuConfig || DEFAULT_AIU) : calcTotals(pdfCot.items || [], pdfCot.descG || 0, pdfCot.config?.iva || 19))}
             notas={pdfCot.notas || ""}
+            aiu={pdfCot.aiuConfig || DEFAULT_AIU}
           />
         </Box>
       )}

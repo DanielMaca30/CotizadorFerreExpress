@@ -1,5 +1,12 @@
 /**
- * CotizadorPage.jsx  v9
+ * CotizadorPage.jsx  v10
+ * Cambios:
+ *  - Modal de tipo al crear nueva cotización (Comercial / Obra)
+ *  - Modo Obra: campos AIU (Admin, Imprevistos, Utilidad, Anticipo)
+ *  - IVA por producto (comercial) vs IVA sobre utilidad (obra)
+ *  - Formato de miles al escribir precios (1.500.000)
+ *  - Atajos de teclado mejorados (↑↓ entre filas, Ctrl+Enter guarda, Ctrl+D duplica fila)
+ *  - Responsive: mobile stepper, tablet tabs, desktop 3 columnas
  */
 import { useEffect, useState, useCallback, useMemo, useRef, memo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -8,6 +15,7 @@ import {
   Button, IconButton, Tooltip, Input, Select, Textarea,
   Table, Thead, Tbody, Tr, Th, Td,
   Tabs, TabList, TabPanels, Tab, TabPanel,
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody,
   useColorModeValue, usePrefersReducedMotion, useToast, useDisclosure,
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Kbd,
@@ -17,7 +25,7 @@ import {
   FiPlus, FiTrash2, FiSave, FiDownload, FiEye,
   FiList, FiCopy, FiHome, FiUser, FiFileText,
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
-  FiChevronLeft, FiChevronRight,
+  FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCotizaciones }       from "../hooks/useCotizaciones";
@@ -26,11 +34,11 @@ import { useProductosFrecuentes, aprenderProductos } from "../hooks/useProductos
 import AutocompleteInput          from "../components/AutocompleteInput";
 import DocContent                 from "../components/DocContent";
 import {
-  blankRow, calcRow, calcTotals, money, fmtDate,
-  precioBase, ivaUnidad,
-  UNITS, FORMAS_PAGO, IVA_OPTS, MONEDAS,
-  DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS,
-  saveEmpresaLocal, loadEmpresaLocal,
+  blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
+  precioBase, ivaUnidad, formatPriceCO, parsePriceCO,
+  UNITS, FORMAS_PAGO, FORMAS_PAGO_OBRA, IVA_OPTS, MONEDAS,
+  DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
+  DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
 } from "../utils";
 
 const FY   = "#F9BF20";
@@ -54,25 +62,22 @@ function GlassCard({ children, ...rest }) {
   );
 }
 
-function FL({ children, required }) {
+function FL({ children, required, tooltip }) {
   const c = useColorModeValue("gray.500", "gray.400");
   return (
     <Text fontSize="9px" fontWeight="700" letterSpacing="0.11em"
-      textTransform="uppercase" color={c} mb="4px">
+      textTransform="uppercase" color={c} mb="4px" title={tooltip}>
       {children}{required && <Text as="span" color="red.400" ml={0.5}>*</Text>}
     </Text>
   );
 }
 
-/* ─── Logo con fallback encadenado ─── */
+/* ─── Logo con fallback ─── */
 function AppLogo({ src, h = "32px" }) {
-  // Inicializar fase directo sin useEffect para evitar setState-in-effect
   const [phase, setPhase] = useState(() => (src ? 0 : 1));
-  // Solo actualizar cuando src cambia de undefined/null a un valor o viceversa
   const prevSrcRef = useRef(src);
   if (prevSrcRef.current !== src) {
     prevSrcRef.current = src;
-    // Actualización síncrona durante render (permitida en React cuando es condicional a prop)
     const newPhase = src ? 0 : 1;
     if (phase !== newPhase) setPhase(newPhase);
   }
@@ -87,6 +92,52 @@ function AppLogo({ src, h = "32px" }) {
   );
 }
 
+/* ─── Input de precio con formato de miles colombiano ─── */
+function PriceInput({ value, onChange, dataRowId, dataField, inputBg, ...rest }) {
+  const [display, setDisplay] = useState(() => formatPriceCO(value));
+
+  useEffect(() => {
+    // Sincronizar display si value cambia externamente
+    const raw = parsePriceCO(display);
+    if (raw !== String(value ?? "")) {
+      setDisplay(formatPriceCO(value));
+    }
+  }, [value]); // eslint-disable-line
+
+  const handleChange = (e) => {
+    const raw = parsePriceCO(e.target.value);
+    if (raw === "" || /^\d+$/.test(raw)) {
+      setDisplay(formatPriceCO(raw));
+      onChange(raw);
+    }
+  };
+
+  const handleFocus = (e) => {
+    // Al enfocar, seleccionar todo para facilitar remplazar
+    e.target.select();
+  };
+
+  return (
+    <Input
+      variant="unstyled"
+      value={display}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      data-row-id={dataRowId}
+      data-field={dataField}
+      placeholder="0"
+      textAlign="right"
+      fontSize="12px"
+      fontWeight="600"
+      px={2} py={1} rounded="md"
+      w="88px"
+      _hover={{ bg: inputBg }}
+      _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }}
+      {...rest}
+    />
+  );
+}
+
 function focusTableInput(containerEl, rowId, field) {
   if (!containerEl) return;
   const el = containerEl.querySelector(`input[data-row-id="${rowId}"][data-field="${field}"]`);
@@ -94,8 +145,65 @@ function focusTableInput(containerEl, rowId, field) {
 }
 
 /* ════════════════════════════════════════════════════════
-   PANELES — fuera del componente principal para evitar
-   que se destruyan en cada render (fix bug inputs)
+   MODAL SELECTOR DE TIPO
+════════════════════════════════════════════════════════ */
+function ModalTipo({ isOpen, onSelect }) {
+  const cardHover = useColorModeValue("gray.50", "gray.700");
+  return (
+    <Modal isOpen={isOpen} onClose={() => {}} isCentered closeOnOverlayClick={false} size="md">
+      <ModalOverlay backdropFilter="blur(4px)" />
+      <ModalContent rounded="2xl" overflow="hidden" mx={4}>
+        <Box bg={DARK} px={6} py={5}>
+          <Text fontWeight="900" fontSize="18px" color="white">Nueva cotización</Text>
+          <Text fontSize="12px" color="whiteAlpha.600" mt={1}>¿Para qué tipo de cliente?</Text>
+        </Box>
+        <ModalBody p={5}>
+          <Stack spacing={3}>
+            <Box
+              as="button" w="full" textAlign="left" p={4} rounded="xl"
+              border="2px solid" borderColor="gray.200"
+              _hover={{ borderColor: FY, bg: cardHover }}
+              transition="all 0.15s"
+              onClick={() => onSelect("comercial")}>
+              <HStack spacing={3}>
+                <Box bg={FY} p={2.5} rounded="lg">
+                  <Icon as={FiShoppingCart} color={DARK} boxSize={5} />
+                </Box>
+                <Box>
+                  <Text fontWeight="800" fontSize="15px">Cotización Comercial</Text>
+                  <Text fontSize="11px" color="gray.500" mt={0.5}>
+                    Venta directa al cliente. IVA por producto.
+                  </Text>
+                </Box>
+              </HStack>
+            </Box>
+            <Box
+              as="button" w="full" textAlign="left" p={4} rounded="xl"
+              border="2px solid" borderColor="gray.200"
+              _hover={{ borderColor: "#1a5276", bg: cardHover }}
+              transition="all 0.15s"
+              onClick={() => onSelect("obra")}>
+              <HStack spacing={3}>
+                <Box bg="#1a5276" p={2.5} rounded="lg">
+                  <Icon as={FiTool} color="white" boxSize={5} />
+                </Box>
+                <Box>
+                  <Text fontWeight="800" fontSize="15px">Cotización de Obra</Text>
+                  <Text fontSize="11px" color="gray.500" mt={0.5}>
+                    Contrato de construcción. AIU + IVA sobre utilidad.
+                  </Text>
+                </Box>
+              </HStack>
+            </Box>
+          </Stack>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+/* ════════════════════════════════════════════════════════
+   PANELES
 ════════════════════════════════════════════════════════ */
 const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, mutedL, inputBg }) {
   const logoRef = useRef();
@@ -112,10 +220,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
     e.target.value = "";
   };
 
-  const E = (k) => ({
-    value: empresa[k] ?? "",
-    onChange: (e) => setEmpresa((p) => ({ ...p, [k]: e.target.value })),
-  });
+  const E = (k) => ({ value: empresa[k] ?? "", onChange: (e) => setEmpresa((p) => ({ ...p, [k]: e.target.value })) });
 
   return (
     <Box p={4}>
@@ -148,10 +253,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
 
 const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg }) {
   const ip = { size: "sm", rounded: "md", bg: inputBg, focusBorderColor: FY };
-  const C = (k) => ({
-    value: cliente[k] ?? "",
-    onChange: (e) => setCliente((p) => ({ ...p, [k]: e.target.value })),
-  });
+  const C = (k) => ({ value: cliente[k] ?? "", onChange: (e) => setCliente((p) => ({ ...p, [k]: e.target.value })) });
   return (
     <Stack spacing={3} p={4}>
       <Box><FL required>Nombre / Razón social</FL><Input {...ip} placeholder="Ej: Juan García" {...C("nombre")} /></Box>
@@ -170,19 +272,32 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg }
 });
 
 const PanelCotizacion = memo(function PanelCotizacion({
-  cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, inputBg,
+  cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas,
+  aiuConfig, setAiuConfig, inputBg,
 }) {
-  const ip = { size: "sm", rounded: "md", bg: inputBg, focusBorderColor: FY };
-  const sp = { size: "sm", rounded: "md", bg: inputBg, focusBorderColor: FY };
+  const ip  = { size: "sm", rounded: "md", bg: inputBg, focusBorderColor: FY };
+  const sp  = { size: "sm", rounded: "md", bg: inputBg, focusBorderColor: FY };
+  const esObra = cotConfig.tipo === "obra";
   const numBg    = useColorModeValue("gray.100", "gray.700");
   const numBc    = useColorModeValue("gray.200", "gray.600");
   const numColor = useColorModeValue("gray.400", "gray.500");
-  const Q = (k) => ({
-    value: cotConfig[k] ?? "",
-    onChange: (e) => setCotConfig((p) => ({ ...p, [k]: e.target.value })),
+  const obraBg   = useColorModeValue("blue.50", "blue.900");
+  const obraBc   = useColorModeValue("blue.200", "blue.700");
+
+  const Q = (k) => ({ value: cotConfig[k] ?? "", onChange: (e) => setCotConfig((p) => ({ ...p, [k]: e.target.value })) });
+  const A = (k) => ({
+    value: aiuConfig[k] ?? 0,
+    onChange: (e) => {
+      const v = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+      setAiuConfig((p) => ({ ...p, [k]: v }));
+    },
   });
+
+  const formasPago = esObra ? FORMAS_PAGO_OBRA : FORMAS_PAGO;
+
   return (
     <Stack spacing={3} p={4}>
+      {/* Número */}
       <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
         Identificación
       </Text>
@@ -193,43 +308,100 @@ const PanelCotizacion = memo(function PanelCotizacion({
           </Text>
         </Box>
       </Box>
-      <Box>
-        <FL>Moneda</FL>
-        <Select {...sp} value={cotConfig.moneda}
-          onChange={(e) => setCotConfig((p) => ({ ...p, moneda: e.target.value }))}>
-          {MONEDAS.map((m) => <option key={m}>{m}</option>)}
-        </Select>
-      </Box>
-      <Box><FL>Fecha de emisión</FL><Input {...ip} type="date" {...Q("fecha")} /></Box>
-      <Box><FL>Válida hasta</FL><Input {...ip} type="date" {...Q("vigencia")} /></Box>
+      {/* Tipo (badge, no editable desde aquí) */}
+      <Flex align="center" gap={2}>
+        <Box flex={1}><FL>Moneda</FL>
+          <Select {...sp} value={cotConfig.moneda} onChange={(e) => setCotConfig((p) => ({ ...p, moneda: e.target.value }))}>
+            {MONEDAS.map((m) => <option key={m}>{m}</option>)}
+          </Select>
+        </Box>
+        <Box>
+          <FL>Tipo</FL>
+          <Box px={2} py="6px" rounded="md" bg={esObra ? "blue.100" : "green.100"} border="1px solid"
+            borderColor={esObra ? "blue.300" : "green.300"}>
+            <Text fontSize="10px" fontWeight="700" color={esObra ? "blue.700" : "green.700"}>
+              {esObra ? "Obra (AIU)" : "Comercial"}
+            </Text>
+          </Box>
+        </Box>
+      </Flex>
+
+      <Flex gap={2}>
+        <Box flex={1}><FL>Fecha de emisión</FL><Input {...ip} type="date" {...Q("fecha")} /></Box>
+        <Box flex={1}><FL>Válida hasta</FL><Input {...ip} type="date" {...Q("vigencia")} /></Box>
+      </Flex>
+
       <Divider />
       <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
         Condiciones
       </Text>
       <Box>
         <FL>Forma de pago</FL>
-        <Select {...sp} value={cotConfig.formaPago}
-          onChange={(e) => setCotConfig((p) => ({ ...p, formaPago: e.target.value }))}>
-          {FORMAS_PAGO.map((f) => <option key={f}>{f}</option>)}
+        <Select {...sp} value={cotConfig.formaPago} onChange={(e) => setCotConfig((p) => ({ ...p, formaPago: e.target.value }))}>
+          {formasPago.map((f) => <option key={f}>{f}</option>)}
         </Select>
       </Box>
-      <Flex gap={2}>
-        <Box flex={1}>
-          <FL>IVA (%)</FL>
-          <Select {...sp} value={cotConfig.iva}
-            onChange={(e) => setCotConfig((p) => ({ ...p, iva: Number(e.target.value) }))}>
-            {IVA_OPTS.map((v) => <option key={v} value={v}>{v}%</option>)}
-          </Select>
+
+      {!esObra && (
+        <Flex gap={2}>
+          <Box flex={1}>
+            <FL>IVA (%)</FL>
+            <Select {...sp} value={cotConfig.iva} onChange={(e) => setCotConfig((p) => ({ ...p, iva: Number(e.target.value) }))}>
+              {IVA_OPTS.map((v) => <option key={v} value={v}>{v}%</option>)}
+            </Select>
+          </Box>
+          <Box flex={1}>
+            <FL>Desc. global (%)</FL>
+            <Input {...ip} type="number" min="0" max="100" value={descLocal}
+              onChange={(e) => { const v = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)); setDescLocal(String(v)); }} />
+          </Box>
+        </Flex>
+      )}
+
+      {/* ── Campos AIU (solo obras) ── */}
+      {esObra && (
+        <Box bg={obraBg} border="1px solid" borderColor={obraBc} rounded="lg" p={3}>
+          <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase"
+            color="blue.600" mb={3}>
+            AIU — Indirectos de Obra
+          </Text>
+          <Stack spacing={2}>
+            <Flex gap={2}>
+              <Box flex={1}>
+                <FL tooltip="% sobre el costo directo">Administración (%)</FL>
+                <Input {...ip} type="number" min="0" max="100" step="0.5" {...A("admin")} />
+              </Box>
+              <Box flex={1}>
+                <FL tooltip="% sobre el costo directo">Imprevistos (%)</FL>
+                <Input {...ip} type="number" min="0" max="100" step="0.5" {...A("imprevistos")} />
+              </Box>
+            </Flex>
+            <Flex gap={2}>
+              <Box flex={1}>
+                <FL tooltip="% sobre el costo directo. IVA 19% se aplica sobre este valor.">Utilidad (%)</FL>
+                <Input {...ip} type="number" min="0" max="100" step="0.5" {...A("utilidad")} />
+              </Box>
+              <Box flex={1}>
+                <FL tooltip="% del total a pagar como anticipo">Anticipo (%)</FL>
+                <Input {...ip} type="number" min="0" max="100" step="5" {...A("anticipo")} />
+              </Box>
+            </Flex>
+            <Flex gap={2}>
+              <Box flex={1}>
+                <FL>Desc. global (%)</FL>
+                <Input {...ip} type="number" min="0" max="100" value={descLocal}
+                  onChange={(e) => { const v = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)); setDescLocal(String(v)); }} />
+              </Box>
+              <Box flex={1} display="flex" flexDirection="column" justifyContent="flex-end">
+                <Text fontSize="9px" color="blue.600" fontWeight="600" textAlign="center">
+                  IVA = 19% s/ utilidad
+                </Text>
+              </Box>
+            </Flex>
+          </Stack>
         </Box>
-        <Box flex={1}>
-          <FL>Desc. global (%)</FL>
-          <Input {...ip} type="number" min="0" max="100" value={descLocal}
-            onChange={(e) => {
-              const v = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
-              setDescLocal(String(v));
-            }} />
-        </Box>
-      </Flex>
+      )}
+
       <Divider />
       <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
         Notas
@@ -246,8 +418,8 @@ const PanelCotizacion = memo(function PanelCotizacion({
 const STEPS = ["Empresa", "Cliente", "Productos", "Config"];
 
 const MobileStepper = memo(function MobileStepper({ step, totalSteps, onPrev, onNext, label }) {
-  const dotBg   = useColorModeValue("gray.200", "gray.600");
-  const barBg   = useColorModeValue("gray.100", "gray.700");
+  const dotBg = useColorModeValue("gray.200", "gray.600");
+  const barBg = useColorModeValue("gray.100", "gray.700");
   return (
     <Box px={4} pt={3} pb={2}>
       <Flex align="center" justify="space-between" mb={2}>
@@ -275,11 +447,10 @@ const MobileStepper = memo(function MobileStepper({ step, totalSteps, onPrev, on
 });
 
 /* ════════════════════════════════════════════════════════
-   FILA DE TABLA — componente separado para evitar hooks
-   condicionales dentro de .map()
+   FILA DE TABLA
 ════════════════════════════════════════════════════════ */
 function ItemRow({ r, i, showAllCols, border, mutedL, inputBg, tableBg, stripeBg,
-  ivaRate, cotConfig, rm, upItem, removeItem, handleAcceptSugerencia, getSugerencias, itemsLen }) {
+  ivaRate, esObra, cotConfig, rm, upItem, removeItem, handleAcceptSugerencia, getSugerencias, itemsLen }) {
   const hoverBg = useColorModeValue("yellow.50", "whiteAlpha.50");
   const rowBg   = i % 2 === 0 ? tableBg : stripeBg;
   const p       = parseFloat(r.price) || 0;
@@ -332,24 +503,26 @@ function ItemRow({ r, i, showAllCols, border, mutedL, inputBg, tableBg, stripeBg
         </Td>
       )}
 
-      {showAllCols && (
-        <Td borderColor={border} isNumeric pr={2}>
-          <Text fontSize="11px" color={mutedL} tabIndex={-1}>{p > 0 ? money(pSin, cotConfig.moneda) : "—"}</Text>
-        </Td>
-      )}
-      {showAllCols && (
-        <Td borderColor={border} isNumeric pr={2}>
-          <Text fontSize="11px" color={mutedL} tabIndex={-1}>{p > 0 ? money(pIva, cotConfig.moneda) : "—"}</Text>
-        </Td>
+      {showAllCols && !esObra && (
+        <>
+          <Td borderColor={border} isNumeric pr={2}>
+            <Text fontSize="11px" color={mutedL} tabIndex={-1}>{p > 0 ? money(pSin, cotConfig.moneda) : "—"}</Text>
+          </Td>
+          <Td borderColor={border} isNumeric pr={2}>
+            <Text fontSize="11px" color={mutedL} tabIndex={-1}>{p > 0 ? money(pIva, cotConfig.moneda) : "—"}</Text>
+          </Td>
+        </>
       )}
 
       <Td borderColor={border} p={1} isNumeric>
-        <Input variant="unstyled" type="number" min="0" value={r.price}
-          onChange={(e) => upItem(r.id, "price", e.target.value)}
-          data-row-id={r.id} data-field="price"
-          placeholder="0" textAlign="right" fontSize="12px" fontWeight="600"
-          px={2} py={1} rounded="md" w={showAllCols ? "78px" : "80px"}
-          _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
+        <PriceInput
+          value={r.price}
+          onChange={(val) => upItem(r.id, "price", val)}
+          dataRowId={r.id}
+          dataField="price"
+          inputBg={inputBg}
+          w={showAllCols ? "88px" : "80px"}
+        />
       </Td>
 
       {showAllCols && (
@@ -376,24 +549,30 @@ function ItemRow({ r, i, showAllCols, border, mutedL, inputBg, tableBg, stripeBg
 }
 
 /* ════════════════════════════════════════════════════════
-   TABLA DE PRODUCTOS — componente propio
+   TABLA DE PRODUCTOS
 ════════════════════════════════════════════════════════ */
 const TablaProductos = memo(function TablaProductos({
-  items, showAllCols, tableRef, handleTableKeyDown,
+  items, showAllCols, tableRef, handleTableKeyDown, esObra,
   border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, cotConfig, rm, upItem, removeItem,
   handleAcceptSugerencia, getSugerencias, addItem,
 }) {
   const addBtnHover = useColorModeValue("yellow.50", "whiteAlpha.100");
   const theadBg = "#3A3A38";
+
   const colsHeader = showAllCols
-    ? [{ h: "#", w: "28px" }, { h: "Ref.", w: "60px" }, { h: "Descripción" },
-       { h: "Cant.", w: "52px", num: true }, { h: "Und.", w: "54px" },
-       { h: "P. s/IVA", w: "82px", num: true }, { h: "IVA", w: "68px", num: true },
-       { h: "P. c/IVA", w: "84px", num: true }, { h: "Desc.%", w: "50px", num: true },
-       { h: "Total", w: "88px", num: true }, { h: "", w: "28px" }]
+    ? esObra
+      ? [{ h: "#", w: "28px" }, { h: "Ref.", w: "60px" }, { h: "Descripción / Actividad" },
+         { h: "Cant.", w: "52px", num: true }, { h: "Und.", w: "54px" },
+         { h: "Vr. Unit.", w: "94px", num: true }, { h: "Desc.%", w: "50px", num: true },
+         { h: "Total", w: "88px", num: true }, { h: "", w: "28px" }]
+      : [{ h: "#", w: "28px" }, { h: "Ref.", w: "60px" }, { h: "Descripción" },
+         { h: "Cant.", w: "52px", num: true }, { h: "Und.", w: "54px" },
+         { h: "P. s/IVA", w: "82px", num: true }, { h: "IVA", w: "68px", num: true },
+         { h: "P. c/IVA", w: "94px", num: true }, { h: "Desc.%", w: "50px", num: true },
+         { h: "Total", w: "88px", num: true }, { h: "", w: "28px" }]
     : [{ h: "#", w: "24px" }, { h: "Producto" }, { h: "Cant.", w: "52px", num: true },
-       { h: "P. c/IVA", w: "84px", num: true }, { h: "Total", w: "80px", num: true }, { h: "", w: "28px" }];
+       { h: "Precio", w: "84px", num: true }, { h: "Total", w: "80px", num: true }, { h: "", w: "28px" }];
 
   const colSpan = colsHeader.length;
 
@@ -403,6 +582,7 @@ const TablaProductos = memo(function TablaProductos({
       overflowX="auto"
       overflowY={showAllCols ? "auto" : undefined}
       flex={showAllCols ? 1 : undefined}
+      h={showAllCols ? 0 : undefined}
       onKeyDown={handleTableKeyDown}
       sx={{ "&::-webkit-scrollbar": { w: "4px", h: "4px" }, "&::-webkit-scrollbar-thumb": { bg: "gray.200", borderRadius: "2px" } }}>
       <Table size="sm" variant="simple">
@@ -420,7 +600,7 @@ const TablaProductos = memo(function TablaProductos({
               <ItemRow key={r.id} r={r} i={i} showAllCols={showAllCols}
                 border={border} mutedL={mutedL} inputBg={inputBg}
                 tableBg={tableBg} stripeBg={stripeBg}
-                ivaRate={ivaRate} cotConfig={cotConfig} rm={rm}
+                ivaRate={ivaRate} esObra={esObra} cotConfig={cotConfig} rm={rm}
                 upItem={upItem} removeItem={removeItem}
                 handleAcceptSugerencia={handleAcceptSugerencia}
                 getSugerencias={getSugerencias}
@@ -429,10 +609,16 @@ const TablaProductos = memo(function TablaProductos({
           </AnimatePresence>
           <Tr>
             <Td colSpan={colSpan} borderColor={border} px={3} py={2}>
-              <Button size="xs" variant="ghost" leftIcon={<FiPlus />} onClick={addItem}
-                fontWeight="700" color={FY} tabIndex={-1} _hover={{ bg: addBtnHover }}>
-                + Agregar producto
-              </Button>
+              <Flex align="center" gap={3}>
+                <Button size="xs" variant="ghost" leftIcon={<FiPlus />} onClick={addItem}
+                  fontWeight="700" color={FY} tabIndex={-1} _hover={{ bg: addBtnHover }}>
+                  + Agregar producto
+                </Button>
+                <Text fontSize="9px" color={useColorModeValue("gray.400", "gray.500")}
+                  display={{ base: "none", lg: "block" }}>
+                  <Kbd fontSize="8px">Tab</Kbd> avanza · <Kbd fontSize="8px">Enter</Kbd> nueva fila · <Kbd fontSize="8px">↑↓</Kbd> navega filas · <Kbd fontSize="8px">Ctrl+D</Kbd> duplica
+                </Text>
+              </Flex>
             </Td>
           </Tr>
         </Tbody>
@@ -442,14 +628,20 @@ const TablaProductos = memo(function TablaProductos({
 });
 
 /* ════════════════════════════════════════════════════════
-   RESUMEN (panel derecho)
+   RESUMEN (panel derecho desktop)
 ════════════════════════════════════════════════════════ */
-function ResumenDesktop({ items, cotConfig, totals, descGNum, cliente, rm, safeNavigate, handleSave, isSaving, hasChanges }) {
+function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig, cliente, rm, safeNavigate, handleSave, isSaving, hasChanges }) {
+  const esObra = cotConfig.tipo === "obra";
   return (
     <Box bg={DARK} rounded="xl" overflow="hidden" display="flex" flexDirection="column"
       border="1px solid" borderColor="whiteAlpha.100" h="full">
       <Box px={5} pt={5} pb={3}>
-        <Text fontWeight="300" fontSize="18px" color="white">Resumen</Text>
+        <Flex align="center" gap={2}>
+          <Text fontWeight="300" fontSize="18px" color="white">Resumen</Text>
+          <Badge bg={esObra ? "blue.700" : "green.700"} color="white" fontSize="8px" rounded="full" px={2}>
+            {esObra ? "OBRA" : "COMERCIAL"}
+          </Badge>
+        </Flex>
         <Text fontSize="9px" color="whiteAlpha.400" letterSpacing="wider" textTransform="uppercase">
           {cotConfig.numero || "Sin número"} · {fmtDate(cotConfig.fecha)}
         </Text>
@@ -486,7 +678,7 @@ function ResumenDesktop({ items, cotConfig, totals, descGNum, cliente, rm, safeN
             ))}
         </AnimatePresence>
       </Box>
-      <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} size="lg" />
+      <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
       <Box px={5} py={4}>
         <Button w="full" bg={FY} color={DARK} rounded="lg" fontWeight="700" mb={2}
           onClick={() => safeNavigate("preview")} _hover={{ bg: "#e0b010" }}>
@@ -502,27 +694,64 @@ function ResumenDesktop({ items, cotConfig, totals, descGNum, cliente, rm, safeN
   );
 }
 
-function ResumenTotales({ totals, cotConfig, descGNum, size = "md" }) {
-  const fs = size === "lg" ? "11px" : "10px";
-  const fv = size === "lg" ? "11px" : "10px";
+function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = "md" }) {
+  const esObra = cotConfig.tipo === "obra";
+  const fs     = size === "lg" ? "11px" : "10px";
   const fTotal = size === "lg" ? "24px" : "18px";
+  const aiu    = aiuConfig || DEFAULT_AIU;
+
   return (
     <Box bg="blackAlpha.300" px={5} py={size === "lg" ? 4 : 3}>
       <Stack spacing={1.5}>
-        <Flex justify="space-between">
-          <Text fontSize={fs} color="whiteAlpha.400">Total Bruto (sin IVA)</Text>
-          <Text fontSize={fv} color="whiteAlpha.600" fontWeight="500">{money(totals.totalBruto, cotConfig.moneda)}</Text>
-        </Flex>
-        {descGNum > 0 && (
-          <Flex justify="space-between">
-            <Text fontSize={fs} color="whiteAlpha.400">Descuento ({descGNum}%)</Text>
-            <Text fontSize={fv} color="red.300" fontWeight="500">− {money(totals.descGAmt, cotConfig.moneda)}</Text>
-          </Flex>
+        {esObra ? (
+          <>
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.400">Costo Directo</Text>
+              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.costoDirecto ?? 0, cotConfig.moneda)}</Text>
+            </Flex>
+            {descGNum > 0 && (
+              <Flex justify="space-between">
+                <Text fontSize={fs} color="whiteAlpha.400">Descuento ({descGNum}%)</Text>
+                <Text fontSize={fs} color="red.300" fontWeight="500">− {money(totals.descGAmt, cotConfig.moneda)}</Text>
+              </Flex>
+            )}
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.300">Adm. {aiu.admin}% + Impr. {aiu.imprevistos}%</Text>
+              <Text fontSize={fs} color="whiteAlpha.500">{money((totals.adminAmt ?? 0) + (totals.impAmt ?? 0), cotConfig.moneda)}</Text>
+            </Flex>
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.400">Utilidad {aiu.utilidad}%</Text>
+              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.utilAmt ?? 0, cotConfig.moneda)}</Text>
+            </Flex>
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.400">IVA 19% s/ utilidad</Text>
+              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.ivaUtilidad ?? 0, cotConfig.moneda)}</Text>
+            </Flex>
+            {aiu.anticipo > 0 && (
+              <Flex justify="space-between">
+                <Text fontSize={fs} color="yellow.400">Anticipo ({aiu.anticipo}%)</Text>
+                <Text fontSize={fs} color="yellow.400" fontWeight="600">{money(totals.totalPagar * aiu.anticipo / 100, cotConfig.moneda)}</Text>
+              </Flex>
+            )}
+          </>
+        ) : (
+          <>
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.400">Total Bruto (sin IVA)</Text>
+              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.totalBruto, cotConfig.moneda)}</Text>
+            </Flex>
+            {descGNum > 0 && (
+              <Flex justify="space-between">
+                <Text fontSize={fs} color="whiteAlpha.400">Descuento ({descGNum}%)</Text>
+                <Text fontSize={fs} color="red.300" fontWeight="500">− {money(totals.descGAmt, cotConfig.moneda)}</Text>
+              </Flex>
+            )}
+            <Flex justify="space-between">
+              <Text fontSize={fs} color="whiteAlpha.400">IVA {cotConfig.iva}%</Text>
+              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.ivaTotal, cotConfig.moneda)}</Text>
+            </Flex>
+          </>
         )}
-        <Flex justify="space-between">
-          <Text fontSize={fs} color="whiteAlpha.400">IVA {cotConfig.iva}%</Text>
-          <Text fontSize={fv} color="whiteAlpha.600" fontWeight="500">{money(totals.ivaTotal, cotConfig.moneda)}</Text>
-        </Flex>
       </Stack>
       <Box h="1px" bg={`${FY}44`} my={3} />
       <Flex justify="space-between" align="flex-end">
@@ -545,7 +774,7 @@ export default function CotizadorPage() {
   const rm       = usePrefersReducedMotion();
   const cancelRef = useRef();
   const tableRef  = useRef(null);
-  const handleSaveRef = useRef(null); // para Ctrl+S sin closure stale
+  const handleSaveRef = useRef(null);
 
   const { getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion } = useCotizaciones();
   const { downloadPDF, loading: pdfLoading } = usePDF("cotizacion-pdf");
@@ -553,7 +782,8 @@ export default function CotizadorPage() {
 
   const [empresa,    setEmpresaState] = useState(() => loadEmpresaLocal());
   const [cliente,    setCliente]      = useState(DEFAULT_CLIENTE);
-  const [cotConfig,  setCotConfig]    = useState(DEFAULT_CONFIG);
+  const [cotConfig,  setCotConfig]    = useState({ ...DEFAULT_CONFIG });
+  const [aiuConfig,  setAiuConfig]    = useState({ ...DEFAULT_AIU });
   const [items,      setItems]        = useState([blankRow(), blankRow()]);
   const [notas,      setNotas]        = useState(DEFAULT_NOTAS);
   const [isSaving,   setIsSaving]     = useState(false);
@@ -563,9 +793,13 @@ export default function CotizadorPage() {
   const [descLocal,  setDescLocal]    = useState("0");
   const [pendingNav, setPendingNav]   = useState(null);
   const [mobileStep, setMobileStep]   = useState(0);
+  // Modal tipo: mostrar solo cuando es nueva cotización (sin id en URL)
+  const [showTipoModal, setShowTipoModal] = useState(!id);
 
   const { isOpen: isDelOpen,  onOpen: onDelOpen,  onClose: onDelClose  } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
+
+  const esObra = cotConfig.tipo === "obra";
 
   const setEmpresa = useCallback((updater) => {
     setEmpresaState((prev) => {
@@ -575,11 +809,11 @@ export default function CotizadorPage() {
     });
   }, []);
 
-  useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, descLocal]);
+  useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, descLocal, aiuConfig]);
 
   const stRef = useRef({});
   useEffect(() => {
-    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, editingId };
+    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, editingId, aiuConfig };
   });
 
   /* Título dinámico */
@@ -592,7 +826,7 @@ export default function CotizadorPage() {
 
   /* Cargar cotización por ID */
   useEffect(() => {
-    if (!id) return;
+    if (!id) { setShowTipoModal(true); return; }
     const cot = getCotizacion(id);
     if (!cot) {
       toast({ title: "Cotización no encontrada", status: "error", duration: 3000 });
@@ -604,11 +838,13 @@ export default function CotizadorPage() {
     setDescLocal(String(cot.descG || 0));
     setItems(cot.items?.length ? cot.items : [blankRow(), blankRow()]);
     setNotas(cot.notas || DEFAULT_NOTAS);
+    setAiuConfig(cot.aiuConfig || DEFAULT_AIU);
     setEditingId(id);
     setHasChanges(false);
+    setShowTipoModal(false);
   }, [id]); // eslint-disable-line
 
-  /* Ctrl+S — siempre usa la versión más reciente de handleSave via ref */
+  /* Ctrl+S */
   useEffect(() => {
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -621,7 +857,13 @@ export default function CotizadorPage() {
   }, []);
 
   const descGNum = useMemo(() => parseFloat(descLocal) || 0, [descLocal]);
-  const totals   = useMemo(() => calcTotals(items, descGNum, cotConfig.iva), [items, descGNum, cotConfig.iva]);
+
+  const totals = useMemo(() =>
+    esObra
+      ? calcTotalsObra(items, descGNum, aiuConfig)
+      : calcTotals(items, descGNum, cotConfig.iva),
+    [items, descGNum, cotConfig.iva, esObra, aiuConfig]
+  );
 
   const addItem = useCallback(() => {
     const newRow = blankRow();
@@ -634,6 +876,17 @@ export default function CotizadorPage() {
   const removeItem = useCallback((rid) =>
     setItems((p) => p.length <= 1 ? p : p.filter((r) => r.id !== rid)),
   []);
+
+  const duplicateItem = useCallback((rid) => {
+    setItems((p) => {
+      const idx = p.findIndex((r) => r.id === rid);
+      if (idx < 0) return p;
+      const copy = { ...p[idx], id: crypto.randomUUID?.() || Date.now().toString(36) };
+      const next = [...p];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }, []);
 
   const upItem = useCallback((rid, k, v) => {
     if ((k === "price" || k === "disc") && parseFloat(v) < 0) v = "0";
@@ -648,27 +901,55 @@ export default function CotizadorPage() {
     requestAnimationFrame(() => focusTableInput(tableRef.current, rowId, "qty"));
   }, []);
 
+  /* ── Atajos de teclado mejorados ── */
   const handleTableKeyDown = useCallback((e) => {
     const input = e.target;
     if (!input || input.tagName !== "INPUT") return;
     const rowId = input.dataset.rowId;
     const field = input.dataset.field;
     if (!rowId || !field || field === "desc") return;
+
+    // Escape: salir del input
     if (e.key === "Escape") { input.blur(); return; }
+
+    // ↑↓: moverse entre filas en la misma columna
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && field !== "desc") {
+      e.preventDefault();
+      setItems((currentItems) => {
+        const idx = currentItems.findIndex((r) => r.id === rowId);
+        const targetIdx = e.key === "ArrowUp" ? idx - 1 : idx + 1;
+        if (targetIdx >= 0 && targetIdx < currentItems.length) {
+          requestAnimationFrame(() => focusTableInput(tableRef.current, currentItems[targetIdx].id, field));
+        }
+        return currentItems;
+      });
+      return;
+    }
+
+    // Ctrl+D: duplicar fila
+    if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+      e.preventDefault();
+      duplicateItem(rowId);
+      return;
+    }
+
     const isTab   = e.key === "Tab" && !e.shiftKey;
     const isEnter = e.key === "Enter";
+
     if (isTab || isEnter) {
       const fieldIdx    = FIELD_ORDER.indexOf(field);
       const isLastField = fieldIdx === FIELD_ORDER.length - 1;
+
       if (isEnter && !isLastField) {
         e.preventDefault();
         focusTableInput(tableRef.current, rowId, FIELD_ORDER[fieldIdx + 1]);
         return;
       }
+
       if ((isTab || isEnter) && isLastField) {
         e.preventDefault();
         setItems((currentItems) => {
-          const idx    = currentItems.findIndex((r) => r.id === rowId);
+          const idx     = currentItems.findIndex((r) => r.id === rowId);
           const nextRow = currentItems[idx + 1];
           if (nextRow) {
             requestAnimationFrame(() => focusTableInput(tableRef.current, nextRow.id, "desc"));
@@ -682,14 +963,16 @@ export default function CotizadorPage() {
         });
       }
     }
-  }, []);
+  }, [duplicateItem]);
 
   const autoSave = useCallback(() => {
-    const { empresa, cliente, cotConfig, items, descG, notas, editingId } = stRef.current;
+    const { empresa, cliente, cotConfig, items, descG, notas, editingId, aiuConfig } = stRef.current;
     const cfg = { ...cotConfig, estado: "borrador" };
-    const tot = calcTotals(items, descG, cfg.iva);
+    const tot = cotConfig.tipo === "obra"
+      ? calcTotalsObra(items, descG, aiuConfig)
+      : calcTotals(items, descG, cfg.iva);
     try {
-      return saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot });
+      return saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig });
     } catch { return null; }
   }, [saveCotizacion]);
 
@@ -706,7 +989,7 @@ export default function CotizadorPage() {
     setIsSaving(true);
     const descG = parseFloat(descLocal) || 0;
     try {
-      const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, totals };
+      const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, totals, aiuConfig };
       const savedId = saveCotizacion(payload);
       aprenderProductos(items);
       if (!editingId) {
@@ -729,9 +1012,8 @@ export default function CotizadorPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, saveCotizacion, getCotizacion, navigate, toast]);
+  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, aiuConfig, saveCotizacion, getCotizacion, navigate, toast]);
 
-  /* Actualizar ref del handleSave para Ctrl+S */
   useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
 
   const handleDelete = useCallback(() => {
@@ -756,30 +1038,31 @@ export default function CotizadorPage() {
 
   const confirmExit = useCallback(() => {
     onExitClose(); autoSave(); setHasChanges(false);
-    if (pendingNav === "preview") { setIsPreview(true); }
-    else if (pendingNav) { navigate(pendingNav); }
+    if (pendingNav === "preview") setIsPreview(true);
+    else if (pendingNav) navigate(pendingNav);
     setPendingNav(null);
   }, [pendingNav, autoSave, navigate, onExitClose]);
 
   const discardAndExit = useCallback(() => {
     onExitClose(); setHasChanges(false);
-    if (pendingNav === "preview") { setIsPreview(true); }
-    else if (pendingNav) { navigate(pendingNav); }
+    if (pendingNav === "preview") setIsPreview(true);
+    else if (pendingNav) navigate(pendingNav);
     setPendingNav(null);
   }, [pendingNav, navigate, onExitClose]);
 
   const handleClear = useCallback(() => {
     setCliente(DEFAULT_CLIENTE);
     setCotConfig({ ...DEFAULT_CONFIG });
+    setAiuConfig({ ...DEFAULT_AIU });
     setItems([blankRow(), blankRow()]);
     setNotas(DEFAULT_NOTAS);
     setDescLocal("0");
     setEditingId(null);
     setHasChanges(false);
     setMobileStep(0);
+    setShowTipoModal(true);
     navigate("/cotizador", { replace: true });
-    toast({ title: "Formulario limpiado", status: "info", duration: 2000, position: "top-right" });
-  }, [navigate, toast]);
+  }, [navigate]);
 
   const handlePDF = useCallback(async () => {
     const ok = await downloadPDF(`${cotConfig.numero || "cotizacion"}_FerreExpress`);
@@ -787,7 +1070,7 @@ export default function CotizadorPage() {
     else    toast({ title: "Error generando PDF", status: "error", duration: 4000 });
   }, [cotConfig.numero, downloadPDF, toast]);
 
-  /* ─── Colores (nivel raíz del componente) ─── */
+  /* ── Colores ── */
   const bg        = useColorModeValue("gray.50", "gray.900");
   const border    = useColorModeValue("gray.200", "whiteAlpha.200");
   const mutedL    = useColorModeValue("gray.400", "gray.600");
@@ -796,24 +1079,21 @@ export default function CotizadorPage() {
   const tableBg   = useColorModeValue("white", "gray.800");
   const stripeBg  = useColorModeValue("gray.50", "gray.750");
   const tabActive = useColorModeValue("gray.800", "white");
-  const mutedText = useColorModeValue("gray.700", "gray.300");
   const totalColor = useColorModeValue("gray.700", "gray.300");
 
-  const ivaRate  = (parseFloat(cotConfig.iva) || 0) / 100;
-  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas };
+  const ivaRate  = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
+  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, aiu: aiuConfig };
 
-  /* Props compartidos para TablaProductos */
   const tablaProps = {
-    items, tableRef, handleTableKeyDown,
+    items, tableRef, handleTableKeyDown, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
     ivaRate, cotConfig, rm, upItem, removeItem,
     handleAcceptSugerencia, getSugerencias, addItem,
   };
 
-  /* Props compartidos para paneles */
-  const panelEmpresaProps  = { empresa, setEmpresa, border, mutedL, inputBg };
-  const panelClienteProps  = { cliente, setCliente, inputBg };
-  const panelCotizProps    = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, inputBg };
+  const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg };
+  const panelClienteProps = { cliente, setCliente, inputBg };
+  const panelCotizProps   = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg };
 
   /* ─── VISTA PREVIA ─── */
   if (isPreview) return (
@@ -830,6 +1110,10 @@ export default function CotizadorPage() {
             {cotConfig.numero && (
               <Badge bg={FY} color={DARK} rounded="full" px={3} fontWeight="700">{cotConfig.numero}</Badge>
             )}
+            <Badge bg={esObra ? "blue.100" : "green.100"} color={esObra ? "blue.700" : "green.700"}
+              rounded="full" px={2} fontSize="9px">
+              {esObra ? "Obra" : "Comercial"}
+            </Badge>
           </HStack>
           <HStack>
             <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
@@ -855,20 +1139,38 @@ export default function CotizadorPage() {
 
   return (
     <Box minH="100vh" bg={bg}>
+      {/* PDF oculto para captura */}
       <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
         <DocContent {...docProps} />
       </Box>
+
+      {/* Modal tipo cotización */}
+      <ModalTipo
+        isOpen={showTipoModal}
+        onSelect={(tipo) => {
+          setCotConfig((p) => ({ ...p, tipo, formaPago: tipo === "obra" ? "Anticipo + Actas" : "Efectivo" }));
+          setNotas(tipo === "obra" ? DEFAULT_NOTAS_OBRA : DEFAULT_NOTAS);
+          setShowTipoModal(false);
+        }}
+      />
 
       {/* ═══ TOPBAR ═══ */}
       <Box bg={barBg} borderBottom="1px solid" borderColor={border} position="sticky" top={0} zIndex={100}>
         <Flex maxW="1600px" mx="auto" px={{ base: 3, md: 6 }}
           h={{ base: "auto", md: "54px" }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
-          <HStack spacing={3}>
+          <HStack spacing={2}>
             <AppLogo src={empresa.logo} h="30px" />
             {cotConfig.numero
               ? <Badge bg={FY} color={DARK} rounded="full" fontSize="10px" px={3} fontWeight="700">{cotConfig.numero}</Badge>
               : <Tag size="sm" colorScheme="gray" rounded="full">Nueva cotización</Tag>}
+            <Badge
+              bg={esObra ? "blue.100" : "green.100"}
+              color={esObra ? "blue.700" : "green.700"}
+              rounded="full" fontSize="8px" px={2}
+              display={{ base: "none", sm: "block" }}>
+              {esObra ? "OBRA" : "COMERCIAL"}
+            </Badge>
             {hasChanges && (
               <HStack spacing={1}>
                 <Icon as={FiAlertCircle} color="orange.400" boxSize={3} />
@@ -882,7 +1184,7 @@ export default function CotizadorPage() {
               display={{ base: "none", lg: "block" }} mr={1}>
               {money(totals.totalPagar, cotConfig.moneda)}
             </Text>
-            <Tooltip label="Historial de cotizaciones" hasArrow>
+            <Tooltip label="Historial" hasArrow>
               <IconButton size="sm" variant="outline" rounded="md" aria-label="Historial"
                 icon={<FiList />} onClick={() => safeNavigate("/historial")} />
             </Tooltip>
@@ -892,12 +1194,12 @@ export default function CotizadorPage() {
                   icon={<FiCopy />} onClick={handleDuplicate} />
               </Tooltip>
             )}
-            <Tooltip label="Nueva cotización en blanco" hasArrow>
+            <Tooltip label="Nueva cotización" hasArrow>
               <IconButton size="sm" variant="outline" rounded="md" aria-label="Nueva"
                 icon={<FiRefreshCw />} onClick={handleClear} />
             </Tooltip>
             {editingId && (
-              <Tooltip label="Eliminar esta cotización" hasArrow>
+              <Tooltip label="Eliminar" hasArrow>
                 <IconButton size="sm" colorScheme="red" variant="ghost" rounded="md"
                   aria-label="Eliminar" icon={<FiTrash2 />} onClick={onDelOpen} />
               </Tooltip>
@@ -931,7 +1233,7 @@ export default function CotizadorPage() {
           <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column">
             <Tabs variant="unstyled" size="sm" display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ label: "Empresa", icon: FiHome }, { label: "Cliente", icon: FiUser }, { label: "Cotización", icon: FiFileText }]
+                {[{ label: "Empresa", icon: FiHome }, { label: "Cliente", icon: FiUser }, { label: "Config", icon: FiFileText }]
                   .map(({ label, icon: Ic }) => (
                     <Tab key={label} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                       textTransform="uppercase" color={mutedL} pb={2.5}
@@ -956,18 +1258,17 @@ export default function CotizadorPage() {
           </GlassCard>
 
           {/* Col 2: Tabla */}
-          <Box display="flex" flexDirection="column" gap={3} minW={0}>
+          <Box display="flex" flexDirection="column" gap={3} minW={0} minH={0} overflow="hidden">
             <Flex align="center" justify="space-between" flexShrink={0}>
               <HStack spacing={2}>
                 <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                <Text fontWeight="700" fontSize="15px">Productos y servicios</Text>
+                <Text fontWeight="700" fontSize="15px">
+                  {esObra ? "Actividades / Materiales" : "Productos y servicios"}
+                </Text>
                 <Tag size="sm" borderRadius="full" colorScheme="gray">
                   {items.filter((r) => r.desc || r.price).length} ítem{items.filter((r) => r.desc || r.price).length !== 1 ? "s" : ""}
                 </Tag>
               </HStack>
-              <Text fontSize="10px" color={mutedL} display={{ base: "none", "2xl": "block" }}>
-                <Kbd fontSize="9px">Tab</Kbd> avanza · <Kbd fontSize="9px">↑↓</Kbd> sugerencias · <Kbd fontSize="9px">Enter</Kbd> acepta
-              </Text>
             </Flex>
             <GlassCard rounded="xl" flex={1} overflow="hidden" display="flex" flexDirection="column" minH={0}>
               <TablaProductos showAllCols={true} {...tablaProps} />
@@ -977,7 +1278,7 @@ export default function CotizadorPage() {
           {/* Col 3: Resumen */}
           <ResumenDesktop
             items={items} cotConfig={cotConfig} totals={totals} descGNum={descGNum}
-            cliente={cliente} rm={rm} safeNavigate={safeNavigate}
+            aiuConfig={aiuConfig} cliente={cliente} rm={rm} safeNavigate={safeNavigate}
             handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges} />
         </Box>
 
@@ -1006,16 +1307,14 @@ export default function CotizadorPage() {
             <Flex align="center" px={4} py={3} borderBottom="1px solid" borderColor={border}>
               <HStack>
                 <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                <Text fontWeight="700">Productos</Text>
-                <Tag size="sm" colorScheme="gray" rounded="full">
-                  {items.filter((r) => r.desc || r.price).length}
-                </Tag>
+                <Text fontWeight="700">{esObra ? "Actividades" : "Productos"}</Text>
+                <Tag size="sm" colorScheme="gray" rounded="full">{items.filter((r) => r.desc || r.price).length}</Tag>
               </HStack>
             </Flex>
             <TablaProductos showAllCols={true} {...tablaProps} />
           </GlassCard>
           <Box bg={DARK} rounded="xl" border="1px solid" borderColor="whiteAlpha.100">
-            <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} size="md" />
+            <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="md" />
           </Box>
           <Flex gap={2} pb={4}>
             <Button flex={1} bg={FY} color={DARK} rounded="lg" fontWeight="700"
@@ -1030,7 +1329,7 @@ export default function CotizadorPage() {
         </Box>
 
         {/* ═══ MOBILE (base–md): STEPPER ═══ */}
-        <Box display={{ base: "flex", md: "none" }} flexDirection="column" gap={0} pb="88px">
+        <Box display={{ base: "flex", md: "none" }} flexDirection="column" gap={0} pb="96px">
           <GlassCard rounded="xl" overflow="hidden" mb={4}>
             <MobileStepper
               step={mobileStep} totalSteps={STEPS.length} label={STEPS[mobileStep]}
@@ -1047,23 +1346,41 @@ export default function CotizadorPage() {
                     <Flex align="center" px={4} py={3} borderBottom="1px solid" borderColor={border}>
                       <HStack>
                         <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                        <Text fontWeight="700">Productos</Text>
+                        <Text fontWeight="700">{esObra ? "Actividades" : "Productos"}</Text>
                         <Tag size="sm" colorScheme="gray" rounded="full">
                           {items.filter((r) => r.desc || r.price).length}
                         </Tag>
                       </HStack>
                     </Flex>
                     <TablaProductos showAllCols={false} {...tablaProps} />
+                    {/* Mini resumen mobile */}
                     <Box bg={DARK} px={4} py={3}>
                       <Stack spacing={1}>
-                        <Flex justify="space-between">
-                          <Text fontSize="10px" color="whiteAlpha.500">Total Bruto</Text>
-                          <Text fontSize="11px" color="whiteAlpha.700">{money(totals.totalBruto, cotConfig.moneda)}</Text>
-                        </Flex>
-                        <Flex justify="space-between">
-                          <Text fontSize="10px" color="whiteAlpha.500">IVA {cotConfig.iva}%</Text>
-                          <Text fontSize="11px" color="whiteAlpha.700">{money(totals.ivaTotal, cotConfig.moneda)}</Text>
-                        </Flex>
+                        {esObra ? (
+                          <>
+                            <Flex justify="space-between">
+                              <Text fontSize="10px" color="whiteAlpha.500">Costo Directo</Text>
+                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.costoDirecto ?? 0, cotConfig.moneda)}</Text>
+                            </Flex>
+                            <Flex justify="space-between">
+                              <Text fontSize="10px" color="whiteAlpha.500">AIU + IVA</Text>
+                              <Text fontSize="11px" color="whiteAlpha.700">
+                                {money(totals.totalPagar - (totals.costoDirecto ?? 0), cotConfig.moneda)}
+                              </Text>
+                            </Flex>
+                          </>
+                        ) : (
+                          <>
+                            <Flex justify="space-between">
+                              <Text fontSize="10px" color="whiteAlpha.500">Total Bruto</Text>
+                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.totalBruto, cotConfig.moneda)}</Text>
+                            </Flex>
+                            <Flex justify="space-between">
+                              <Text fontSize="10px" color="whiteAlpha.500">IVA {cotConfig.iva}%</Text>
+                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.ivaTotal, cotConfig.moneda)}</Text>
+                            </Flex>
+                          </>
+                        )}
                         {descGNum > 0 && (
                           <Flex justify="space-between">
                             <Text fontSize="10px" color="whiteAlpha.500">Desc. {descGNum}%</Text>

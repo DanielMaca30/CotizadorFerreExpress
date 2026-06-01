@@ -1,17 +1,22 @@
 /* ─────────────────────────────────────────────────────────────
    src/utils/index.js  —  FerreExpress cotizador
 
-   LÓGICA DE PRECIOS:
-   El usuario ingresa el precio CON IVA incluido.
-
+   MODO COMERCIAL:
+     Precio ingresado CON IVA incluido por producto.
      precioSinIva = precioConIva / (1 + iva/100)
-     ivaUnidad    = precioConIva - precioSinIva
-     totalLinea   = precioConIva × cantidad
+     Total Bruto  = Σ (precioSinIva × qty × factor)
+     IVA total    = Σ (ivaUnidad × qty × factor)
+     Total Pagar  = Total Bruto + IVA - Descuento global
 
-   Resumen:
-     Total Bruto  = Σ (precioSinIva × qty)
-     IVA total    = Σ (ivaUnidad × qty)
-     Total Pagar  = Total Bruto + IVA total
+   MODO OBRA (AIU):
+     Precio ingresado como precio BASE (sin IVA).
+     Costo Directo = Σ (precio × qty × factor)
+     Administración = Costo Directo × admin%
+     Imprevistos    = Costo Directo × imprevistos%
+     Utilidad       = Costo Directo × utilidad%
+     Subtotal AIU   = Costo Directo + Admin + Imprevistos + Utilidad
+     IVA Obra       = Utilidad × 19%  (IVA solo sobre utilidad)
+     Total a Pagar  = Subtotal AIU + IVA Obra
    ───────────────────────────────────────────────────────────── */
 
 /* ── Formatters ──────────────────────────────────────────────── */
@@ -41,6 +46,19 @@ export const fmtDateShort = (iso) =>
       })
     : "—";
 
+/* ── Formateo de precios estilo colombiano (1.500.000) ───────── */
+
+/** Formatea un número a "1.500.000" (sin símbolo de moneda) */
+export const formatPriceCO = (value) => {
+  const num = String(value ?? "").replace(/\D/g, "");
+  if (!num) return "";
+  return parseInt(num, 10).toLocaleString("es-CO");
+};
+
+/** Quita los puntos de formato y devuelve el número como string */
+export const parsePriceCO = (formatted) =>
+  String(formatted ?? "").replace(/\./g, "").replace(/,/g, "");
+
 /* ── Fechas automáticas ──────────────────────────────────────── */
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -66,7 +84,7 @@ export const blankRow = () => ({
   desc:  "",
   qty:   1,
   unit:  "Und",
-  price: "",   // precio CON IVA incluido
+  price: "",
   disc:  0,
 });
 
@@ -80,7 +98,7 @@ export const precioBase = (precioConIva, ivaRate) =>
 export const ivaUnidad = (precioConIva, ivaRate) =>
   precioConIva - precioBase(precioConIva, ivaRate);
 
-/** Total de la línea (precio con IVA × cantidad, menos descuento por línea) */
+/** Total de la línea (precio × cantidad, menos descuento por línea) */
 export const calcRow = (r) => {
   const p    = parseFloat(r.price) || 0;
   const qty  = parseFloat(r.qty)   || 1;
@@ -89,10 +107,11 @@ export const calcRow = (r) => {
   return raw - raw * (disc / 100);
 };
 
+/* ── Totales COMERCIAL ───────────────────────────────────────── */
+
 /**
- * Totales del documento.
- * Devuelve `total` como alias de `totalPagar` para compatibilidad
- * con HistorialPage y cualquier código que lea `totals.total`.
+ * Totales modo comercial (IVA por producto incluido en precio).
+ * Devuelve `total` como alias de `totalPagar` para compatibilidad.
  */
 export const calcTotals = (items, descG, iva) => {
   const rate = (parseFloat(iva) || 0) / 100;
@@ -119,7 +138,52 @@ export const calcTotals = (items, descG, iva) => {
     ivaTotal,
     descGAmt,
     totalPagar,
-    total: totalPagar,  // ← alias para compatibilidad con historial y hooks
+    total: totalPagar,
+  };
+};
+
+/* ── Totales OBRA (AIU) ──────────────────────────────────────── */
+
+/**
+ * Totales modo obra.
+ * Precios ingresados SIN IVA.
+ * IVA del 19% aplica solo sobre el componente de Utilidad.
+ */
+export const calcTotalsObra = (items, descG, aiu) => {
+  const { admin = 0, imprevistos = 0, utilidad = 0 } = aiu || {};
+
+  let costoDirecto = 0;
+  items.forEach((r) => {
+    const p    = parseFloat(r.price) || 0;
+    const qty  = parseFloat(r.qty)   || 1;
+    const disc = parseFloat(r.disc)  || 0;
+    costoDirecto += p * qty * (1 - disc / 100);
+  });
+
+  const descGAmt   = costoDirecto * ((parseFloat(descG) || 0) / 100);
+  const costoBase  = costoDirecto - descGAmt;
+
+  const adminAmt   = costoBase * (admin / 100);
+  const impAmt     = costoBase * (imprevistos / 100);
+  const utilAmt    = costoBase * (utilidad / 100);
+
+  const subtotalAIU = costoBase + adminAmt + impAmt + utilAmt;
+  const ivaUtilidad = utilAmt * 0.19;   // IVA 19% solo sobre utilidad
+  const totalPagar  = subtotalAIU + ivaUtilidad;
+
+  return {
+    costoDirecto,
+    descGAmt,
+    costoBase,
+    adminAmt,
+    impAmt,
+    utilAmt,
+    subtotalAIU,
+    ivaUtilidad,
+    totalPagar,
+    total:      totalPagar,
+    totalBruto: costoBase,    // alias compatibilidad
+    ivaTotal:   ivaUtilidad,  // alias compatibilidad
   };
 };
 
@@ -127,20 +191,21 @@ export const calcTotals = (items, descG, iva) => {
 
 export const UNITS = [
   "Und", "m", "m²", "m³", "kg", "lb", "L",
-  "gal", "Caja", "Bolsa", "Rollo", "Par", "Global",
+  "gal", "Caja", "Bolsa", "Rollo", "Par", "Global", "ml", "ton", "día", "hora",
 ];
 
-export const FORMAS_PAGO = ["Efectivo", "Transferencia", "Tarjeta"];
+export const FORMAS_PAGO      = ["Efectivo", "Transferencia", "Tarjeta", "Cheque"];
+export const FORMAS_PAGO_OBRA = ["Anticipo + Actas", "Anticipo", "Por Actas", "Crédito"];
 
 export const IVA_OPTS = [0, 5, 8, 10, 16, 19];
 export const MONEDAS  = ["COP", "USD", "EUR", "MXN"];
 export const ESTADOS  = ["borrador", "enviada", "aceptada", "rechazada"];
 
 export const ESTADO_META = {
-  borrador:  { label: "Borrador",  color: "gray"   },
-  enviada:   { label: "Enviada",   color: "blue"   },
-  aceptada:  { label: "Aceptada", color: "green"  },
-  rechazada: { label: "Rechazada",color: "red"    },
+  borrador:  { label: "Borrador",  color: "gray"  },
+  enviada:   { label: "Enviada",   color: "blue"  },
+  aceptada:  { label: "Aceptada", color: "green" },
+  rechazada: { label: "Rechazada",color: "red"   },
 };
 
 /* ── Valores por defecto ─────────────────────────────────────── */
@@ -163,11 +228,19 @@ export const DEFAULT_CLIENTE = {
 export const DEFAULT_CONFIG = {
   numero:    "",
   fecha:     todayISO(),
-  vigencia:  plusDaysISO(7),
+  vigencia:  plusDaysISO(30),
   formaPago: "Efectivo",
   moneda:    "COP",
   iva:       19,
   estado:    "borrador",
+  tipo:      "comercial",  // 'comercial' | 'obra'
+};
+
+export const DEFAULT_AIU = {
+  admin:       10,
+  imprevistos:  5,
+  utilidad:     5,
+  anticipo:    30,
 };
 
 export const DEFAULT_NOTAS =
@@ -175,6 +248,15 @@ export const DEFAULT_NOTAS =
   "• Los valores están expresados en pesos colombianos (COP) e incluyen IVA.\n" +
   "• La vigencia está sujeta a disponibilidad de inventario y puede variar si cambian las condiciones del mercado.\n" +
   "• Para confirmar su pedido, comuníquese con nosotros indicando el número de esta cotización.\n\n" +
+  "Agradecemos su interés en FerreExpress S.A.S.";
+
+export const DEFAULT_NOTAS_OBRA =
+  "• Esta cotización es informativa y no constituye factura de venta.\n" +
+  "• Valores expresados en pesos colombianos (COP).\n" +
+  "• El IVA del 19% aplica únicamente sobre el componente de Utilidad.\n" +
+  "• El anticipo acordado deberá consignarse antes del inicio de la obra.\n" +
+  "• Los valores están sujetos a variaciones en el costo de materiales y mano de obra.\n" +
+  "• Para confirmar la propuesta, comuníquese indicando el número de esta cotización.\n\n" +
   "Agradecemos su interés en FerreExpress S.A.S.";
 
 /* ── Persistencia empresa en localStorage ────────────────────── */
