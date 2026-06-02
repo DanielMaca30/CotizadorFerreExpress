@@ -86,7 +86,7 @@ function PreviewRow({ item, index, onChange, onRemove, moneda, bg }) {
    COMPONENTE PRINCIPAL
 ════════════════════════════════════════════════════════════ */
 export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) {
-  const { phase, progress, preview, error, fileName, fileType, processFile, reset } = importHook;
+  const { phase, progress, preview, error, fileName, fileType, processFile, reset, usedAI } = importHook;
 
   const fileRef  = useRef();
   const dropRef  = useRef();
@@ -196,6 +196,10 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onClick={() => fileRef.current?.click()}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
+                tabIndex={0}
+                role="button"
+                aria-label="Seleccionar archivo para importar"
                 border="2px dashed"
                 borderColor={isDragging ? FY : border}
                 rounded="xl"
@@ -204,7 +208,8 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                 textAlign="center"
                 cursor="pointer"
                 transition="all 0.15s"
-                _hover={{ borderColor: FY, bg: dropActive }}>
+                _hover={{ borderColor: FY, bg: dropActive }}
+                _focusVisible={{ outline: `2px solid ${FY}`, outlineOffset: '2px' }}>
                 <input ref={fileRef} type="file" accept={ACCEPTED} style={{ display: 'none' }}
                   onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = ''; }} />
                 <Icon as={FiUploadCloud} boxSize={{ base: 10, md: 14 }}
@@ -229,9 +234,10 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
               <Box mt={4} p={3} rounded="lg" bg={useColorModeValue('blue.50', 'blue.900')}
                 border="1px solid" borderColor={useColorModeValue('blue.200', 'blue.700')}>
                 <Text fontSize="11px" color={useColorModeValue('blue.700', 'blue.200')}>
-                  <strong>Tip:</strong> Funciona mejor con cotizaciones de FerreExpress en PDF.
-                  Para imágenes, asegúrate de que el texto sea legible. Los datos se muestran
-                  para revisión antes de importar — puedes corregir lo que sea necesario.
+                  {import.meta.env.VITE_MISTRAL_API_KEY
+                    ? <><strong>Extraccion con IA activa:</strong> Detecta automaticamente productos, precios y datos del cliente desde cualquier cotizacion.</>
+                    : <><strong>Tip:</strong> La precision es mayor con cotizaciones en PDF de texto. Para imagenes o PDFs escaneados, los resultados pueden variar — revisa los datos antes de confirmar.</>
+                  }
                 </Text>
               </Box>
             </Box>
@@ -256,8 +262,8 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                     bg={useColorModeValue('gray.100', 'gray.700')} />
                   <Text fontSize="11px" color={mutedC} mt={1}>
                     {progress < 20 ? 'Iniciando...' :
-                     progress < 50 ? (fileType === 'image' ? 'Reconociendo texto con OCR...' : 'Extrayendo texto del PDF...') :
-                     progress < 90 ? 'Analizando estructura...' :
+                     progress < 40 ? (import.meta.env.VITE_MISTRAL_API_KEY ? 'Enviando a Mistral AI...' : fileType === 'image' ? 'Reconociendo texto con OCR...' : 'Extrayendo texto del PDF...') :
+                     progress < 90 ? (import.meta.env.VITE_MISTRAL_API_KEY ? 'Analizando con vision IA...' : 'Analizando estructura...') :
                      'Procesando datos...'}
                   </Text>
                 </Box>
@@ -275,7 +281,17 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                 <Icon as={FiAlertCircle} boxSize={12} color="red.400" />
                 <Box>
                   <Text fontWeight="800" fontSize="15px" mb={1}>No se pudo procesar el archivo</Text>
-                  <Text fontSize="12px" color={mutedC} maxW="360px">{error}</Text>
+                  <Text fontSize="12px" color={mutedC} maxW="360px">
+                    {error?.includes('fetch') || error?.includes('network') || error?.includes('Failed')
+                      ? 'Error de conexion. Verifica tu internet e intenta de nuevo.'
+                      : error?.includes('JSON') || error?.includes('parse')
+                      ? 'No se pudo leer la respuesta de la IA. Intenta con otro archivo.'
+                      : error?.includes('401') || error?.includes('403')
+                      ? 'API key invalida o sin permisos. Revisa VITE_MISTRAL_API_KEY en .env'
+                      : error?.includes('429')
+                      ? 'Limite de requests alcanzado. Espera un momento e intenta de nuevo.'
+                      : error || 'Error desconocido al procesar el archivo.'}
+                  </Text>
                 </Box>
                 <Button leftIcon={<FiRefreshCw />} onClick={reset} variant="outline" rounded="lg">
                   Intentar con otro archivo
@@ -298,7 +314,12 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                   <Badge colorScheme={totalItems > 0 ? 'green' : 'orange'} rounded="full" px={2}>
                     {totalItems} producto{totalItems !== 1 ? 's' : ''} encontrado{totalItems !== 1 ? 's' : ''}
                   </Badge>
-                  {preview?.confidence >= 40 && (
+                  {usedAI && (
+                    <Badge colorScheme="purple" rounded="full" px={2}>
+                      IA Mistral ✓
+                    </Badge>
+                  )}
+                  {!usedAI && preview?.confidence >= 40 && (
                     <Badge colorScheme="blue" rounded="full" px={2}>
                       Formato reconocido ✓
                     </Badge>
@@ -427,12 +448,13 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
         </ModalBody>
 
         {/* ── Footer con acciones ── */}
-        {(phase === 'preview' || phase === 'idle' || phase === 'error') && (
+        {(phase === 'preview' || phase === 'idle' || phase === 'error' || phase === 'loading') && (
           <Box px={{ base: 4, md: 6 }} py={4} borderTop="1px solid" borderColor={border}
             flexShrink={0} bg={bg}>
             <Flex justify="flex-end" gap={3}>
-              <Button variant="ghost" rounded="lg" onClick={handleClose}>
-                Cancelar
+              <Button variant="ghost" rounded="lg" onClick={handleClose}
+                isDisabled={phase === 'loading' ? false : false}>
+                {phase === 'loading' ? 'Cancelar extraccion' : 'Cancelar'}
               </Button>
               {phase === 'preview' && (
                 <Button

@@ -283,8 +283,12 @@ export default function HistorialPage() {
 
   const handlePDF = useCallback(async (cot) => {
     setPdfCot(cot);
-    await new Promise((r) => setTimeout(r, 300));
-    const ok = await downloadPDF(`${getNumero(cot)}_FerreExpress`);
+    // Esperar dos frames para que React renderice el DocContent oculto
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, 80));
+    const cn = ((cot.cliente?.nombre || 'Cliente')).replace(/[^a-zA-Z0-9À-ɏ\s]/g,'').trim().replace(/\s+/g,'_');
+    const numero = getNumero(cot) || 'SinNumero';
+    const ok = await downloadPDF(`${cn}_${numero}`);
     if (ok) toast({ title: "PDF descargado ✓", status: "success", duration: 2500, position: "top-right" });
     else    toast({ title: "Error generando PDF", status: "error", duration: 3000 });
     setPdfCot(null);

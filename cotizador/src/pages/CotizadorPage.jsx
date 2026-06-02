@@ -34,13 +34,13 @@ import {
   FiEdit2, FiX, FiMaximize2,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCotizaciones }       from '../hooks/useCotizaciones';
-import { usePDF }                from '../hooks/usePDF';
-import { useImport }             from '../hooks/useImport';
+import { useCotizaciones } from '../hooks/useCotizaciones';
+import { usePDF } from '../hooks/usePDF';
+import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
-import AutocompleteInput         from '../components/AutocompleteInput';
-import DocContent                from '../components/DocContent';
-import ImportModal               from '../components/ImportModal';
+import AutocompleteInput from '../components/AutocompleteInput';
+import DocContent from '../components/DocContent';
+import ImportModal from '../components/ImportModal';
 import {
   blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
   precioBase, ivaUnidad, formatPriceCO, parsePriceCO,
@@ -50,15 +50,15 @@ import {
 } from '../utils';
 
 /* ── Colores de marca ── */
-const FY   = '#F9BF20';
+const FY = '#F9BF20';
 const DARK = '#3A3A38';
-const RED  = '#E21219';
+const RED = '#E21219';
 
 /* ── Orden de campos en tabla ── */
-const FIELD_ORDER = ['desc', 'qty', 'price', 'disc'];
+const FIELD_ORDER = ['desc', 'qty', 'unit', 'price', 'disc'];
 
 const MotionBox = motion(Box);
-const MotionTr  = motion(Tr);
+const MotionTr = motion(Tr);
 const spr = (r) => r ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32, mass: 0.7 };
 
 /* ════════════════════════════════════════════════════════════
@@ -144,17 +144,19 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
 }
 
 function focusInput(container, rowId, field) {
-  const el = container?.querySelector(`input[data-row-id="${rowId}"][data-field="${field}"]`);
-  if (el) { el.focus(); el.select(); }
+  const el = document.querySelector(`[data-row-id="${rowId}"][data-field="${field}"]`);
+  if (!el) return;
+  el.focus();
+  if (el.tagName === 'INPUT') { try { el.select(); } catch (_) { } }
 }
 
 /* ════════════════════════════════════════════════════════════
    MODAL SELECTOR DE TIPO
 ════════════════════════════════════════════════════════════ */
-function ModalTipo({ isOpen, onSelect }) {
+function ModalTipo({ isOpen, onSelect, onCancel }) {
   const cardHover = useColorModeValue('gray.50', 'gray.700');
   return (
-    <Modal isOpen={isOpen} onClose={() => {}} isCentered closeOnOverlayClick={false} size="md">
+    <Modal isOpen={isOpen} onClose={onCancel || (() => { })} isCentered closeOnOverlayClick={!!onCancel} size="md">
       <ModalOverlay backdropFilter="blur(4px)" />
       <ModalContent rounded="2xl" overflow="hidden" mx={4}>
         <Box bg={DARK} px={6} py={5}>
@@ -164,12 +166,16 @@ function ModalTipo({ isOpen, onSelect }) {
         <ModalBody p={5}>
           <Stack spacing={3}>
             {[
-              { tipo: 'comercial', icon: FiShoppingCart, color: FY, textColor: DARK,
+              {
+                tipo: 'comercial', icon: FiShoppingCart, color: FY, textColor: DARK,
                 title: 'Cotización Comercial',
-                sub: 'Venta directa al cliente. IVA incluido por producto.' },
-              { tipo: 'obra', icon: FiTool, color: '#1a5276', textColor: 'white',
+                sub: 'Venta directa al cliente. IVA incluido por producto.'
+              },
+              {
+                tipo: 'obra', icon: FiTool, color: '#1a5276', textColor: 'white',
                 title: 'Cotización de Obra',
-                sub: 'Construcción / contrato. AIU + IVA del 19% sobre la utilidad.' },
+                sub: 'Construcción / contrato. AIU + IVA del 19% sobre la utilidad.'
+              },
             ].map(({ tipo, icon, color, textColor, title, sub }) => (
               <Box key={tipo}
                 as="button" w="full" textAlign="left" p={4} rounded="xl"
@@ -198,8 +204,10 @@ function ModalTipo({ isOpen, onSelect }) {
 /* ════════════════════════════════════════════════════════════
    PANELES DE FORMULARIO
 ════════════════════════════════════════════════════════════ */
-const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, mutedL, inputBg }) {
+const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, mutedL, inputBg, onLogoError }) {
   const logoRef = useRef();
+  const logoToastRef = useRef(onLogoError);
+  logoToastRef.current = onLogoError;
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const E = k => ({ value: empresa[k] ?? '', onChange: e => setEmpresa(p => ({ ...p, [k]: e.target.value })) });
   return (
@@ -208,7 +216,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
         onChange={e => {
           const file = e.target.files?.[0];
           if (!file) return;
-          if (file.size > 2 * 1024 * 1024) { alert('Máx. 2MB'); return; }
+          if (file.size > 2 * 1024 * 1024) { logoToastRef.current?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, position: 'top' }); return; }
           const reader = new FileReader();
           reader.onload = ev => setEmpresa(p => ({ ...p, logo: ev.target.result }));
           reader.readAsDataURL(file);
@@ -265,10 +273,10 @@ const PanelCotizacion = memo(function PanelCotizacion({
   cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas,
   aiuConfig, setAiuConfig, inputBg,
 }) {
-  const ip  = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
+  const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const esObra = cotConfig.tipo === 'obra';
-  const numBg    = useColorModeValue('gray.100', 'gray.700');
-  const numBc    = useColorModeValue('gray.200', 'gray.600');
+  const numBg = useColorModeValue('gray.100', 'gray.700');
+  const numBc = useColorModeValue('gray.200', 'gray.600');
   const numColor = useColorModeValue('gray.400', 'gray.500');
   const Q = k => ({ value: cotConfig[k] ?? '', onChange: e => setCotConfig(p => ({ ...p, [k]: e.target.value })) });
   const A = k => ({
@@ -293,14 +301,18 @@ const PanelCotizacion = memo(function PanelCotizacion({
           </Select>
         </Box>
         <Box>
-          <FL>Tipo</FL>
-          <Box px={2} py="6px" rounded="md" border="1px solid"
-            bg={esObra ? 'blue.100' : 'green.100'}
-            borderColor={esObra ? 'blue.300' : 'green.300'}>
-            <Text fontSize="10px" fontWeight="700" color={esObra ? 'blue.700' : 'green.700'}>
-              {esObra ? 'Obra' : 'Comercial'}
-            </Text>
-          </Box>
+          <FL title="Clic para cambiar">Tipo</FL>
+          <Tooltip label="Cambiar tipo de cotizacion" hasArrow>
+            <Box px={2} py="6px" rounded="md" border="1px solid" cursor="pointer"
+              bg={esObra ? 'blue.100' : 'green.100'}
+              borderColor={esObra ? 'blue.300' : 'green.300'}
+              _hover={{ opacity: 0.75 }}
+              onClick={() => setShowTipoModal(true)}>
+              <Text fontSize="10px" fontWeight="700" color={esObra ? 'blue.700' : 'green.700'}>
+                {esObra ? 'Obra ✎' : 'Comercial ✎'}
+              </Text>
+            </Box>
+          </Tooltip>
         </Box>
       </Flex>
       <Flex gap={2}>
@@ -333,8 +345,8 @@ const PanelCotizacion = memo(function PanelCotizacion({
         </Flex>
       )}
       {esObra && (
-        <Box bg={useColorModeValue('blue.50','blue.900')} border="1px solid"
-          borderColor={useColorModeValue('blue.200','blue.700')} rounded="lg" p={3}>
+        <Box bg={useColorModeValue('blue.50', 'blue.900')} border="1px solid"
+          borderColor={useColorModeValue('blue.200', 'blue.700')} rounded="lg" p={3}>
           <Text fontSize="9px" fontWeight="800" letterSpacing="wider" textTransform="uppercase"
             color="blue.600" mb={3}>AIU — Indirectos de Obra</Text>
           <Stack spacing={2}>
@@ -379,7 +391,7 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
   const isValid = !!(r.desc || r.price);
   const total = calcRow(r);
   const cardBg = useColorModeValue('white', 'gray.800');
-  const hdrBg  = useColorModeValue('gray.50', 'gray.750');
+  const hdrBg = useColorModeValue('gray.50', 'gray.750');
   const mutedC = useColorModeValue('gray.500', 'gray.400');
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
 
@@ -504,10 +516,10 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, esObra, cotConfig, rm, upItem, removeItem,
   handleAcceptSugerencia, getSugerencias, itemsLen, duplicateItem, tableRef }) {
   const hoverBg = useColorModeValue('yellow.50', 'whiteAlpha.50');
-  const rowBg   = i % 2 === 0 ? tableBg : stripeBg;
-  const p       = parseFloat(r.price) || 0;
-  const pSin    = precioBase(p, ivaRate);
-  const pIva    = ivaUnidad(p, ivaRate);
+  const rowBg = i % 2 === 0 ? tableBg : stripeBg;
+  const p = parseFloat(r.price) || 0;
+  const pSin = precioBase(p, ivaRate);
+  const pIva = ivaUnidad(p, ivaRate);
 
   return (
     <MotionTr layout
@@ -517,7 +529,7 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
       <Td borderColor={border} color={mutedL} fontSize="11px" pl={3} w="28px">{i + 1}</Td>
       <Td borderColor={border} p={1} w="56px">
         <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
-          data-row-id={r.id} data-field="ref"
+          data-row-id={r.id} data-field="ref" tabIndex={-1}
           placeholder="—" fontSize="11px" color={mutedL} px={2} py={1} rounded="md"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
@@ -533,19 +545,23 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
           dataRowId={r.id}
           inputBg={inputBg}
           FY={FY}
+          tabIndex={-1}
         />
       </Td>
       <Td borderColor={border} p={1} isNumeric w="52px">
         <Input variant="unstyled" type="number" min="1" value={r.qty}
           onChange={e => upItem(r.id, 'qty', e.target.value)}
-          data-row-id={r.id} data-field="qty"
+          data-row-id={r.id} data-field="qty" tabIndex={-1}
           textAlign="center" fontWeight="700" fontSize="12px" px={1} py={1} rounded="md" w="44px"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
       <Td borderColor={border} p={1} w="52px">
         <select value={r.unit} onChange={e => upItem(r.id, 'unit', e.target.value)}
-          style={{ background: 'transparent', border: 'none', fontSize: 11, color: '#777',
-            width: 50, cursor: 'pointer', outline: 'none', padding: '4px 1px' }}>
+          data-row-id={r.id} data-field="unit" tabIndex={-1}
+          style={{
+            background: 'transparent', border: 'none', fontSize: 11, color: '#777',
+            width: 50, cursor: 'pointer', outline: 'none', padding: '4px 1px'
+          }}>
           {UNITS.map(u => <option key={u}>{u}</option>)}
         </select>
       </Td>
@@ -561,12 +577,12 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
       )}
       <Td borderColor={border} p={1} isNumeric w="94px">
         <PriceInput value={r.price} onChange={val => upItem(r.id, 'price', val)}
-          dataRowId={r.id} dataField="price" inputBg={inputBg} w="88px" />
+          dataRowId={r.id} dataField="price" inputBg={inputBg} w="88px" tabIndex={-1} />
       </Td>
       <Td borderColor={border} p={1} isNumeric w="50px">
         <Input variant="unstyled" type="number" min="0" max="100" value={r.disc}
           onChange={e => upItem(r.id, 'disc', e.target.value)}
-          data-row-id={r.id} data-field="disc"
+          data-row-id={r.id} data-field="disc" tabIndex={-1}
           textAlign="center" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" w="44px"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
@@ -599,8 +615,8 @@ const TablaProductos = memo(function TablaProductos({
   const mutedText = useColorModeValue('gray.400', 'gray.500');
 
   const cols = esObra
-    ? ['#','Ref.','Descripción / Actividad','Cant.','Und.','Vr. Unit.','Desc.%','Total','']
-    : ['#','Ref.','Nombre Producto','Cant.','Und.','P. s/IVA','IVA','P. c/IVA','Desc.%','Total',''];
+    ? ['#', 'Ref.', 'Descripción / Actividad', 'Cant.', 'Und.', 'Vr. Unit.', 'Desc.%', 'Total', '']
+    : ['#', 'Ref.', 'Nombre Producto', 'Cant.', 'Und.', 'P. s/IVA', 'IVA', 'P. c/IVA', 'Desc.%', 'Total', ''];
 
   return (
     <Box ref={tableRef}
@@ -608,16 +624,18 @@ const TablaProductos = memo(function TablaProductos({
       overflowY="auto"
       flex={1}
       h={0}          /* ← clave: h=0 + flex=1 fuerza scroll interno */
-      onKeyDown={handleTableKeyDown}
-      sx={{ '&::-webkit-scrollbar': { w: '4px', h: '4px' },
-            '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' } }}>
+      onKeyDownCapture={handleTableKeyDown}
+      sx={{
+        '&::-webkit-scrollbar': { w: '4px', h: '4px' },
+        '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' }
+      }}>
       <Table size="sm" variant="simple">
         <Thead position="sticky" top={0} zIndex={1}>
           <Tr bg={theadBg}>
             {cols.map((h, i) => (
               <Th key={i} color={FY} borderColor="transparent" fontSize="8px"
                 letterSpacing="wider" fontWeight="700"
-                isNumeric={['Cant.','P. s/IVA','IVA','P. c/IVA','Vr. Unit.','Desc.%','Total'].includes(h)}>
+                isNumeric={['Cant.', 'P. s/IVA', 'IVA', 'P. c/IVA', 'Vr. Unit.', 'Desc.%', 'Total'].includes(h)}>
                 {h}
               </Th>
             ))}
@@ -645,11 +663,15 @@ const TablaProductos = memo(function TablaProductos({
                   _hover={{ bg: addBtnHover }}>
                   + Agregar fila
                 </Button>
-                <Text fontSize="9px" color={mutedText} display={{ base: 'none', '2xl': 'block' }}>
+                <Text fontSize="9px" color={mutedText} display={{ base: 'none', xl: 'block' }}>
                   <Kbd fontSize="8px">Tab</Kbd> avanza ·{' '}
-                  <Kbd fontSize="8px">Enter</Kbd> nueva fila ·{' '}
-                  <Kbd fontSize="8px">↑↓</Kbd> filas ·{' '}
+                  <Kbd fontSize="8px">Shift+Tab</Kbd> retrocede ·{' '}
+                  <Kbd fontSize="8px">← →</Kbd> campos ·{' '}
+                  <Kbd fontSize="8px">↑ ↓</Kbd> filas ·{' '}
+                  <Kbd fontSize="8px">Enter</Kbd> siguiente/nueva ·{' '}
                   <Kbd fontSize="8px">Ctrl+D</Kbd> duplica ·{' '}
+                  <Kbd fontSize="8px">Ctrl+Enter</Kbd> nueva fila ·{' '}
+                  <Kbd fontSize="8px">Supr</Kbd> elimina ·{' '}
                   <Kbd fontSize="8px">Ctrl+S</Kbd> guarda
                 </Text>
               </Flex>
@@ -666,9 +688,9 @@ const TablaProductos = memo(function TablaProductos({
 ════════════════════════════════════════════════════════════ */
 function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' }) {
   const esObra = cotConfig.tipo === 'obra';
-  const fs     = size === 'lg' ? '11px' : '10px';
+  const fs = size === 'lg' ? '11px' : '10px';
   const fTotal = size === 'lg' ? '24px' : '18px';
-  const aiu    = aiuConfig || DEFAULT_AIU;
+  const aiu = aiuConfig || DEFAULT_AIU;
   return (
     <Box bg="blackAlpha.300" px={5} py={size === 'lg' ? 4 : 3}>
       <Stack spacing={1.5}>
@@ -765,21 +787,21 @@ function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
           {items.filter(r => r.desc || r.price).length === 0
             ? <Text fontSize="11px" color="whiteAlpha.300" fontStyle="italic">Agrega productos →</Text>
             : items.filter(r => r.desc || r.price).map(r => (
-                <MotionBox key={r.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spr(rm)}>
-                  <Flex justify="space-between" align="flex-start" py={2}
-                    borderBottom="1px solid" borderColor="whiteAlpha.100" gap={2}>
-                    <Box flex={1} minW={0}>
-                      <Text fontSize="12px" color="whiteAlpha.800" noOfLines={1}>{r.desc || 'Sin nombre'}</Text>
-                      <Text fontSize="10px" color="whiteAlpha.400">
-                        {r.qty} {r.unit}{parseFloat(r.disc) > 0 ? ` · ${r.disc}% desc.` : ''}
-                      </Text>
-                    </Box>
-                    <Text fontSize="12px" fontWeight="700" color={FY} whiteSpace="nowrap">
-                      {money(calcRow(r), cotConfig.moneda)}
+              <MotionBox key={r.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spr(rm)}>
+                <Flex justify="space-between" align="flex-start" py={2}
+                  borderBottom="1px solid" borderColor="whiteAlpha.100" gap={2}>
+                  <Box flex={1} minW={0}>
+                    <Text fontSize="12px" color="whiteAlpha.800" noOfLines={1}>{r.desc || 'Sin nombre'}</Text>
+                    <Text fontSize="10px" color="whiteAlpha.400">
+                      {r.qty} {r.unit}{parseFloat(r.disc) > 0 ? ` · ${r.disc}% desc.` : ''}
                     </Text>
-                  </Flex>
-                </MotionBox>
-              ))
+                  </Box>
+                  <Text fontSize="12px" fontWeight="700" color={FY} whiteSpace="nowrap">
+                    {money(calcRow(r), cotConfig.moneda)}
+                  </Text>
+                </Flex>
+              </MotionBox>
+            ))
           }
         </AnimatePresence>
       </Box>
@@ -808,13 +830,13 @@ const STEPS = ['Empresa', 'Cliente', 'Productos', 'Config'];
    PÁGINA PRINCIPAL
 ════════════════════════════════════════════════════════════ */
 export default function CotizadorPage() {
-  const { id }   = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const toast    = useToast();
-  const rm       = usePrefersReducedMotion();
+  const toast = useToast();
+  const rm = usePrefersReducedMotion();
   const cancelRef = useRef();
-  const tableRef  = useRef(null);
-  const saveRef   = useRef(null);
+  const tableRef = useRef(null);
+  const saveRef = useRef(null);
 
   const { getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion } = useCotizaciones();
   const { downloadPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
@@ -822,23 +844,23 @@ export default function CotizadorPage() {
   const importHook = useImport();
 
   /* ── Estado principal ── */
-  const [empresa,       setEmpresaState] = useState(() => loadEmpresaLocal());
-  const [cliente,       setCliente]      = useState(DEFAULT_CLIENTE);
-  const [cotConfig,     setCotConfig]    = useState({ ...DEFAULT_CONFIG });
-  const [aiuConfig,     setAiuConfig]    = useState({ ...DEFAULT_AIU });
-  const [items,         setItems]        = useState([blankRow(), blankRow()]);
-  const [notas,         setNotas]        = useState(DEFAULT_NOTAS);
-  const [isSaving,      setIsSaving]     = useState(false);
-  const [editingId,     setEditingId]    = useState(null);
-  const [isPreview,     setIsPreview]    = useState(false);
-  const [hasChanges,    setHasChanges]   = useState(false);
-  const [descLocal,     setDescLocal]    = useState('0');
-  const [pendingNav,    setPendingNav]   = useState(null);
-  const [mobileStep,    setMobileStep]   = useState(0);
-  const [showTipoModal, setShowTipoModal]= useState(!id);
-  const [showImport,    setShowImport]   = useState(false);
+  const [empresa, setEmpresaState] = useState(() => loadEmpresaLocal());
+  const [cliente, setCliente] = useState(DEFAULT_CLIENTE);
+  const [cotConfig, setCotConfig] = useState({ ...DEFAULT_CONFIG });
+  const [aiuConfig, setAiuConfig] = useState({ ...DEFAULT_AIU });
+  const [items, setItems] = useState([blankRow(), blankRow()]);
+  const [notas, setNotas] = useState(DEFAULT_NOTAS);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [isPreview, setIsPreview] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [descLocal, setDescLocal] = useState('0');
+  const [pendingNav, setPendingNav] = useState(null);
+  const [mobileStep, setMobileStep] = useState(0);
+  const [showTipoModal, setShowTipoModal] = useState(!id);
+  const [showImport, setShowImport] = useState(false);
 
-  const { isOpen: isDelOpen,  onOpen: onDelOpen,  onClose: onDelClose  } = useDisclosure();
+  const { isOpen: isDelOpen, onOpen: onDelOpen, onClose: onDelClose } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
 
   const esObra = cotConfig.tipo === 'obra';
@@ -896,7 +918,7 @@ export default function CotizadorPage() {
   }, []);
 
   const descGNum = useMemo(() => parseFloat(descLocal) || 0, [descLocal]);
-  const totals   = useMemo(() =>
+  const totals = useMemo(() =>
     esObra
       ? calcTotalsObra(items, descGNum, aiuConfig)
       : calcTotals(items, descGNum, cotConfig.iva),
@@ -912,7 +934,7 @@ export default function CotizadorPage() {
     ));
   }, []);
 
-  const removeItem    = useCallback(rid => setItems(p => p.length <= 1 ? p : p.filter(r => r.id !== rid)), []);
+  const removeItem = useCallback(rid => setItems(p => p.length <= 1 ? p : p.filter(r => r.id !== rid)), []);
   const duplicateItem = useCallback(rid => {
     setItems(p => {
       const idx = p.findIndex(r => r.id === rid);
@@ -925,6 +947,7 @@ export default function CotizadorPage() {
   }, []);
   const upItem = useCallback((rid, k, v) => {
     if ((k === 'price' || k === 'disc') && parseFloat(v) < 0) v = '0';
+    if (k === 'disc' && parseFloat(v) > 100) v = '100';
     if (k === 'qty' && parseFloat(v) <= 0) v = '1';
     setItems(p => p.map(r => r.id === rid ? { ...r, [k]: v } : r));
   }, []);
@@ -937,72 +960,172 @@ export default function CotizadorPage() {
   }, []);
 
   /* ════════════════════════════════════════════════
-     ATAJOS DE TECLADO — TABLA DESKTOP
-     Tab/Enter: avanza campos
-     ↑↓: navega filas en la misma columna
-     Ctrl+D: duplica fila
-     Delete en fila vacía: elimina
+     ATAJOS DE TECLADO — TABLA
+     Tab / Shift+Tab : avanza / retrocede campos
+     Enter           : nueva fila desde desc, o avanza campo
+     ↑ / ↓           : sube / baja fila (mismo campo)
+     Ctrl+D          : duplica fila actual
+     Ctrl+Enter      : agrega fila nueva al final
+     Delete (vacía)  : elimina fila vacía
+     Escape          : quita el foco
   ════════════════════════════════════════════════ */
   const handleTableKeyDown = useCallback(e => {
-    const inp = e.target;
-    if (!inp || inp.tagName !== 'INPUT') return;
-    const rowId = inp.dataset.rowId;
-    const field = inp.dataset.field;
-    if (!rowId || !field || field === 'desc') return;
+    const el = e.target;
+    if (!el) return;
+    const rowId = el.dataset?.rowId;
+    const field = el.dataset?.field;
+    if (!rowId || !field) return;
 
-    if (e.key === 'Escape') { inp.blur(); return; }
+    const ORDER = ['desc', 'qty', 'unit', 'price', 'disc'];
+    const fIdx = ORDER.indexOf(field);
 
-    /* ↑↓ — mover entre filas */
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    /* Escape — quitar foco */
+    if (e.key === 'Escape') {
       e.preventDefault();
+      el.blur();
+      return;
+    }
+
+    /* Ctrl+S — guardar (ya manejado globalmente, solo prevenir default aquí) */
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      return;
+    }
+
+    /* Ctrl+D — duplicar fila */
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+      e.preventDefault();
+      e.stopPropagation();
+      duplicateItem(rowId);
+      return;
+    }
+
+    /* Ctrl+Enter — agregar fila nueva al final */
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      const nr = blankRow();
+      setItems(cur => [...cur, nr]);
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        focusInput(tableRef.current, nr.id, 'desc')
+      ));
+      return;
+    }
+
+    /* Delete / Suprimir en cualquier campo — eliminar fila si está vacía,
+       o limpiar el campo actual si tiene contenido */
+    if (e.key === 'Delete') {
+      const row = items.find(r => r.id === rowId);
+      if (!row) return;
+      const isEmpty = !row.desc?.trim() && !String(row.price || '').trim() && String(row.qty) === '1';
+      if (isEmpty && items.length > 1) {
+        // Fila vacía → eliminarla
+        e.preventDefault();
+        e.stopPropagation();
+        setItems(cur => {
+          const idx = cur.findIndex(r => r.id === rowId);
+          const target = cur[Math.max(0, idx - 1)];
+          requestAnimationFrame(() => focusInput(tableRef.current, target.id, field));
+          return cur.filter(r => r.id !== rowId);
+        });
+      } else {
+        // Fila con contenido → limpiar solo ese campo
+        e.preventDefault();
+        e.stopPropagation();
+        upItem(rowId, field, field === 'qty' ? '1' : field === 'disc' ? '0' : '');
+      }
+      return;
+    }
+
+    /* ── Helpers para decidir si el cursor está al borde del texto ── */
+    const isInput = el.tagName === 'INPUT';
+    const selStart = isInput ? el.selectionStart : 0;
+    const selEnd = isInput ? el.selectionEnd : 0;
+    const valLen = isInput ? (el.value || '').length : 0;
+    const atStart = selStart === 0 && selEnd === 0;
+    const atEnd = selStart === valLen && selEnd === valLen;
+    const hasSelect = selStart !== selEnd;
+    // En campos numéricos o select, las flechas siempre navegan
+    const isNumericField = field === 'qty' || field === 'price' || field === 'disc';
+    const isSelectEl = el.tagName === 'SELECT';
+
+    /* ↑ — subir fila: siempre en campos numéricos/select,
+       en desc solo si el cursor está en posición 0 sin selección */
+    if (e.key === 'ArrowUp') {
+      const shouldNav = isSelectEl || isNumericField || (atStart && !hasSelect);
+      if (shouldNav) {
+        e.preventDefault();
+        e.stopPropagation();
+        setItems(cur => {
+          const idx = cur.findIndex(r => r.id === rowId);
+          if (idx > 0) focusInput(tableRef.current, cur[idx - 1].id, field);
+          return cur;
+        });
+        return;
+      }
+    }
+
+    /* ↓ — bajar fila: siempre en campos numéricos/select,
+       en desc solo si el cursor está al final sin selección */
+    if (e.key === 'ArrowDown') {
+      const shouldNav = isSelectEl || isNumericField || (atEnd && !hasSelect);
+      if (shouldNav) {
+        e.preventDefault();
+        e.stopPropagation();
+        setItems(cur => {
+          const idx = cur.findIndex(r => r.id === rowId);
+          if (idx < cur.length - 1) {
+            focusInput(tableRef.current, cur[idx + 1].id, field);
+          } else {
+            const nr = blankRow();
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+              focusInput(tableRef.current, nr.id, field)
+            ));
+            return [...cur, nr];
+          }
+          return cur;
+        });
+        return;
+      }
+    }
+
+    /* ← — campo anterior: solo si el cursor está al inicio sin selección */
+    if (e.key === 'ArrowLeft' && fIdx > 0) {
+      const shouldNav = isSelectEl || isNumericField || (atStart && !hasSelect);
+      if (shouldNav) {
+        e.preventDefault();
+        e.stopPropagation();
+        focusInput(tableRef.current, rowId, ORDER[fIdx - 1]);
+        return;
+      }
+    }
+
+    /* → — campo siguiente: solo si el cursor está al final sin selección */
+    if (e.key === 'ArrowRight' && fIdx >= 0 && fIdx < ORDER.length - 1) {
+      const shouldNav = isSelectEl || isNumericField || (atEnd && !hasSelect);
+      if (shouldNav) {
+        e.preventDefault();
+        e.stopPropagation();
+        focusInput(tableRef.current, rowId, ORDER[fIdx + 1]);
+        return;
+      }
+    }
+
+    /* Enter en desc — avanzar a qty SOLO si el autocomplete no está abierto
+       (el autocomplete maneja su propio Enter internamente) */
+    if (e.key === 'Enter' && field === 'desc') {
+      e.preventDefault();
+      e.stopPropagation();
+      focusInput(tableRef.current, rowId, 'qty');
+      return;
+    }
+
+    /* Enter en último campo (disc) — nueva fila */
+    if (e.key === 'Enter' && field === 'disc') {
+      e.preventDefault();
+      e.stopPropagation();
       setItems(cur => {
         const idx = cur.findIndex(r => r.id === rowId);
-        const tgt = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
-        if (tgt >= 0 && tgt < cur.length)
-          requestAnimationFrame(() => focusInput(tableRef.current, cur[tgt].id, field));
-        return cur;
-      });
-      return;
-    }
-
-    /* Ctrl+D — duplicar */
-    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-      e.preventDefault(); duplicateItem(rowId); return;
-    }
-
-    /* Delete/Backspace en fila vacía — eliminar */
-    if ((e.key === 'Delete' || e.key === 'Backspace') && field === 'qty') {
-      setItems(cur => {
-        const r = cur.find(x => x.id === rowId);
-        if (r && !r.desc && !r.price && cur.length > 1) {
-          const idx = cur.findIndex(x => x.id === rowId);
-          const prev = cur[Math.max(0, idx - 1)];
-          requestAnimationFrame(() => focusInput(tableRef.current, prev.id, 'qty'));
-          return cur.filter(x => x.id !== rowId);
-        }
-        return cur;
-      });
-      return;
-    }
-
-    /* Tab / Enter — avanzar campo */
-    const isTab   = e.key === 'Tab' && !e.shiftKey;
-    const isEnter = e.key === 'Enter';
-    if (!isTab && !isEnter) return;
-
-    const fIdx      = FIELD_ORDER.indexOf(field);
-    const isLast    = fIdx === FIELD_ORDER.length - 1;
-
-    if (isEnter && !isLast) {
-      e.preventDefault();
-      focusInput(tableRef.current, rowId, FIELD_ORDER[fIdx + 1]);
-      return;
-    }
-
-    if ((isTab || isEnter) && isLast) {
-      e.preventDefault();
-      setItems(cur => {
-        const idx  = cur.findIndex(r => r.id === rowId);
         const next = cur[idx + 1];
         if (next) {
           requestAnimationFrame(() => focusInput(tableRef.current, next.id, 'desc'));
@@ -1014,8 +1137,53 @@ export default function CotizadorPage() {
         ));
         return [...cur, nr];
       });
+      return;
     }
-  }, [duplicateItem]);
+
+    /* Enter en campos intermedios — avanzar al siguiente */
+    if (e.key === 'Enter' && fIdx >= 0 && fIdx < ORDER.length - 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      focusInput(tableRef.current, rowId, ORDER[fIdx + 1]);
+      return;
+    }
+
+    /* Tab — navegar campos en orden */
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.shiftKey) {
+        if (fIdx >= 0 && fIdx < ORDER.length - 1) {
+          focusInput(tableRef.current, rowId, ORDER[fIdx + 1]);
+        } else {
+          setItems(cur => {
+            const idx = cur.findIndex(r => r.id === rowId);
+            const next = cur[idx + 1];
+            if (next) {
+              requestAnimationFrame(() => focusInput(tableRef.current, next.id, 'desc'));
+              return cur;
+            }
+            const nr = blankRow();
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+              focusInput(tableRef.current, nr.id, 'desc')
+            ));
+            return [...cur, nr];
+          });
+        }
+      } else {
+        if (fIdx > 0) {
+          focusInput(tableRef.current, rowId, ORDER[fIdx - 1]);
+        } else {
+          setItems(cur => {
+            const idx = cur.findIndex(r => r.id === rowId);
+            const prev = cur[idx - 1];
+            if (prev) requestAnimationFrame(() => focusInput(tableRef.current, prev.id, 'disc'));
+            return cur;
+          });
+        }
+      }
+    }
+  }, [duplicateItem, items, upItem]);
 
   /* ── Guardado ── */
   const autoSave = useCallback(() => {
@@ -1025,7 +1193,7 @@ export default function CotizadorPage() {
       ? calcTotalsObra(items, descG, aiuConfig)
       : calcTotals(items, descG, cfg.iva);
     try { return saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig }); }
-    catch { return null; }
+    catch (err) { console.error('[autoSave]', err); return null; }
   }, [saveCotizacion]);
 
   const handleSave = useCallback(async () => {
@@ -1045,8 +1213,10 @@ export default function CotizadorPage() {
         if (saved?.config) setCotConfig(saved.config);
         setEditingId(savedId);
         navigate(`/cotizador/${savedId}`, { replace: true });
-        toast({ title: 'Cotización creada ✓', description: saved?.numero ? `Número: ${saved.numero}` : '',
-          status: 'success', duration: 4000, position: 'top-right' });
+        toast({
+          title: 'Cotización creada ✓', description: saved?.numero ? `Número: ${saved.numero}` : '',
+          status: 'success', duration: 4000, position: 'top-right'
+        });
       } else {
         toast({ title: 'Guardado ✓', status: 'success', duration: 2000, position: 'top-right' });
       }
@@ -1055,11 +1225,11 @@ export default function CotizadorPage() {
       toast({ title: 'Error al guardar', description: e.message, status: 'error', duration: 4000 });
     } finally { setIsSaving(false); }
   }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, aiuConfig,
-      saveCotizacion, getCotizacion, navigate, toast]);
+    saveCotizacion, getCotizacion, navigate, toast]);
 
   useEffect(() => { saveRef.current = handleSave; }, [handleSave]);
 
-  const handleDelete    = useCallback(() => {
+  const handleDelete = useCallback(() => {
     if (!editingId) return;
     deleteCotizacion(editingId);
     toast({ title: 'Cotización eliminada', status: 'info', duration: 2500, position: 'top-right' });
@@ -1079,21 +1249,7 @@ export default function CotizadorPage() {
     else navigate(path);
   }, [hasChanges, navigate, onExitOpen]);
 
-  const confirmExit = useCallback(() => {
-    onExitClose(); autoSave(); setHasChanges(false);
-    if (pendingNav === 'preview') setIsPreview(true);
-    else if (pendingNav) navigate(pendingNav);
-    setPendingNav(null);
-  }, [pendingNav, autoSave, navigate, onExitClose]);
-
-  const discardAndExit = useCallback(() => {
-    onExitClose(); setHasChanges(false);
-    if (pendingNav === 'preview') setIsPreview(true);
-    else if (pendingNav) navigate(pendingNav);
-    setPendingNav(null);
-  }, [pendingNav, navigate, onExitClose]);
-
-  const handleClear = useCallback(() => {
+    const doClear = useCallback(() => {
     setCliente(DEFAULT_CLIENTE);
     setCotConfig({ ...DEFAULT_CONFIG });
     setAiuConfig({ ...DEFAULT_AIU });
@@ -1107,11 +1263,37 @@ export default function CotizadorPage() {
     navigate('/cotizador', { replace: true });
   }, [navigate]);
 
+  const confirmExit = useCallback(() => {
+    onExitClose(); autoSave(); setHasChanges(false);
+    if (pendingNav === '__clear__') { doClear(); }
+    else if (pendingNav === 'preview') setIsPreview(true);
+    else if (pendingNav) navigate(pendingNav);
+    setPendingNav(null);
+  }, [pendingNav, autoSave, navigate, onExitClose, doClear]);
+
+  const discardAndExit = useCallback(() => {
+    onExitClose(); setHasChanges(false);
+    if (pendingNav === '__clear__') { doClear(); }
+    else if (pendingNav === 'preview') setIsPreview(true);
+    else if (pendingNav) navigate(pendingNav);
+    setPendingNav(null);
+  }, [pendingNav, navigate, onExitClose, doClear]);
+
+  const handleClear = useCallback(() => {
+    if (hasChanges) { setPendingNav('__clear__'); onExitOpen(); }
+    else doClear();
+  }, [hasChanges, doClear, onExitOpen]);
+
   const handlePDF = useCallback(async () => {
-    const ok = await downloadPDF(`${cotConfig.numero || 'cotizacion'}_FerreExpress`);
+    if (!editingId) {
+      toast({ title: 'Guarda primero la cotización', description: 'El PDF necesita un número de cotización asignado.', status: 'warning', duration: 4000, position: 'top' });
+      return;
+    }
+    const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024FñÑ\s]/g, '').trim().replace(/\s+/g, '_');
+    const ok = await downloadPDF(`${cn}_${cotConfig.numero || 'SinNumero'}`);
     if (ok) toast({ title: 'PDF descargado ✓', status: 'success', duration: 2500, position: 'top-right' });
-    else    toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
-  }, [cotConfig.numero, downloadPDF, toast]);
+    else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
+  }, [editingId, cotConfig.numero, cliente.nombre, downloadPDF, toast]);
 
   /* ── Confirmar importación ── */
   const handleImportConfirm = useCallback(({ items: imp, cliente: cli, cotConfig: cfg, notas: n }) => {
@@ -1120,22 +1302,24 @@ export default function CotizadorPage() {
     if (cfg?.numero && !cotConfig.numero) setCotConfig(c => ({ ...c, ...cfg }));
     if (n) setNotas(n);
     setHasChanges(true);
-    toast({ title: `${imp.filter(i => i.desc).length} productos importados ✓`,
-      status: 'success', duration: 3000, position: 'top-right' });
+    toast({
+      title: `${imp.filter(i => i.desc).length} productos importados ✓`,
+      status: 'success', duration: 3000, position: 'top-right'
+    });
   }, [cotConfig.numero, toast]);
 
   /* ── Colores ── */
-  const bg        = useColorModeValue('gray.50', 'gray.900');
-  const border    = useColorModeValue('gray.200', 'whiteAlpha.200');
-  const mutedL    = useColorModeValue('gray.400', 'gray.600');
-  const inputBg   = useColorModeValue('white', 'gray.700');
-  const barBg     = useColorModeValue('white', 'gray.900');
-  const tableBg   = useColorModeValue('white', 'gray.800');
-  const stripeBg  = useColorModeValue('gray.50', 'gray.750');
+  const bg = useColorModeValue('gray.50', 'gray.900');
+  const border = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const mutedL = useColorModeValue('gray.400', 'gray.600');
+  const inputBg = useColorModeValue('white', 'gray.700');
+  const barBg = useColorModeValue('white', 'gray.900');
+  const tableBg = useColorModeValue('white', 'gray.800');
+  const stripeBg = useColorModeValue('gray.50', 'gray.750');
   const tabActive = useColorModeValue('gray.800', 'white');
   const totalColor = useColorModeValue('gray.700', 'gray.300');
 
-  const ivaRate  = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
+  const ivaRate = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
   const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, aiu: aiuConfig };
   const tablaProps = {
     items, tableRef, handleTableKeyDown, esObra,
@@ -1143,10 +1327,10 @@ export default function CotizadorPage() {
     ivaRate, cotConfig, rm, upItem, removeItem, duplicateItem,
     handleAcceptSugerencia, getSugerencias, addItem,
   };
-  const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg };
+  const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg };
-  const panelCotizProps   = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg };
-  const mobileCardProps   = { upItem, removeItem, duplicateItem, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia };
+  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg };
+  const mobileCardProps = { upItem, removeItem, duplicateItem, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia };
 
   /* ════════════════════════════════════════════════
      VISTA PREVIA PDF
@@ -1200,7 +1384,7 @@ export default function CotizadorPage() {
       </Box>
 
       {/* Modales */}
-      <ModalTipo isOpen={showTipoModal} onSelect={tipo => {
+      <ModalTipo isOpen={showTipoModal} onCancel={editingId ? () => setShowTipoModal(false) : undefined} onSelect={tipo => {
         setCotConfig(p => ({ ...p, tipo, formaPago: tipo === 'obra' ? 'Anticipo + Actas' : 'Efectivo' }));
         setNotas(tipo === 'obra' ? DEFAULT_NOTAS_OBRA : DEFAULT_NOTAS);
         setShowTipoModal(false);
@@ -1298,7 +1482,7 @@ export default function CotizadorPage() {
           <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column">
             <Tabs variant="unstyled" size="sm" display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{l:'Empresa',i:FiHome},{l:'Cliente',i:FiUser},{l:'Config',i:FiFileText}].map(({l,i:Ic}) => (
+                {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
@@ -1308,8 +1492,8 @@ export default function CotizadorPage() {
               </TabList>
               <TabPanels flex={1} overflow="hidden">
                 {[<PanelEmpresa {...panelEmpresaProps} />,
-                  <PanelCliente {...panelClienteProps} />,
-                  <PanelCotizacion {...panelCotizProps} />].map((panel, i) => (
+                <PanelCliente {...panelClienteProps} />,
+                <PanelCotizacion {...panelCotizProps} />].map((panel, i) => (
                   <TabPanel key={i} h="full" overflowY="auto" p={0}
                     sx={{ '&::-webkit-scrollbar': { w: '4px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' } }}>
                     {panel}
@@ -1353,7 +1537,7 @@ export default function CotizadorPage() {
           <GlassCard rounded="xl" overflow="hidden">
             <Tabs variant="unstyled" size="sm">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{l:'Empresa',i:FiHome},{l:'Cliente',i:FiUser},{l:'Config',i:FiFileText}].map(({l,i:Ic}) => (
+                {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>

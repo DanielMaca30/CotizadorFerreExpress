@@ -1,110 +1,65 @@
 /**
- * AutocompleteInput.jsx  v3
- * ─────────────────────────────────────────────────────────────
- * FIX PRINCIPAL: El dropdown se renderiza via createPortal()
- * directamente en document.body, completamente fuera del árbol
- * de la tabla. Ningún overflow:hidden o z-index puede taparlo.
+ * AutocompleteInput.jsx  v4
  *
- * La posición se calcula con getBoundingClientRect() del input
- * en cada render y se actualiza con scroll/resize.
+ * Comportamiento de teclado (igual a VS Code / Google Sheets):
  *
- * FIXES anteriores mantenidos:
- *  - Solo abre con foco activo (hasFocus)
- *  - Tab sin highlight → fluye normal entre campos
- *  - Tab con highlight → acepta y mueve foco a Cantidad
- *  - Diseño sutil y compacto
+ * MODO DROPDOWN ABIERTO:
+ *   ↑ / ↓     → navegar sugerencias
+ *   Enter     → aceptar sugerencia seleccionada (o cerrar si ninguna)
+ *   Tab       → aceptar sugerencia seleccionada (o cerrar y navegar tabla)
+ *   Escape    → cerrar dropdown, mantener texto, foco sigue en el input
+ *   Cualquier otra tecla → fluye normal al input (escribir, borrar, etc.)
+ *
+ * MODO DROPDOWN CERRADO:
+ *   Todas las teclas fluyen al container (tabla) para navegación normal.
+ *   El dropdown NO interfiere con nada.
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Box, Input, Text, useColorModeValue } from "@chakra-ui/react";
 
-/* ── Componente del dropdown renderizado en body ── */
-function DropdownPortal({
-  sugerencias,
-  highlighted,
-  anchorRef,
-  onAccept,
-  onHighlight,
-  bg,
-  hoverBg,
-  textC,
-  subC,
-  borderC,
-  hintBg,
-  FY,
-  query,
-}) {
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 200 });
+/* ── Dropdown portal ── */
+function DropdownPortal({ sugerencias, highlighted, anchorRef, onAccept, onHighlight, bg, hoverBg, textC, subC, borderC, hintBg, FY, query }) {
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 220 });
 
-  /* Calcular posición relativa al viewport */
   useEffect(() => {
     const update = () => {
       if (!anchorRef.current) return;
-      const rect = anchorRef.current.getBoundingClientRect();
-      setPos({
-        top:   rect.bottom + window.scrollY + 2,
-        left:  rect.left   + window.scrollX,
-        width: Math.max(rect.width, 220),
-      });
+      const r = anchorRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + window.scrollY + 2, left: r.left + window.scrollX, width: Math.max(r.width, 220) });
     };
     update();
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
+    return () => { window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
   }, [anchorRef]);
 
   return createPortal(
-    <Box
-      position="absolute"
-      top={`${pos.top}px`}
-      left={`${pos.left}px`}
-      width={`${pos.width}px`}
-      zIndex={99999}
-      bg={bg}
-      border="1px solid"
-      borderColor={borderC}
-      rounded="md"
-      boxShadow="0 4px 16px rgba(0,0,0,0.12)"
-      overflow="hidden"
-      minW="200px"
-      maxW="320px"
-    >
+    <Box position="absolute" top={`${pos.top}px`} left={`${pos.left}px`} width={`${pos.width}px`}
+      zIndex={99999} bg={bg} border="1px solid" borderColor={borderC} rounded="md"
+      boxShadow="0 4px 16px rgba(0,0,0,0.12)" overflow="hidden" minW="200px" maxW="320px">
       {sugerencias.map((sug, idx) => (
-        <Box
-          key={sug.desc}
-          px={2.5}
-          py={1.5}
-          cursor="pointer"
+        <Box key={sug.desc} px={2.5} py={1.5} cursor="pointer"
           bg={idx === highlighted ? hoverBg : "transparent"}
           borderBottom={idx < sugerencias.length - 1 ? "1px solid" : "none"}
           borderColor={borderC}
           onMouseDown={(e) => { e.preventDefault(); onAccept(sug); }}
           onMouseEnter={() => onHighlight(idx)}
-          onMouseLeave={() => onHighlight(-1)}
-        >
+          onMouseLeave={() => onHighlight(-1)}>
           <Text fontSize="11px" fontWeight="600" color={textC} noOfLines={1}>
             <HighlightMatch text={sug.desc} query={query} accent={FY} />
           </Text>
           <Text fontSize="9.5px" color={subC}>
-            {sug.price
-              ? `$\u00a0${Number(sug.price).toLocaleString("es-CO")}`
-              : "Sin precio"}
+            {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
             {sug.unit ? ` · ${sug.unit}` : ""}
-            {sug.count > 1 && (
-              <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>
-            )}
+            {sug.count > 1 && <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>}
           </Text>
         </Box>
       ))}
-
-      {/* Hint minimalista */}
       <Box px={2.5} py={1} borderTop="1px solid" borderColor={borderC} bg={hintBg}>
         <Text fontSize="8.5px" color={subC} letterSpacing="0.04em">
-          ↑↓ navegar · Tab/Enter aceptar · Esc cerrar
+          ↑↓ navegar · Enter/Tab aceptar · Esc cerrar
         </Text>
       </Box>
     </Box>,
@@ -113,16 +68,7 @@ function DropdownPortal({
 }
 
 /* ── Componente principal ── */
-export default function AutocompleteInput({
-  value,
-  onChange,
-  onAccept,
-  getSugerencias,
-  dataRowId,
-  inputBg,
-  FY = "#F9BF20",
-  ...rest
-}) {
+export default function AutocompleteInput({ value, onChange, onAccept, getSugerencias, dataRowId, inputBg, FY = "#F9BF20", ...rest }) {
   const [sugerencias, setSugerencias] = useState([]);
   const [highlighted, setHighlighted] = useState(-1);
   const [open, setOpen]               = useState(false);
@@ -131,7 +77,6 @@ export default function AutocompleteInput({
   const inputRef   = useRef(null);
   const closeTimer = useRef(null);
 
-  /* Colores */
   const bg      = useColorModeValue("white", "#2d3748");
   const hoverBg = useColorModeValue("#fffbeb", "rgba(255,255,255,0.08)");
   const textC   = useColorModeValue("gray.700", "gray.200");
@@ -139,7 +84,7 @@ export default function AutocompleteInput({
   const borderC = useColorModeValue("gray.200", "rgba(255,255,255,0.15)");
   const hintBg  = useColorModeValue("gray.50", "rgba(0,0,0,0.2)");
 
-  /* Actualizar sugerencias — SOLO con foco activo */
+  /* Actualizar sugerencias */
   useEffect(() => {
     if (!hasFocus) return;
     const results = getSugerencias(value);
@@ -148,7 +93,6 @@ export default function AutocompleteInput({
     setOpen(results.length > 0 && (value || "").trim().length > 0);
   }, [value, hasFocus, getSugerencias]);
 
-  /* Aceptar sugerencia */
   const aceptar = useCallback((sug) => {
     clearTimeout(closeTimer.current);
     setOpen(false);
@@ -157,45 +101,76 @@ export default function AutocompleteInput({
     onAccept({ desc: sug.desc, price: sug.price, unit: sug.unit });
   }, [onAccept]);
 
-  /* Teclado */
   const handleKeyDown = useCallback((e) => {
+    /* ══ DROPDOWN ABIERTO: interceptar solo las teclas de navegación ══ */
+    if (open && sugerencias.length > 0) {
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation(); // no navegar fila
+        setHighlighted(h => Math.min(h + 1, sugerencias.length - 1));
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation(); // no navegar fila
+        setHighlighted(h => Math.max(h - 1, 0));
+        return;
+      }
+
+      if (e.key === "Enter") {
+        if (highlighted >= 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          aceptar(sugerencias[highlighted]);
+        } else {
+          // Enter sin selección → cerrar dropdown, dejar que container maneje
+          clearTimeout(closeTimer.current);
+          setOpen(false);
+          setHighlighted(-1);
+        }
+        return;
+      }
+
+      if (e.key === "Tab") {
+        clearTimeout(closeTimer.current);
+        setHasFocus(false);
+        setOpen(false);
+        if (highlighted >= 0) {
+          // Tab con sugerencia → aceptar y NO navegar al siguiente campo
+          e.preventDefault();
+          e.stopPropagation();
+          aceptar(sugerencias[highlighted]);
+        }
+        // Tab sin sugerencia → fluye al container para navegación
+        setHighlighted(-1);
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+        setHighlighted(-1);
+        // El foco queda en el input — el usuario puede seguir escribiendo
+        return;
+      }
+
+      // Cualquier otra tecla con dropdown abierto → fluye normal al input
+      // (el usuario escribe, borra, etc. — el dropdown se actualizará solo)
+      return;
+    }
+
+    /* ══ DROPDOWN CERRADO: solo manejar Escape para limpiar estado ══ */
     if (e.key === "Escape") {
       setOpen(false);
       setHighlighted(-1);
-      return;
+      // NO stopPropagation → dejar que Escape llegue al container si hace falta
     }
-    if (!open || sugerencias.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlighted((h) => Math.min(h + 1, sugerencias.length - 1));
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlighted((h) => Math.max(h - 1, 0));
-      return;
-    }
-    if (e.key === "Tab") {
-      if (highlighted >= 0) {
-        e.preventDefault();
-        aceptar(sugerencias[highlighted]);
-      }
-      setOpen(false);
-      return;
-    }
-    if (e.key === "Enter") {
-      if (highlighted >= 0) {
-        e.preventDefault();
-        aceptar(sugerencias[highlighted]);
-      } else {
-        setOpen(false);
-      }
-      return;
-    }
+    // Todo lo demás (Tab, flechas, Enter, etc.) fluye al container sin tocar
   }, [open, sugerencias, highlighted, aceptar]);
 
-  /* Foco */
   const handleFocus = useCallback(() => {
     clearTimeout(closeTimer.current);
     setHasFocus(true);
@@ -205,7 +180,6 @@ export default function AutocompleteInput({
     }
   }, [value, getSugerencias]);
 
-  /* Blur — delay para permitir mouseDown en sugerencia */
   const handleBlur = useCallback(() => {
     closeTimer.current = setTimeout(() => {
       setHasFocus(false);
@@ -239,41 +213,27 @@ export default function AutocompleteInput({
         _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }}
         {...rest}
       />
-
-      {/* Portal: renderiza el dropdown directamente en body */}
       {open && sugerencias.length > 0 && (
         <DropdownPortal
-          sugerencias={sugerencias}
-          highlighted={highlighted}
-          anchorRef={inputRef}
-          onAccept={aceptar}
-          onHighlight={setHighlighted}
-          bg={bg}
-          hoverBg={hoverBg}
-          textC={textC}
-          subC={subC}
-          borderC={borderC}
-          hintBg={hintBg}
-          FY={FY}
-          query={value}
+          sugerencias={sugerencias} highlighted={highlighted}
+          anchorRef={inputRef} onAccept={aceptar} onHighlight={setHighlighted}
+          bg={bg} hoverBg={hoverBg} textC={textC} subC={subC}
+          borderC={borderC} hintBg={hintBg} FY={FY} query={value}
         />
       )}
     </>
   );
 }
 
-/* Resalta el fragmento que coincide */
 function HighlightMatch({ text, query, accent }) {
   if (!query || !query.trim()) return <>{text}</>;
-  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const idx  = norm(text).indexOf(norm(query.trim()));
   if (idx === -1) return <>{text}</>;
   return (
     <>
       {text.slice(0, idx)}
-      <Text as="span" color={accent} fontWeight="800">
-        {text.slice(idx, idx + query.trim().length)}
-      </Text>
+      <Text as="span" color={accent} fontWeight="800">{text.slice(idx, idx + query.trim().length)}</Text>
       {text.slice(idx + query.trim().length)}
     </>
   );
