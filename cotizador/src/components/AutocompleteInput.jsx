@@ -15,7 +15,7 @@
  *   El dropdown NO interfiere con nada.
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Box, Input, Text, useColorModeValue } from "@chakra-ui/react";
 
@@ -51,7 +51,7 @@ function DropdownPortal({ sugerencias, highlighted, anchorRef, onAccept, onHighl
             <HighlightMatch text={sug.desc} query={query} accent={FY} />
           </Text>
           <Text fontSize="9.5px" color={subC}>
-            {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
+            {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
             {sug.unit ? ` · ${sug.unit}` : ""}
             {sug.count > 1 && <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>}
           </Text>
@@ -69,9 +69,8 @@ function DropdownPortal({ sugerencias, highlighted, anchorRef, onAccept, onHighl
 
 /* ── Componente principal ── */
 export default function AutocompleteInput({ value, onChange, onAccept, getSugerencias, dataRowId, inputBg, FY = "#F9BF20", ...rest }) {
-  const [sugerencias, setSugerencias] = useState([]);
   const [highlighted, setHighlighted] = useState(-1);
-  const [open, setOpen]               = useState(false);
+  const [closed, setClosed]           = useState(false); // el usuario cerró con Esc/Enter/Tab
   const [hasFocus, setHasFocus]       = useState(false);
 
   const inputRef   = useRef(null);
@@ -84,20 +83,17 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
   const borderC = useColorModeValue("gray.200", "rgba(255,255,255,0.15)");
   const hintBg  = useColorModeValue("gray.50", "rgba(0,0,0,0.2)");
 
-  /* Actualizar sugerencias */
-  useEffect(() => {
-    if (!hasFocus) return;
-    const results = getSugerencias(value);
-    setSugerencias(results);
-    setHighlighted(-1);
-    setOpen(results.length > 0 && (value || "").trim().length > 0);
-  }, [value, hasFocus, getSugerencias]);
+  /* Sugerencias DERIVADAS (sin setState en efecto → un render menos por tecla) */
+  const sugerencias = useMemo(
+    () => (hasFocus && (value || "").trim().length > 0 ? getSugerencias(value) : []),
+    [hasFocus, value, getSugerencias]
+  );
+  const open = sugerencias.length > 0 && !closed;
 
   const aceptar = useCallback((sug) => {
     clearTimeout(closeTimer.current);
-    setOpen(false);
+    setClosed(true);
     setHighlighted(-1);
-    setSugerencias([]);
     onAccept({ desc: sug.desc, price: sug.price, unit: sug.unit });
   }, [onAccept]);
 
@@ -127,7 +123,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
         } else {
           // Enter sin selección → cerrar dropdown, dejar que container maneje
           clearTimeout(closeTimer.current);
-          setOpen(false);
+          setClosed(true);
           setHighlighted(-1);
         }
         return;
@@ -136,7 +132,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
       if (e.key === "Tab") {
         clearTimeout(closeTimer.current);
         setHasFocus(false);
-        setOpen(false);
+        setClosed(true);
         if (highlighted >= 0) {
           // Tab con sugerencia → aceptar y NO navegar al siguiente campo
           e.preventDefault();
@@ -151,7 +147,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        setOpen(false);
+        setClosed(true);
         setHighlighted(-1);
         // El foco queda en el input — el usuario puede seguir escribiendo
         return;
@@ -164,7 +160,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
 
     /* ══ DROPDOWN CERRADO: solo manejar Escape para limpiar estado ══ */
     if (e.key === "Escape") {
-      setOpen(false);
+      setClosed(true);
       setHighlighted(-1);
       // NO stopPropagation → dejar que Escape llegue al container si hace falta
     }
@@ -174,16 +170,13 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
   const handleFocus = useCallback(() => {
     clearTimeout(closeTimer.current);
     setHasFocus(true);
-    if ((value || "").trim().length > 0) {
-      const results = getSugerencias(value);
-      if (results.length > 0) { setSugerencias(results); setOpen(true); }
-    }
-  }, [value, getSugerencias]);
+    setClosed(false); // al enfocar, permitir que el dropdown se muestre
+  }, []);
 
   const handleBlur = useCallback(() => {
     closeTimer.current = setTimeout(() => {
       setHasFocus(false);
-      setOpen(false);
+      setClosed(true);
       setHighlighted(-1);
     }, 160);
   }, []);
@@ -194,7 +187,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
         ref={inputRef}
         variant="unstyled"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { setClosed(false); setHighlighted(-1); onChange(e.target.value); }}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}

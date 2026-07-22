@@ -21,7 +21,7 @@ import {
   FiAlertCircle, FiRefreshCw, FiPlus, FiTrash2,
   FiChevronDown, FiChevronUp,
 } from 'react-icons/fi';
-import { money, formatPriceCO, parsePriceCO, uid, blankRow, UNITS } from '../utils';
+import { money, formatPriceCO, parsePriceCO, blankRow, UNITS } from '../utils';
 
 const FY   = '#F9BF20';
 const DARK = '#3A3A38';
@@ -31,13 +31,14 @@ const FILE_ICONS = { pdf: FiFileText, image: FiImage, text: FiFileText };
 const FILE_LABELS = { pdf: 'PDF', image: 'Imagen', text: 'CSV / Texto' };
 
 /* ── Fila de ítem editable en la preview ── */
-function PreviewRow({ item, index, onChange, onRemove, moneda, bg }) {
+function PreviewRow({ item, index, onChange, onRemove, moneda }) {
   const [priceDisplay, setPriceDisplay] = useState(() => formatPriceCO(item.price));
   const mutedC = useColorModeValue('gray.500', 'gray.400');
+  const rowBorder = useColorModeValue('gray.100', 'whiteAlpha.100');
 
   return (
     <Flex gap={1} align="center" py={1.5}
-      borderBottom="1px solid" borderColor={useColorModeValue('gray.100', 'whiteAlpha.100')}>
+      borderBottom="1px solid" borderColor={rowBorder}>
       <Text fontSize="10px" color={mutedC} w="18px" flexShrink={0} textAlign="center">{index + 1}</Text>
 
       <Input size="xs" variant="flushed" flex={1} value={item.desc}
@@ -97,22 +98,28 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
   const [editItems,  setEditItems]  = useState(null);
   const [editClient, setEditClient] = useState(null);
 
-  // Sincronizar edición cuando preview cambia
-  const prevPhase = useRef('idle');
-  if (phase === 'preview' && prevPhase.current !== 'preview') {
-    setEditItems(preview?.items ? preview.items.map(i => ({ ...i })) : []);
-    setEditClient(preview?.cliente ? { ...preview.cliente } : {});
+  // Sincronizar edición al entrar en la fase "preview" (patrón valor-previo-en-estado)
+  const [seenPhase, setSeenPhase] = useState('idle');
+  if (phase !== seenPhase) {
+    setSeenPhase(phase);
+    if (phase === 'preview') {
+      setEditItems(preview?.items ? preview.items.map(i => ({ ...i })) : []);
+      setEditClient(preview?.cliente ? { ...preview.cliente } : {});
+    }
   }
-  prevPhase.current = phase;
 
-  /* Colores */
+  /* Colores (todos hoisteados — nunca condicionales) */
   const bg        = useColorModeValue('white', 'gray.800');
   const border    = useColorModeValue('gray.200', 'whiteAlpha.200');
   const dropBg    = useColorModeValue('gray.50', 'gray.700');
   const dropActive = useColorModeValue('yellow.50', 'yellow.900');
   const mutedC    = useColorModeValue('gray.500', 'gray.400');
   const headerBg  = useColorModeValue('gray.50', 'gray.750');
-  const rowBg     = useColorModeValue('white', 'gray.800');
+  const tipBg     = useColorModeValue('blue.50', 'blue.900');
+  const tipBorder = useColorModeValue('blue.200', 'blue.700');
+  const tipText   = useColorModeValue('blue.700', 'blue.200');
+  const trackBg   = useColorModeValue('gray.100', 'gray.700');
+  const addHover  = useColorModeValue('yellow.50', 'whiteAlpha.100');
 
   /* ── Drag & Drop ── */
   const handleDrop = useCallback(e => {
@@ -231,9 +238,9 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
               </Box>
 
               {/* Tip */}
-              <Box mt={4} p={3} rounded="lg" bg={useColorModeValue('blue.50', 'blue.900')}
-                border="1px solid" borderColor={useColorModeValue('blue.200', 'blue.700')}>
-                <Text fontSize="11px" color={useColorModeValue('blue.700', 'blue.200')}>
+              <Box mt={4} p={3} rounded="lg" bg={tipBg}
+                border="1px solid" borderColor={tipBorder}>
+                <Text fontSize="11px" color={tipText}>
                   {import.meta.env.VITE_MISTRAL_API_KEY
                     ? <><strong>Extraccion con IA activa:</strong> Detecta automaticamente productos, precios y datos del cliente desde cualquier cotizacion.</>
                     : <><strong>Tip:</strong> La precision es mayor con cotizaciones en PDF de texto. Para imagenes o PDFs escaneados, los resultados pueden variar — revisa los datos antes de confirmar.</>
@@ -259,7 +266,7 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                   <Text fontSize="13px" fontWeight="700" mb={1}>{fileName}</Text>
                   <Progress value={progress} size="sm" rounded="full"
                     sx={{ '& > div': { background: FY } }}
-                    bg={useColorModeValue('gray.100', 'gray.700')} />
+                    bg={trackBg} />
                   <Text fontSize="11px" color={mutedC} mt={1}>
                     {progress < 20 ? 'Iniciando...' :
                      progress < 40 ? (import.meta.env.VITE_MISTRAL_API_KEY ? 'Enviando a Mistral AI...' : fileType === 'image' ? 'Reconociendo texto con OCR...' : 'Extrayendo texto del PDF...') :
@@ -414,14 +421,13 @@ export default function ImportModal({ isOpen, onClose, importHook, onConfirm }) 
                     onChange={(k, v) => updateItem(item.id, k, v)}
                     onRemove={() => removeItem(item.id)}
                     moneda="COP"
-                    bg={rowBg}
                   />
                 ))}
 
                 {/* Agregar fila */}
                 <Button size="xs" variant="ghost" leftIcon={<FiPlus size={11} />}
                   color={FY} mt={2} onClick={addItem}
-                  _hover={{ bg: useColorModeValue('yellow.50', 'whiteAlpha.100') }}>
+                  _hover={{ bg: addHover }}>
                   Agregar producto
                 </Button>
 

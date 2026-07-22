@@ -361,9 +361,9 @@ function parseQuoteText(raw) {
     const bl = lines.slice(si + 1, si + 10);
     if (bl[0] && !/NIT|Tel|Ciudad/i.test(bl[0])) { result.cliente.nombre = bl[0]; result.confidence += 10; }
     for (const l of bl) {
-      const nm2 = l.match(/NIT\s+([\d.\-]+)/i); if (nm2) result.cliente.nit = nm2[1];
-      const tm  = l.match(/Tel[.:\s]+([\+\d\s\-()]{6,})/i); if (tm) result.cliente.tel = tm[1].trim();
-      const em  = l.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/); if (em) result.cliente.correo = em[1];
+      const nm2 = l.match(/NIT\s+([\d.-]+)/i); if (nm2) result.cliente.nit = nm2[1];
+      const tm  = l.match(/Tel[.:\s]+([+\d\s()-]{6,})/i); if (tm) result.cliente.tel = tm[1].trim();
+      const em  = l.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/); if (em) result.cliente.correo = em[1];
     }
   }
 

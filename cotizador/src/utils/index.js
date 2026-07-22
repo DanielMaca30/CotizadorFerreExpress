@@ -86,7 +86,16 @@ export const blankRow = () => ({
   unit:  "Und",
   price: "",
   disc:  0,
+  sinIva: false,        // true = servicio excluido de IVA (transporte)
+  sinIvaManual: false,  // true = el usuario lo fijó a mano (no auto-detectar)
 });
+
+/* ── Detección de transporte (único servicio excluido de IVA) ── */
+
+const TRANSPORTE_RE = /(transporte|flete|acarreo|env[ií]o|domicilio)/i;
+
+/** ¿La descripción corresponde a transporte? (servicio excluido de IVA) */
+export const esTransporte = (desc) => TRANSPORTE_RE.test(String(desc || ""));
 
 /* ── Cálculos por línea ──────────────────────────────────────── */
 
@@ -116,8 +125,9 @@ export const calcRow = (r) => {
 export const calcTotals = (items, descG, iva) => {
   const rate = (parseFloat(iva) || 0) / 100;
 
-  let totalBruto = 0;
+  let totalBruto = 0; // base gravada (sin IVA) de productos que cobran IVA
   let ivaTotal   = 0;
+  let exento     = 0; // servicios excluidos de IVA (transporte) — precio pleno
 
   items.forEach((r) => {
     const p      = parseFloat(r.price) || 0;
@@ -125,16 +135,21 @@ export const calcTotals = (items, descG, iva) => {
     const disc   = parseFloat(r.disc)  || 0;
     const factor = 1 - disc / 100;
 
-    totalBruto += precioBase(p, rate) * qty * factor;
-    ivaTotal   += ivaUnidad(p, rate)  * qty * factor;
+    if (r.sinIva) {
+      exento += p * qty * factor;
+    } else {
+      totalBruto += precioBase(p, rate) * qty * factor;
+      ivaTotal   += ivaUnidad(p, rate)  * qty * factor;
+    }
   });
 
-  const totalConIva = totalBruto + ivaTotal;
+  const totalConIva = totalBruto + ivaTotal + exento;
   const descGAmt    = totalConIva * ((parseFloat(descG) || 0) / 100);
   const totalPagar  = totalConIva - descGAmt;
 
   return {
     totalBruto,
+    exento,
     ivaTotal,
     descGAmt,
     totalPagar,

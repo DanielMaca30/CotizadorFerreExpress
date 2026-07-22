@@ -31,8 +31,9 @@ import {
   FiList, FiCopy, FiHome, FiUser, FiFileText,
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
-  FiEdit2, FiX, FiMaximize2,
+  FiEdit2, FiX, FiMaximize2, FiTruck,
 } from 'react-icons/fi';
+import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCotizaciones } from '../hooks/useCotizaciones';
 import { usePDF } from '../hooks/usePDF';
@@ -43,11 +44,18 @@ import DocContent from '../components/DocContent';
 import ImportModal from '../components/ImportModal';
 import {
   blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
-  precioBase, ivaUnidad, formatPriceCO, parsePriceCO,
+  precioBase, ivaUnidad, formatPriceCO, parsePriceCO, esTransporte,
   UNITS, FORMAS_PAGO, FORMAS_PAGO_OBRA, IVA_OPTS, MONEDAS,
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
 } from '../utils';
+import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
+
+/* ── Borrador local (protección contra pérdida de trabajo) ── */
+const DRAFT_KEY = 'ferreexpress_borrador_v1';
+const saveDraft = (d) => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* lleno o bloqueado */ } };
+const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; } };
+const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ } };
 
 /* ── Colores de marca ── */
 const FY = '#F9BF20';
@@ -89,10 +97,10 @@ function FL({ children, required, title }) {
 /* Logo con fallback */
 function AppLogo({ src, h = '32px' }) {
   const [phase, setPhase] = useState(() => (src ? 0 : 1));
-  const prevRef = useRef(src);
-  if (prevRef.current !== src) {
-    prevRef.current = src;
-    if (phase !== (src ? 0 : 1)) setPhase(src ? 0 : 1);
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (prevSrc !== src) {
+    setPrevSrc(src);
+    setPhase(src ? 0 : 1);
   }
   if (phase === 0 && src)
     return <Box as="img" src={src} h={h} objectFit="contain" onError={() => setPhase(1)} />;
@@ -111,10 +119,10 @@ function AppLogo({ src, h = '32px' }) {
 function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px', ...rest }) {
   const [display, setDisplay] = useState(() => formatPriceCO(value));
 
-  // Sincronizar si value cambia desde afuera
-  const lastRaw = useRef(value);
-  if (lastRaw.current !== value) {
-    lastRaw.current = value;
+  // Sincronizar si value cambia desde afuera (patrón "valor previo en estado")
+  const [lastValue, setLastValue] = useState(value);
+  if (lastValue !== value) {
+    setLastValue(value);
     const curRaw = parsePriceCO(display);
     if (curRaw !== String(value ?? '')) setDisplay(formatPriceCO(value));
   }
@@ -147,7 +155,7 @@ function focusInput(container, rowId, field) {
   const el = document.querySelector(`[data-row-id="${rowId}"][data-field="${field}"]`);
   if (!el) return;
   el.focus();
-  if (el.tagName === 'INPUT') { try { el.select(); } catch (_) { } }
+  if (el.tagName === 'INPUT') { try { el.select(); } catch { /* algunos input no soportan select */ } }
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -206,8 +214,6 @@ function ModalTipo({ isOpen, onSelect, onCancel }) {
 ════════════════════════════════════════════════════════════ */
 const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, mutedL, inputBg, onLogoError }) {
   const logoRef = useRef();
-  const logoToastRef = useRef(onLogoError);
-  logoToastRef.current = onLogoError;
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const E = k => ({ value: empresa[k] ?? '', onChange: e => setEmpresa(p => ({ ...p, [k]: e.target.value })) });
   return (
@@ -216,7 +222,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
         onChange={e => {
           const file = e.target.files?.[0];
           if (!file) return;
-          if (file.size > 2 * 1024 * 1024) { logoToastRef.current?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, position: 'top' }); return; }
+          if (file.size > 2 * 1024 * 1024) { onLogoError?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, position: 'top' }); return; }
           const reader = new FileReader();
           reader.onload = ev => setEmpresa(p => ({ ...p, logo: ev.target.result }));
           reader.readAsDataURL(file);
@@ -271,13 +277,15 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg }
 
 const PanelCotizacion = memo(function PanelCotizacion({
   cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas,
-  aiuConfig, setAiuConfig, inputBg,
+  aiuConfig, setAiuConfig, inputBg, onChangeTipo,
 }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const esObra = cotConfig.tipo === 'obra';
   const numBg = useColorModeValue('gray.100', 'gray.700');
   const numBc = useColorModeValue('gray.200', 'gray.600');
   const numColor = useColorModeValue('gray.400', 'gray.500');
+  const aiuBg = useColorModeValue('blue.50', 'blue.900');
+  const aiuBc = useColorModeValue('blue.200', 'blue.700');
   const Q = k => ({ value: cotConfig[k] ?? '', onChange: e => setCotConfig(p => ({ ...p, [k]: e.target.value })) });
   const A = k => ({
     value: aiuConfig[k] ?? 0,
@@ -307,7 +315,7 @@ const PanelCotizacion = memo(function PanelCotizacion({
               bg={esObra ? 'blue.100' : 'green.100'}
               borderColor={esObra ? 'blue.300' : 'green.300'}
               _hover={{ opacity: 0.75 }}
-              onClick={() => setShowTipoModal(true)}>
+              onClick={() => onChangeTipo?.()}>
               <Text fontSize="10px" fontWeight="700" color={esObra ? 'blue.700' : 'green.700'}>
                 {esObra ? 'Obra ✎' : 'Comercial ✎'}
               </Text>
@@ -345,8 +353,8 @@ const PanelCotizacion = memo(function PanelCotizacion({
         </Flex>
       )}
       {esObra && (
-        <Box bg={useColorModeValue('blue.50', 'blue.900')} border="1px solid"
-          borderColor={useColorModeValue('blue.200', 'blue.700')} rounded="lg" p={3}>
+        <Box bg={aiuBg} border="1px solid"
+          borderColor={aiuBc} rounded="lg" p={3}>
           <Text fontSize="9px" fontWeight="800" letterSpacing="wider" textTransform="uppercase"
             color="blue.600" mb={3}>AIU — Indirectos de Obra</Text>
           <Stack spacing={2}>
@@ -385,8 +393,10 @@ const PanelCotizacion = memo(function PanelCotizacion({
 /* ════════════════════════════════════════════════════════════
    TARJETA PRODUCTO MOBILE
 ════════════════════════════════════════════════════════════ */
-function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
-  cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia }) {
+function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem, toggleSinIva,
+  cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId }) {
+  const esObra = cotConfig.tipo === 'obra';
+  const isDragging = dragId === r.id;
   const [expanded, setExpanded] = useState(false);
   const isValid = !!(r.desc || r.price);
   const total = calcRow(r);
@@ -396,15 +406,23 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
 
   return (
-    <Box bg={cardBg} border="1px solid" borderColor={expanded ? FY : border}
-      rounded="xl" mb={2} overflow="hidden" transition="all 0.15s"
-      boxShadow={expanded ? `0 0 0 2px ${FY}33` : '0 1px 4px rgba(0,0,0,0.06)'}>
+    <MotionBox layout data-drag-row={r.id} bg={cardBg} border="1px solid"
+      borderColor={isDragging ? FY : (expanded ? FY : border)}
+      rounded="xl" mb={2} overflow="hidden"
+      style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}
+      boxShadow={isDragging ? `0 8px 22px rgba(0,0,0,0.18)` : (expanded ? `0 0 0 2px ${FY}33` : '0 1px 4px rgba(0,0,0,0.06)')}>
 
       {/* Cabecera siempre visible */}
       <Flex
         px={3} py={2.5} align="center" gap={2} cursor="pointer"
         bg={expanded ? hdrBg : cardBg}
         onClick={() => setExpanded(e => !e)}>
+        <Box as="span" onPointerDown={e => startRowDrag(e, r.id)} onClick={e => e.stopPropagation()}
+          title="Arrastrar para reordenar" cursor="grab" flexShrink={0}
+          style={{ touchAction: 'none', display: 'flex', alignItems: 'center' }}
+          color="gray.300" _hover={{ color: FY }}>
+          <Icon as={MdDragIndicator} boxSize={4} />
+        </Box>
         <Box
           w="22px" h="22px" rounded="full" flexShrink={0}
           bg={isValid ? FY : 'gray.200'} display="flex" alignItems="center" justifyContent="center">
@@ -471,7 +489,7 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
               </Box>
             </Flex>
             <Box>
-              <FL>Precio (con IVA)</FL>
+              <FL>{r.sinIva ? 'Precio (sin IVA)' : 'Precio (con IVA)'}</FL>
               <PriceInput
                 value={r.price}
                 onChange={val => upItem(r.id, 'price', val)}
@@ -481,6 +499,24 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
                 bg={inputBg} border="1px solid" borderColor={border} rounded="md" px={3}
               />
             </Box>
+            {!esObra && (
+              <Flex as="button" onClick={() => toggleSinIva(r.id)} align="center" justify="space-between"
+                px={3} py={2} rounded="lg" border="1px solid"
+                borderColor={r.sinIva ? 'blue.300' : border}
+                bg={r.sinIva ? 'blue.50' : 'transparent'}>
+                <HStack spacing={2}>
+                  <Icon as={FiTruck} boxSize={4} color={r.sinIva ? 'blue.500' : 'gray.400'} />
+                  <Text fontSize="12px" fontWeight="600" color={r.sinIva ? 'blue.700' : 'gray.500'}>
+                    Transporte (sin IVA)
+                  </Text>
+                </HStack>
+                <Box w="36px" h="20px" rounded="full" p="2px" transition="all 0.15s"
+                  bg={r.sinIva ? 'blue.500' : 'gray.300'}>
+                  <Box w="16px" h="16px" rounded="full" bg="white"
+                    transform={r.sinIva ? 'translateX(16px)' : 'translateX(0)'} transition="all 0.15s" />
+                </Box>
+              </Flex>
+            )}
             {(parseFloat(r.price) > 0) && (
               <Flex justify="space-between" align="center"
                 bg={DARK} px={3} py={2} rounded="lg">
@@ -505,28 +541,43 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem,
           </Stack>
         </Box>
       )}
-    </Box>
+    </MotionBox>
   );
 }
 
 /* ════════════════════════════════════════════════════════════
    TABLA DESKTOP (sin cambios estructurales, se arregló scroll)
 ════════════════════════════════════════════════════════════ */
-function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
-  ivaRate, esObra, cotConfig, rm, upItem, removeItem,
-  handleAcceptSugerencia, getSugerencias, itemsLen, duplicateItem, tableRef }) {
+const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
+  ivaRate, esObra, cotConfig, rm, upItem, removeItem, toggleSinIva,
+  handleAcceptSugerencia, getSugerencias, itemsLen, duplicateItem, tableRef,
+  startRowDrag, dragId }) {
   const hoverBg = useColorModeValue('yellow.50', 'whiteAlpha.50');
-  const rowBg = i % 2 === 0 ? tableBg : stripeBg;
+  const dragBg = useColorModeValue('yellow.100', 'whiteAlpha.200');
+  const isDragging = dragId === r.id;
+  const rowBg = isDragging ? dragBg : (i % 2 === 0 ? tableBg : stripeBg);
   const p = parseFloat(r.price) || 0;
-  const pSin = precioBase(p, ivaRate);
-  const pIva = ivaUnidad(p, ivaRate);
+  const pSin = r.sinIva ? p : precioBase(p, ivaRate);
+  const pIva = r.sinIva ? 0 : ivaUnidad(p, ivaRate);
 
   return (
     <MotionTr layout
+      data-drag-row={r.id}
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={spr(rm)}
-      bg={rowBg} _hover={{ bg: hoverBg }} style={{ display: 'table-row' }}>
-      <Td borderColor={border} color={mutedL} fontSize="11px" pl={3} w="28px">{i + 1}</Td>
+      bg={rowBg} _hover={{ bg: hoverBg }}
+      style={{ display: 'table-row', position: 'relative', zIndex: isDragging ? 3 : 'auto' }}>
+      <Td borderColor={border} color={mutedL} fontSize="11px" pl={2} pr={0} w="40px">
+        <HStack spacing={0.5}>
+          <Box as="span" onPointerDown={e => startRowDrag(e, r.id)}
+            title="Arrastrar para reordenar" cursor="grab"
+            style={{ touchAction: 'none', display: 'flex', alignItems: 'center' }}
+            color="gray.300" _hover={{ color: FY }}>
+            <Icon as={MdDragIndicator} boxSize={3.5} />
+          </Box>
+          <Text>{i + 1}</Text>
+        </HStack>
+      </Td>
       <Td borderColor={border} p={1} w="56px">
         <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
           data-row-id={r.id} data-field="ref" tabIndex={-1}
@@ -571,7 +622,9 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
             <Text fontSize="11px" color={mutedL}>{p > 0 ? money(pSin, cotConfig.moneda) : '—'}</Text>
           </Td>
           <Td borderColor={border} isNumeric pr={2} w="68px">
-            <Text fontSize="11px" color={mutedL}>{p > 0 ? money(pIva, cotConfig.moneda) : '—'}</Text>
+            {r.sinIva
+              ? <Text fontSize="9px" fontWeight="700" color="blue.400" title="Transporte excluido de IVA">EXCL.</Text>
+              : <Text fontSize="11px" color={mutedL}>{p > 0 ? money(pIva, cotConfig.moneda) : '—'}</Text>}
           </Td>
         </>
       )}
@@ -589,8 +642,15 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
       <Td borderColor={border} isNumeric pr={2} w="88px">
         <Text fontWeight="700" fontSize="12px">{money(calcRow(r), cotConfig.moneda)}</Text>
       </Td>
-      <Td borderColor={border} p={1} w="52px">
+      <Td borderColor={border} p={1} w="76px">
         <HStack spacing={0}>
+          {!esObra && (
+            <Tooltip label={r.sinIva ? 'Transporte SIN IVA · clic para cobrar IVA' : 'Marcar como transporte (sin IVA)'} hasArrow>
+              <IconButton size="xs" variant={r.sinIva ? 'solid' : 'ghost'}
+                colorScheme={r.sinIva ? 'blue' : 'gray'} rounded="md" aria-label="Sin IVA"
+                icon={<FiTruck size={11} />} onClick={() => toggleSinIva(r.id)} tabIndex={-1} />
+            </Tooltip>
+          )}
           <Tooltip label="Duplicar (Ctrl+D)" hasArrow>
             <IconButton size="xs" variant="ghost" rounded="md" aria-label="Duplicar"
               icon={<FiCopy size={11} />} onClick={() => duplicateItem(r.id)} tabIndex={-1} />
@@ -602,13 +662,14 @@ function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
       </Td>
     </MotionTr>
   );
-}
+});
 
 const TablaProductos = memo(function TablaProductos({
   items, tableRef, handleTableKeyDown, esObra,
   border, mutedL, inputBg, tableBg, stripeBg,
-  ivaRate, cotConfig, rm, upItem, removeItem,
-  handleAcceptSugerencia, getSugerencias, addItem, duplicateItem,
+  ivaRate, cotConfig, rm, upItem, removeItem, toggleSinIva,
+  handleAcceptSugerencia, getSugerencias, addItem, addTransporte, duplicateItem,
+  startRowDrag, dragId,
 }) {
   const addBtnHover = useColorModeValue('yellow.50', 'whiteAlpha.100');
   const theadBg = '#3A3A38';
@@ -649,10 +710,12 @@ const TablaProductos = memo(function TablaProductos({
                 tableBg={tableBg} stripeBg={stripeBg}
                 ivaRate={ivaRate} esObra={esObra} cotConfig={cotConfig} rm={rm}
                 upItem={upItem} removeItem={removeItem} duplicateItem={duplicateItem}
+                toggleSinIva={toggleSinIva}
                 handleAcceptSugerencia={handleAcceptSugerencia}
                 getSugerencias={getSugerencias}
                 itemsLen={items.length}
-                tableRef={tableRef} />
+                tableRef={tableRef}
+                startRowDrag={startRowDrag} dragId={dragId} />
             ))}
           </AnimatePresence>
           <Tr>
@@ -663,6 +726,13 @@ const TablaProductos = memo(function TablaProductos({
                   _hover={{ bg: addBtnHover }}>
                   + Agregar fila
                 </Button>
+                {!esObra && (
+                  <Button size="xs" variant="ghost" leftIcon={<FiTruck size={12} />} onClick={addTransporte}
+                    fontWeight="700" color="blue.400" tabIndex={-1}
+                    _hover={{ bg: addBtnHover }}>
+                    + Transporte
+                  </Button>
+                )}
                 <Text fontSize="9px" color={mutedText} display={{ base: 'none', xl: 'block' }}>
                   <Kbd fontSize="8px">Tab</Kbd> avanza ·{' '}
                   <Kbd fontSize="8px">Shift+Tab</Kbd> retrocede ·{' '}
@@ -731,6 +801,12 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
               <Text fontSize={fs} color="whiteAlpha.400">Subtotal (sin IVA)</Text>
               <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.totalBruto, cotConfig.moneda)}</Text>
             </Flex>
+            {(totals.exento || 0) > 0 && (
+              <Flex justify="space-between">
+                <Text fontSize={fs} color="blue.200">Transporte (sin IVA)</Text>
+                <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.exento, cotConfig.moneda)}</Text>
+              </Flex>
+            )}
             {descGNum > 0 && (
               <Flex justify="space-between">
                 <Text fontSize={fs} color="whiteAlpha.400">Descuento ({descGNum}%)</Text>
@@ -859,6 +935,8 @@ export default function CotizadorPage() {
   const [mobileStep, setMobileStep] = useState(0);
   const [showTipoModal, setShowTipoModal] = useState(!id);
   const [showImport, setShowImport] = useState(false);
+  const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
+  const [draftFound, setDraftFound] = useState(null); // borrador recuperable
 
   const { isOpen: isDelOpen, onOpen: onDelOpen, onClose: onDelClose } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
@@ -869,6 +947,7 @@ export default function CotizadorPage() {
     setEmpresaState(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       saveEmpresaLocal(next);
+      pushEmpresaDebounced(next);
       return next;
     });
   }, []);
@@ -917,6 +996,60 @@ export default function CotizadorPage() {
     return () => window.removeEventListener('keydown', h);
   }, []);
 
+  /* Aviso antes de cerrar/recargar con cambios sin guardar (solo si hay contenido real) */
+  useEffect(() => {
+    const h = e => {
+      const hayContenido = items.some(r => r.desc?.trim() || String(r.price || '').trim());
+      if (hasChanges && (hayContenido || editingId)) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [hasChanges, items, editingId]);
+
+  /* Autoguardado de BORRADOR local (solo cotizaciones nuevas sin guardar) */
+  useEffect(() => {
+    if (editingId || !hasChanges) return;
+    if (!items.some(r => r.desc?.trim())) return;
+    const t = setTimeout(() => {
+      saveDraft({ cliente, cotConfig, items, notas, descLocal, aiuConfig, savedAt: Date.now() });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [editingId, hasChanges, cliente, cotConfig, items, notas, descLocal, aiuConfig]);
+
+  /* Recuperar borrador al abrir el cotizador nuevo */
+  useEffect(() => {
+    if (id) return;
+    const d = loadDraft();
+    if (d && Array.isArray(d.items) && d.items.some(r => r.desc?.trim())) setDraftFound(d);
+  }, [id]);
+
+  /* Traer datos de empresa desde la nube (mismo membrete en toda PC) */
+  useEffect(() => {
+    if (!nubeActiva()) return;
+    pullEmpresa().then(remote => {
+      if (remote && Object.keys(remote).length) {
+        setEmpresaState(prev => ({ ...prev, ...remote }));
+        saveEmpresaLocal({ ...loadEmpresaLocal(), ...remote });
+      }
+    }).catch(() => {});
+  }, []);
+
+  const recuperarBorrador = useCallback(() => {
+    const d = draftFound;
+    if (!d) return;
+    setCliente(d.cliente || DEFAULT_CLIENTE);
+    setCotConfig(d.cotConfig || { ...DEFAULT_CONFIG });
+    setItems(d.items?.length ? d.items : [blankRow(), blankRow()]);
+    setNotas(d.notas ?? DEFAULT_NOTAS);
+    setDescLocal(String(d.descLocal ?? '0'));
+    setAiuConfig(d.aiuConfig || { ...DEFAULT_AIU });
+    setShowTipoModal(false);
+    setDraftFound(null);
+    setHasChanges(true);
+  }, [draftFound]);
+
+  const descartarBorrador = useCallback(() => { clearDraft(); setDraftFound(null); }, []);
+
   const descGNum = useMemo(() => parseFloat(descLocal) || 0, [descLocal]);
   const totals = useMemo(() =>
     esObra
@@ -949,12 +1082,73 @@ export default function CotizadorPage() {
     if ((k === 'price' || k === 'disc') && parseFloat(v) < 0) v = '0';
     if (k === 'disc' && parseFloat(v) > 100) v = '100';
     if (k === 'qty' && parseFloat(v) <= 0) v = '1';
-    setItems(p => p.map(r => r.id === rid ? { ...r, [k]: v } : r));
+    setItems(p => p.map(r => {
+      if (r.id !== rid) return r;
+      const next = { ...r, [k]: v };
+      // Auto-detección de transporte (único servicio sin IVA) mientras no se fije a mano
+      if (k === 'desc' && !next.sinIvaManual) next.sinIva = esTransporte(v);
+      return next;
+    }));
+  }, []);
+
+  /* Alternar "sin IVA" a mano (transporte). Marca sinIvaManual para no auto-cambiar. */
+  const toggleSinIva = useCallback(rid => {
+    setItems(p => p.map(r => r.id === rid ? { ...r, sinIva: !r.sinIva, sinIvaManual: true } : r));
+  }, []);
+
+  /* Agregar fila de transporte lista (sin IVA) */
+  const addTransporte = useCallback(() => {
+    const row = { ...blankRow(), desc: 'Transporte', unit: 'Global', sinIva: true, sinIvaManual: true };
+    setItems(p => [...p, row]);
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      focusInput(tableRef.current, row.id, 'price')
+    ));
+  }, []);
+
+  /* ── Reordenar filas arrastrando verticalmente (drag & drop) ── */
+  const [dragId, setDragId] = useState(null);
+  const startRowDrag = useCallback((e, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragId(id);
+    document.body.style.userSelect = 'none';
+    const onMove = (ev) => {
+      const y = ev.clientY ?? ev.touches?.[0]?.clientY;
+      if (y == null) return;
+      // Índice destino = cuántos puntos medios de filas visibles quedan por encima del cursor
+      let target = 0;
+      document.querySelectorAll('[data-drag-row]').forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.height === 0) return;               // omitir filas ocultas (otra vista)
+        if (y > rect.top + rect.height / 2) target++;
+      });
+      setItems((prev) => {
+        const from = prev.findIndex((r) => r.id === id);
+        if (from < 0) return prev;
+        const to = Math.min(Math.max(target, 0), prev.length - 1);
+        if (to === from) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+    };
+    const onUp = () => {
+      setDragId(null);
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   }, []);
 
   const handleAcceptSugerencia = useCallback((rowId, { desc, price, unit }) => {
     setItems(p => p.map(r =>
-      r.id === rowId ? { ...r, desc, price: price || r.price, unit: unit || r.unit } : r
+      r.id === rowId
+        ? { ...r, desc, price: price || r.price, unit: unit || r.unit,
+            sinIva: r.sinIvaManual ? r.sinIva : esTransporte(desc) }
+        : r
     ));
     requestAnimationFrame(() => focusInput(tableRef.current, rowId, 'qty'));
   }, []);
@@ -1186,33 +1380,37 @@ export default function CotizadorPage() {
   }, [duplicateItem, items, upItem]);
 
   /* ── Guardado ── */
-  const autoSave = useCallback(() => {
+  const autoSave = useCallback(async () => {
     const { empresa, cliente, cotConfig, items, descG, notas, editingId, aiuConfig } = stRef.current;
+    if (!items.some(r => r.desc?.trim())) return null;
     const cfg = { ...cotConfig, estado: 'borrador' };
     const tot = cfg.tipo === 'obra'
       ? calcTotalsObra(items, descG, aiuConfig)
       : calcTotals(items, descG, cfg.iva);
-    try { return saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig }); }
+    try {
+      const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig });
+      clearDraft();
+      return saved;
+    }
     catch (err) { console.error('[autoSave]', err); return null; }
   }, [saveCotizacion]);
 
   const handleSave = useCallback(async () => {
     if (!items.some(r => r.desc?.trim())) {
       toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 4000, position: 'top' });
-      return;
+      return null;
     }
     setIsSaving(true);
     const descG = parseFloat(descLocal) || 0;
     try {
       const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, totals, aiuConfig };
-      const savedId = saveCotizacion(payload);
+      const saved = await saveCotizacion(payload);
       aprenderProductos(items);
+      clearDraft();
       if (!editingId) {
-        await new Promise(r => setTimeout(r, 80));
-        const saved = getCotizacion(savedId);
         if (saved?.config) setCotConfig(saved.config);
-        setEditingId(savedId);
-        navigate(`/cotizador/${savedId}`, { replace: true });
+        setEditingId(saved.id);
+        navigate(`/cotizador/${saved.id}`, { replace: true });
         toast({
           title: 'Cotización creada ✓', description: saved?.numero ? `Número: ${saved.numero}` : '',
           status: 'success', duration: 4000, position: 'top-right'
@@ -1221,11 +1419,13 @@ export default function CotizadorPage() {
         toast({ title: 'Guardado ✓', status: 'success', duration: 2000, position: 'top-right' });
       }
       setHasChanges(false);
+      return saved;
     } catch (e) {
       toast({ title: 'Error al guardar', description: e.message, status: 'error', duration: 4000 });
+      return null;
     } finally { setIsSaving(false); }
   }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, aiuConfig,
-    saveCotizacion, getCotizacion, navigate, toast]);
+    saveCotizacion, navigate, toast]);
 
   useEffect(() => { saveRef.current = handleSave; }, [handleSave]);
 
@@ -1236,11 +1436,12 @@ export default function CotizadorPage() {
     navigate('/historial');
   }, [editingId, deleteCotizacion, navigate, toast]);
 
-  const handleDuplicate = useCallback(() => {
+  const handleDuplicate = useCallback(async () => {
     if (!editingId) return;
-    const newId = duplicarCotizacion(editingId);
+    const copia = await duplicarCotizacion(editingId);
+    if (!copia) return;
     toast({ title: 'Cotización duplicada ✓', status: 'success', duration: 2000, position: 'top-right' });
-    navigate(`/cotizador/${newId}`);
+    navigate(`/cotizador/${copia.id}`);
   }, [editingId, duplicarCotizacion, navigate, toast]);
 
   const safeNavigate = useCallback(path => {
@@ -1260,6 +1461,7 @@ export default function CotizadorPage() {
     setHasChanges(false);
     setMobileStep(0);
     setShowTipoModal(true);
+    clearDraft();
     navigate('/cotizador', { replace: true });
   }, [navigate]);
 
@@ -1285,19 +1487,33 @@ export default function CotizadorPage() {
   }, [hasChanges, doClear, onExitOpen]);
 
   const handlePDF = useCallback(async () => {
-    if (!editingId) {
-      toast({ title: 'Guarda primero la cotización', description: 'El PDF necesita un número de cotización asignado.', status: 'warning', duration: 4000, position: 'top' });
+    if (!items.some(r => r.desc?.trim())) {
+      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, position: 'top' });
       return;
     }
-    const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024FñÑ\s]/g, '').trim().replace(/\s+/g, '_');
-    const ok = await downloadPDF(`${cn}_${cotConfig.numero || 'SinNumero'}`);
-    if (ok) toast({ title: 'PDF descargado ✓', status: 'success', duration: 2500, position: 'top-right' });
+    // PDF en un clic: si es nueva o hay cambios, guarda primero (asigna numero)
+    let numero = cotConfig.numero;
+    if (!editingId || hasChanges) {
+      const saved = await handleSave();
+      if (!saved) return;
+      numero = saved.numero || saved.config?.numero || numero;
+    }
+    // Montar el PDF oculto solo ahora y esperar a que pinte (fluidez)
+    setPdfReady(true);
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, 60));
+    const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024F\u00f1\u00d1\s]/g, '').trim().replace(/\s+/g, '_');
+    const ok = await downloadPDF(`${cn}_${numero || 'SinNumero'}`);
+    setPdfReady(false);
+    if (ok) toast({ title: 'PDF descargado \u2713', status: 'success', duration: 2500, position: 'top-right' });
     else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
-  }, [editingId, cotConfig.numero, cliente.nombre, downloadPDF, toast]);
+  }, [editingId, hasChanges, items, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
 
   /* ── Confirmar importación ── */
   const handleImportConfirm = useCallback(({ items: imp, cliente: cli, cotConfig: cfg, notas: n }) => {
-    if (imp?.length) setItems(imp);
+    if (imp?.length) setItems(imp.map(r => (
+      r.sinIvaManual ? r : { ...r, sinIva: esTransporte(r.desc) }
+    )));
     if (cli?.nombre) setCliente(c => ({ ...c, ...cli }));
     if (cfg?.numero && !cotConfig.numero) setCotConfig(c => ({ ...c, ...cfg }));
     if (n) setNotas(n);
@@ -1318,25 +1534,28 @@ export default function CotizadorPage() {
   const stripeBg = useColorModeValue('gray.50', 'gray.750');
   const tabActive = useColorModeValue('gray.800', 'white');
   const totalColor = useColorModeValue('gray.700', 'gray.300');
+  const yellowHover = useColorModeValue('yellow.50', 'whiteAlpha.100');
+  const previewBg = useColorModeValue('gray.100', 'gray.900');
 
   const ivaRate = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
   const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, aiu: aiuConfig };
   const tablaProps = {
     items, tableRef, handleTableKeyDown, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
-    ivaRate, cotConfig, rm, upItem, removeItem, duplicateItem,
-    handleAcceptSugerencia, getSugerencias, addItem,
+    ivaRate, cotConfig, rm, upItem, removeItem, duplicateItem, toggleSinIva,
+    handleAcceptSugerencia, getSugerencias, addItem, addTransporte,
+    startRowDrag, dragId,
   };
   const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg };
-  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg };
-  const mobileCardProps = { upItem, removeItem, duplicateItem, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia };
+  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg, onChangeTipo: () => setShowTipoModal(true) };
+  const mobileCardProps = { upItem, removeItem, duplicateItem, toggleSinIva, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId };
 
   /* ════════════════════════════════════════════════
      VISTA PREVIA PDF
   ════════════════════════════════════════════════ */
   if (isPreview) return (
-    <Box minH="100vh" bg={useColorModeValue('gray.100', 'gray.900')}>
+    <Box minH="100vh" bg={previewBg}>
       <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
         <DocContent {...docProps} />
       </Box>
@@ -1378,13 +1597,15 @@ export default function CotizadorPage() {
   ════════════════════════════════════════════════ */
   return (
     <Box minH="100vh" bg={bg}>
-      {/* PDF oculto */}
-      <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
-        <DocContent {...docProps} />
-      </Box>
+      {/* PDF oculto — se monta solo al exportar para no re-renderizar en cada tecla */}
+      {pdfReady && (
+        <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
+          <DocContent {...docProps} />
+        </Box>
+      )}
 
       {/* Modales */}
-      <ModalTipo isOpen={showTipoModal} onCancel={editingId ? () => setShowTipoModal(false) : undefined} onSelect={tipo => {
+      <ModalTipo isOpen={showTipoModal && !draftFound} onCancel={editingId ? () => setShowTipoModal(false) : undefined} onSelect={tipo => {
         setCotConfig(p => ({ ...p, tipo, formaPago: tipo === 'obra' ? 'Anticipo + Actas' : 'Efectivo' }));
         setNotas(tipo === 'obra' ? DEFAULT_NOTAS_OBRA : DEFAULT_NOTAS);
         setShowTipoModal(false);
@@ -1630,7 +1851,7 @@ export default function CotizadorPage() {
                         border="2px dashed" borderColor={border}
                         leftIcon={<FiPlus />} onClick={addItem}
                         color={FY} fontWeight="700" mt={1}
-                        _hover={{ borderColor: FY, bg: useColorModeValue('yellow.50', 'whiteAlpha.100') }}>
+                        _hover={{ borderColor: FY, bg: yellowHover }}>
                         + Agregar producto
                       </Button>
                     </Box>
@@ -1657,6 +1878,12 @@ export default function CotizadorPage() {
                               <Text fontSize="10px" color="whiteAlpha.500">Subtotal s/IVA</Text>
                               <Text fontSize="11px" color="whiteAlpha.700">{money(totals.totalBruto ?? 0, cotConfig.moneda)}</Text>
                             </Flex>
+                            {(totals.exento ?? 0) > 0 && (
+                              <Flex justify="space-between">
+                                <Text fontSize="10px" color="blue.200">Transporte s/IVA</Text>
+                                <Text fontSize="11px" color="whiteAlpha.700">{money(totals.exento, cotConfig.moneda)}</Text>
+                              </Flex>
+                            )}
                             <Flex justify="space-between">
                               <Text fontSize="10px" color="whiteAlpha.500">IVA {cotConfig.iva}%</Text>
                               <Text fontSize="11px" color="whiteAlpha.700">{money(totals.ivaTotal ?? 0, cotConfig.moneda)}</Text>
@@ -1727,6 +1954,30 @@ export default function CotizadorPage() {
           {editingId ? 'Actualizar' : 'Guardar'}
         </Button>
       </Box>
+
+      {/* Dialogo recuperar borrador */}
+      <AlertDialog isOpen={!!draftFound} leastDestructiveRef={cancelRef} onClose={descartarBorrador}>
+        <AlertDialogOverlay>
+          <AlertDialogContent rounded="xl">
+            <AlertDialogHeader fontWeight="900">
+              <HStack><Icon as={FiRefreshCw} color={FY} /><Text>Recuperar trabajo sin guardar</Text></HStack>
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              Encontramos una cotización que quedó a medias
+              {draftFound?.items ? <> con <strong>{draftFound.items.filter(r => r.desc?.trim()).length} producto(s)</strong></> : ''}.
+              ¿Quieres continuar donde la dejaste?
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelRef} onClick={descartarBorrador} rounded="md" size="sm" variant="outline">
+                Empezar de cero
+              </Button>
+              <Button bg={FY} color={DARK} rounded="md" size="sm" fontWeight="700" onClick={recuperarBorrador}>
+                Recuperar
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
 
       {/* Dialogo eliminar */}
       <AlertDialog isOpen={isDelOpen} leastDestructiveRef={cancelRef} onClose={onDelClose}>

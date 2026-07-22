@@ -22,7 +22,7 @@ import {
   FiPlus, FiTrash2, FiEdit2, FiCopy, FiDownload, FiSearch,
   FiFileText, FiArrowLeft, FiRefreshCw, FiCheckCircle,
   FiSend, FiGrid, FiList, FiMoreVertical,
-  FiDollarSign, FiUser,
+  FiDollarSign, FiUser, FiCloud,
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCotizaciones }  from "../hooks/useCotizaciones";
@@ -50,6 +50,17 @@ const fmtRelativa = (iso) => {
 const getTotal   = (cot) => cot.totals?.totalPagar ?? cot.totals?.total ?? 0;
 const getNumero  = (cot) => cot.numero || cot.config?.numero || "—";
 const getEstado  = (cot) => cot.config?.estado || cot.estado || "borrador";
+const getTipo    = (cot) => cot.config?.tipo || "comercial";
+
+function TipoBadge({ cot, ...rest }) {
+  const esObra = getTipo(cot) === "obra";
+  return (
+    <Badge bg={esObra ? "blue.100" : "green.100"} color={esObra ? "blue.700" : "green.700"}
+      fontSize="8px" rounded="full" px={1.5} {...rest}>
+      {esObra ? "OBRA" : "COMERCIAL"}
+    </Badge>
+  );
+}
 
 function GlassCard({ children, ...rest }) {
   const bg = useColorModeValue("white", "gray.800");
@@ -143,7 +154,10 @@ function CotizacionCard({ cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading,
       <Box p={4}>
         <Flex justify="space-between" align="flex-start" mb={3}>
           <Box>
-            <Text fontWeight="800" fontSize="18px" color={FY} lineHeight="1">{getNumero(cot)}</Text>
+            <HStack spacing={1.5} align="center">
+              <Text fontWeight="800" fontSize="18px" color={FY} lineHeight="1">{getNumero(cot)}</Text>
+              <TipoBadge cot={cot} />
+            </HStack>
             <Text fontSize="10px" color={muted} mt={0.5}>{fmtRelativa(cot.updatedAt)}</Text>
           </Box>
           <Flex align="center" gap={1}>
@@ -200,7 +214,8 @@ export default function HistorialPage() {
   const cancelRef = useRef();
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, stats } = useCotizaciones();
+  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, stats,
+    nubeActiva, syncing, sync } = useCotizaciones();
   const { downloadPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
 
   const [search,   setSearch]   = useState("");
@@ -269,10 +284,11 @@ export default function HistorialPage() {
     onClose();
   }, [toDelete, deleteCotizacion, toast, onClose]);
 
-  const handleDuplicate = useCallback((id) => {
-    const newId = duplicarCotizacion(id);
+  const handleDuplicate = useCallback(async (id) => {
+    const copia = await duplicarCotizacion(id);
+    if (!copia) return;
     toast({ title: "Cotización duplicada ✓", status: "success", duration: 2500, position: "top-right" });
-    navigate(`/cotizador/${newId}`);
+    navigate(`/cotizador/${copia.id}`);
   }, [duplicarCotizacion, navigate, toast]);
 
   const handleCambiarEstado = useCallback((id, nuevoEstado) => {
@@ -333,6 +349,15 @@ export default function HistorialPage() {
             </Tooltip>
             <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}>Cotizaciones</Text>
             <Tag size="sm" colorScheme="gray" rounded="full">{cotizaciones.length}</Tag>
+            {nubeActiva && (
+              <Tooltip label={syncing ? "Sincronizando con la nube…" : "Sincronizado en la nube · clic para actualizar"} hasArrow>
+                <Tag size="sm" colorScheme={syncing ? "yellow" : "green"} rounded="full" cursor="pointer"
+                  onClick={() => sync()} display={{ base: "none", sm: "flex" }}>
+                  <Icon as={FiCloud} boxSize={3} mr={1} />
+                  {syncing ? "Sincronizando" : "Nube"}
+                </Tag>
+              </Tooltip>
+            )}
           </HStack>
           <HStack>
             <Tooltip label={viewMode === "tabla" ? "Vista tarjetas" : "Vista tabla"} hasArrow>
@@ -476,6 +501,7 @@ export default function HistorialPage() {
                             <Tooltip label={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`} hasArrow>
                               <Text>{getNumero(cot)}</Text>
                             </Tooltip>
+                            <TipoBadge cot={cot} mt={1} />
                           </Td>
                           <Td borderColor={border}>
                             <Text fontSize="13px" fontWeight="600" noOfLines={1}>

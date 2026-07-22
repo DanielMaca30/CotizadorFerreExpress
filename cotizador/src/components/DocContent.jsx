@@ -260,18 +260,20 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
               </tr>
             ) : filled.map((r, i) => {
               const p     = parseFloat(r.price) || 0;
-              const pSin  = precioBase(p, ivaRate);
-              const pIva  = ivaUnidad(p, ivaRate);
+              const pSin  = r.sinIva ? p : precioBase(p, ivaRate);
+              const pIva  = r.sinIva ? 0 : ivaUnidad(p, ivaRate);
               const total = calcRow(r);
               return (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
                   <td style={{ ...st.tdSm, textAlign: "center" }}>{i + 1}</td>
                   <td style={st.tdSm}>{r.ref || "—"}</td>
-                  <td style={st.tdBold}>{r.desc || "—"}</td>
+                  <td style={st.tdBold}>{r.desc || "—"}{r.sinIva ? " *" : ""}</td>
                   <td style={st.tdC}>{r.qty}</td>
                   <td style={st.tdSm}>{r.unit}</td>
                   <td style={st.tdNum}>{money(pSin, cot.moneda)}</td>
-                  <td style={st.tdNum}>{money(pIva, cot.moneda)}</td>
+                  <td style={r.sinIva ? { ...st.tdNum, color: "#999", fontWeight: 400, fontSize: 8.5 } : st.tdNum}>
+                    {r.sinIva ? "Excluido" : money(pIva, cot.moneda)}
+                  </td>
                   <td style={st.tdNum}>{money(p,    cot.moneda)}</td>
                   <td style={st.tdC}>{parseFloat(r.disc) > 0 ? `${r.disc} %` : "0 %"}</td>
                   <td style={st.tdNum}>{money(total, cot.moneda)}</td>
@@ -280,6 +282,13 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
             })}
           </tbody>
         </table>
+      )}
+
+      {/* Nota transporte excluido de IVA */}
+      {!esObra && filled.some((r) => r.sinIva) && (
+        <div style={{ padding: "6px 28px 0", fontSize: 8.5, color: "#888", fontStyle: "italic" }}>
+          * Servicio de transporte excluido de IVA (Art. 476 del Estatuto Tributario).
+        </div>
       )}
 
       {/* ═══ NOTAS + RESUMEN ═══ */}
@@ -345,6 +354,12 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
                 <span style={st.resLbl}>Total Bruto</span>
                 <span style={st.resVal}>{money(totals.totalBruto, cot.moneda)}</span>
               </div>
+              {(totals.exento || 0) > 0 && (
+                <div style={st.resRow}>
+                  <span style={st.resLbl}>Transporte (excluido de IVA)</span>
+                  <span style={st.resVal}>{money(totals.exento, cot.moneda)}</span>
+                </div>
+              )}
               {parseFloat(descG) > 0 && (
                 <div style={st.resRow}>
                   <span style={st.resLbl}>Descuento ({descG}%)</span>

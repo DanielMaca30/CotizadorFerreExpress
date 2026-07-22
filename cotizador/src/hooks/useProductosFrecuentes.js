@@ -15,7 +15,8 @@
  * count sube con cada aparición — ordena por frecuencia.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { nubeActiva, pullFrecuentes, pushFrecuentes } from "../lib/nube";
 
 const FRECUENTES_KEY = "ferreexpress_productos_frecuentes";
 const MAX_SUGERENCIAS = 8; // máximo de items en el dropdown
@@ -31,7 +32,7 @@ const cargar = () => {
 /* ── Guardar en el storage ── */
 const persistir = (data) => {
   try { localStorage.setItem(FRECUENTES_KEY, JSON.stringify(data)); }
-  catch (_) {}
+  catch { /* localStorage lleno o bloqueado */ }
 };
 
 /* ── Aprender productos de una lista de items ── */
@@ -50,6 +51,20 @@ export const aprenderProductos = (items) => {
     };
   });
   persistir(actual);
+  pushFrecuentes(actual); // comparte el catálogo aprendido con las demás PC
+};
+
+/* ── Fusiona dos catálogos (suma counts, precio más reciente) ── */
+const fusionar = (a, b) => {
+  const out = { ...a };
+  Object.entries(b || {}).forEach(([k, v]) => {
+    const prev = out[k];
+    out[k] = prev
+      ? { desc: v.desc || prev.desc, price: v.price || prev.price,
+          unit: v.unit || prev.unit || "Und", count: Math.max(prev.count || 0, v.count || 0) }
+      : v;
+  });
+  return out;
 };
 
 /* ── Hook principal ── */
@@ -63,6 +78,17 @@ export function useProductosFrecuentes() {
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  /* Traer catálogo compartido de la nube y fusionarlo con el local */
+  useEffect(() => {
+    if (!nubeActiva()) return;
+    pullFrecuentes().then((remote) => {
+      if (!remote) return;
+      const merged = fusionar(cargar(), remote);
+      persistir(merged);
+      setFrecuentes(merged);
+    }).catch(() => {});
   }, []);
 
   /**
