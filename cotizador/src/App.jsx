@@ -54,11 +54,11 @@ export default function App() {
       <ChakraProvider theme={theme}>
         <BrowserRouter>
           <Routes>
-            <Route path="/"              element={<Navigate to="/cotizador" replace />} />
+            <Route path="/"              element={<Navigate to="/historial" replace />} />
             <Route path="/cotizador"     element={<CotizadorPage />} />
             <Route path="/cotizador/:id" element={<CotizadorPage />} />
             <Route path="/historial"     element={<HistorialPage />} />
-            <Route path="*"              element={<Navigate to="/cotizador" replace />} />
+            <Route path="*"              element={<Navigate to="/historial" replace />} />
           </Routes>
         </BrowserRouter>
       </ChakraProvider>

@@ -20,7 +20,7 @@ import {
 } from "@chakra-ui/react";
 import {
   FiPlus, FiTrash2, FiEdit2, FiCopy, FiDownload, FiSearch,
-  FiFileText, FiArrowLeft, FiRefreshCw, FiCheckCircle,
+  FiFileText, FiRefreshCw, FiCheckCircle,
   FiSend, FiGrid, FiList, FiMoreVertical,
   FiDollarSign, FiUser, FiCloud,
 } from "react-icons/fi";
@@ -51,6 +51,7 @@ const getTotal   = (cot) => cot.totals?.totalPagar ?? cot.totals?.total ?? 0;
 const getNumero  = (cot) => cot.numero || cot.config?.numero || "—";
 const getEstado  = (cot) => cot.config?.estado || cot.estado || "borrador";
 const getTipo    = (cot) => cot.config?.tipo || "comercial";
+const normStr    = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 function TipoBadge({ cot, ...rest }) {
   const esObra = getTipo(cot) === "obra";
@@ -73,11 +74,17 @@ function GlassCard({ children, ...rest }) {
   );
 }
 
-function KpiCard({ label, value, sub, icon, accent }) {
+function KpiCard({ label, value, sub, icon, accent, onClick, active }) {
   const muted = useColorModeValue("gray.500", "gray.400");
   const bc    = useColorModeValue("gray.100", "whiteAlpha.200");
   return (
-    <GlassCard rounded="xl" p={5}>
+    <GlassCard rounded="xl" p={5}
+      onClick={onClick}
+      cursor={onClick ? "pointer" : "default"}
+      boxShadow={active ? `0 0 0 2px ${FY}` : "0 2px 12px rgba(0,0,0,0.06)"}
+      _hover={onClick ? { boxShadow: active ? `0 0 0 2px ${FY}` : "0 4px 20px rgba(0,0,0,0.10)", transform: "translateY(-1px)" } : undefined}
+      transition="all 0.15s"
+      title={onClick ? "Clic para filtrar" : undefined}>
       <Flex justify="space-between" align="flex-start">
         <Box>
           <Text fontSize="9px" fontWeight="700" letterSpacing="0.12em"
@@ -219,18 +226,40 @@ export default function HistorialPage() {
   const { downloadPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
 
   const [search,   setSearch]   = useState("");
+  const [debSearch, setDebSearch] = useState("");   // búsqueda con debounce
   const [estado,   setEstado]   = useState("todos");
+  const [tipo,     setTipo]     = useState("todos"); // comercial / obra
+  const [rango,    setRango]    = useState("todos"); // fecha (etiqueta)
+  const [rangoDesde, setRangoDesde] = useState(0);   // timestamp mínimo (0 = sin límite)
   const [sortBy,   setSortBy]   = useState("updatedAt");
   const [sortDir,  setSortDir]  = useState("desc");
   const [toDelete, setToDelete] = useState(null);
   const [pdfCot,   setPdfCot]   = useState(null);
   const [viewMode, setViewMode] = useState("tabla");
+  const searchRef = useRef();
 
   /* ─── Título dinámico ─── */
   useEffect(() => {
     document.title = `Historial (${cotizaciones.length}) | FerreExpress`;
     return () => { document.title = "FerreExpress — Cotizador"; };
   }, [cotizaciones.length]);
+
+  /* ─── Debounce de la búsqueda (no recalcula en cada tecla) ─── */
+  useEffect(() => {
+    const t = setTimeout(() => setDebSearch(search), 180);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* ─── Atajo "/" para enfocar la búsqueda, Esc para limpiar ─── */
+  useEffect(() => {
+    const h = (e) => {
+      const tag = document.activeElement?.tagName;
+      const enCampo = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (e.key === "/" && !enCampo) { e.preventDefault(); searchRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   const bg       = useColorModeValue("gray.50", "gray.900");
   const border   = useColorModeValue("gray.200", "whiteAlpha.200");
@@ -243,17 +272,27 @@ export default function HistorialPage() {
   const inputBg  = useColorModeValue("white", "gray.700");
   const hoverBg  = useColorModeValue("yellow.50", "whiteAlpha.50");
 
+  /* \u00cdndice de b\u00fasqueda: se arma UNA vez por lista (no en cada tecla).
+     Incluye n\u00famero, datos del cliente y nombres de productos. */
+  const indexed = useMemo(() => cotizaciones.map((c) => ({
+    c,
+    hay: normStr([
+      getNumero(c), c.cliente?.nombre, c.cliente?.empresa, c.cliente?.ciudad,
+      c.cliente?.nit, c.cliente?.contacto,
+      ...(c.items || []).map((i) => i.desc),
+    ].filter(Boolean).join(" ")),
+  })), [cotizaciones]);
+
   const filtered = useMemo(() => {
-    let list = [...cotizaciones];
-    if (search.trim()) {
-      const term = search.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      list = list.filter((c) => {
-        const hay = [getNumero(c), c.cliente?.nombre, c.cliente?.empresa, c.cliente?.ciudad]
-          .filter(Boolean).join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return hay.includes(term);
-      });
-    }
-    if (estado !== "todos") list = list.filter((c) => getEstado(c) === estado);
+    const term = normStr(debSearch.trim());
+    const list = indexed.filter(({ c, hay }) => {
+      if (term && !hay.includes(term)) return false;
+      if (estado !== "todos" && getEstado(c) !== estado) return false;
+      if (tipo   !== "todos" && getTipo(c)   !== tipo)   return false;
+      if (rangoDesde && new Date(c.updatedAt || c.createdAt || 0).getTime() < rangoDesde) return false;
+      return true;
+    }).map((x) => x.c);
+
     list.sort((a, b) => {
       let va, vb;
       switch (sortBy) {
@@ -267,12 +306,30 @@ export default function HistorialPage() {
       return 0;
     });
     return list;
-  }, [cotizaciones, search, estado, sortBy, sortDir]);
+  }, [indexed, debSearch, estado, tipo, rangoDesde, sortBy, sortDir]);
+
+  /* Fecha: calcula el umbral en el manejador (fuera del render puro) */
+  const onRango = useCallback((v) => {
+    setRango(v);
+    let desde = 0;
+    if (v === "hoy")      { const s = new Date(); s.setHours(0, 0, 0, 0); desde = s.getTime(); }
+    else if (v === "7")   { desde = Date.now() - 7  * 86400000; }
+    else if (v === "30")  { desde = Date.now() - 30 * 86400000; }
+    else if (v === "mes") { const s = new Date(); s.setDate(1); s.setHours(0, 0, 0, 0); desde = s.getTime(); }
+    setRangoDesde(desde);
+  }, []);
+
+  const filtrosActivos = !!(search || estado !== "todos" || tipo !== "todos" || rango !== "todos");
+  const limpiarFiltros = useCallback(() => {
+    setSearch(""); setEstado("todos"); setTipo("todos"); setRango("todos"); setRangoDesde(0);
+  }, []);
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
     else { setSortBy(col); setSortDir("desc"); }
   };
+  const ordenValue = `${sortBy}:${sortDir}`;
+  const onOrden = (v) => { const [b, d] = v.split(":"); setSortBy(b); setSortDir(d); };
 
   const confirmDelete  = useCallback((cot) => { setToDelete(cot); onOpen(); }, [onOpen]);
 
@@ -342,11 +399,10 @@ export default function HistorialPage() {
         <Flex maxW="1200px" mx="auto" px={{ base: 3, md: 6 }}
           h={{ base: "auto", md: "54px" }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
-          <HStack spacing={3}>
-            <Tooltip label="Volver al cotizador" hasArrow>
-              <IconButton size="sm" variant="ghost" rounded="md" aria-label="Volver"
-                icon={<FiArrowLeft />} onClick={() => navigate("/cotizador")} />
-            </Tooltip>
+          <HStack spacing={2}>
+            <Box bg={FY} rounded="md" px={2} py="3px">
+              <Text fontWeight="900" color={DARK} fontSize="sm" lineHeight="1.4">FE</Text>
+            </Box>
             <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}>Cotizaciones</Text>
             <Tag size="sm" colorScheme="gray" rounded="full">{cotizaciones.length}</Tag>
             {nubeActiva && (
@@ -377,38 +433,65 @@ export default function HistorialPage() {
 
       <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }} py={6}>
 
-        {/* KPIs */}
+        {/* KPIs — clic para filtrar por estado */}
         <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
-          <KpiCard label="Total" value={cotizaciones.length} icon={FiFileText} accent={mutedL} />
-          <KpiCard label="Enviadas" value={stats.enviadas} icon={FiSend} accent="blue" />
-          <KpiCard label="Aceptadas" value={stats.aceptadas} icon={FiCheckCircle} accent="green" />
+          <KpiCard label="Total" value={cotizaciones.length} icon={FiFileText} accent={mutedL}
+            onClick={() => setEstado("todos")} active={estado === "todos"} />
+          <KpiCard label="Enviadas" value={stats.enviadas} icon={FiSend} accent="blue.400"
+            onClick={() => setEstado("enviada")} active={estado === "enviada"} />
+          <KpiCard label="Aceptadas" value={stats.aceptadas} icon={FiCheckCircle} accent="green.400"
+            onClick={() => setEstado("aceptada")} active={estado === "aceptada"} />
           <KpiCard label="Valor total" value={money(stats.valorTotal)} icon={FiDollarSign} accent={FY}
             sub={`${cotizaciones.length} cotizaciones`} />
         </SimpleGrid>
 
         {/* Filtros */}
-        <GlassCard rounded="xl" px={5} py={4} mb={5}>
-          <Flex gap={3} align="center" flexWrap="wrap">
-            <InputGroup size="sm" flex={1} minW="180px">
+        <GlassCard rounded="xl" px={{ base: 3, md: 5 }} py={4} mb={5}>
+          <Flex gap={2.5} align="center" flexWrap="wrap">
+            <InputGroup size="sm" flex={1} minW="200px">
               <InputLeftElement pointerEvents="none">
                 <Icon as={FiSearch} color={mutedL} boxSize={4} />
               </InputLeftElement>
-              <Input rounded="md" bg={inputBg} focusBorderColor={FY}
-                placeholder="Buscar por número, cliente…"
-                value={search} onChange={(e) => setSearch(e.target.value)} />
-            </InputGroup>
+              <Input ref={searchRef} rounded="md" bg={inputBg} focusBorderColor={FY}
+                placeholder="Buscar por número, cliente, producto…  ( / )"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") { setSearch(""); e.currentTarget.blur(); } }} />
+          </InputGroup>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
-              w={{ base: "full", sm: "160px" }} value={estado}
-              onChange={(e) => setEstado(e.target.value)}>
+              w={{ base: "48%", sm: "125px" }} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="todos">Todo tipo</option>
+              <option value="comercial">Comercial</option>
+              <option value="obra">Obra</option>
+            </Select>
+            <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
+              w={{ base: "48%", sm: "150px" }} value={estado} onChange={(e) => setEstado(e.target.value)}>
               <option value="todos">Todos los estados</option>
               <option value="borrador">Borrador</option>
               <option value="enviada">Enviada</option>
               <option value="aceptada">Aceptada</option>
               <option value="rechazada">Rechazada</option>
             </Select>
-            {(search || estado !== "todos") && (
+            <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
+              w={{ base: "48%", sm: "150px" }} value={rango} onChange={(e) => onRango(e.target.value)}>
+              <option value="todos">Cualquier fecha</option>
+              <option value="hoy">Hoy</option>
+              <option value="7">Últimos 7 días</option>
+              <option value="30">Últimos 30 días</option>
+              <option value="mes">Este mes</option>
+            </Select>
+            <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
+              w={{ base: "48%", sm: "160px" }} value={ordenValue} onChange={(e) => onOrden(e.target.value)}>
+              <option value="updatedAt:desc">Más recientes</option>
+              <option value="updatedAt:asc">Más antiguas</option>
+              <option value="total:desc">Mayor valor</option>
+              <option value="total:asc">Menor valor</option>
+              <option value="numero:desc">N.º (mayor)</option>
+              <option value="cliente:asc">Cliente A→Z</option>
+            </Select>
+            {filtrosActivos && (
               <Button size="sm" variant="ghost" rounded="md" leftIcon={<FiRefreshCw size={12} />}
-                onClick={() => { setSearch(""); setEstado("todos"); }}>
+                onClick={limpiarFiltros}>
                 Limpiar
               </Button>
             )}
