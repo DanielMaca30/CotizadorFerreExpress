@@ -32,7 +32,7 @@ import {
 import { motion } from "framer-motion";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { usePDF }           from "../hooks/usePDF";
-import DocContent            from "../components/DocContent";
+import DocContent, { PAGE_W } from "../components/DocContent";
 import Paginacion, { TODAS } from "../components/Paginacion";
 import { TABS_BAR_H }        from "../components/TabsBar";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
@@ -566,7 +566,7 @@ export default function HistorialPage() {
       {/* PDF oculto para descarga */}
       {pdfCot && (
         <Box id="pdf-historial-hidden" position="fixed" top="-9999px" left="-9999px"
-          zIndex={-1} w="794px" bg="white">
+          zIndex={-1} w={`${PAGE_W}px`} bg="white">
           <DocContent
             empresa={empresaParaPDF}
             cot={pdfCot.config || {}}
@@ -575,6 +575,7 @@ export default function HistorialPage() {
             descG={pdfCot.descG || 0}
             totals={pdfCot.totals || (pdfCot.config?.tipo === 'obra' ? calcTotalsObra(pdfCot.items || [], pdfCot.descG || 0, pdfCot.aiuConfig || DEFAULT_AIU) : calcTotals(pdfCot.items || [], pdfCot.descG || 0, pdfCot.config?.iva || 19))}
             notas={pdfCot.notas || ""}
+            observaciones={pdfCot.observaciones || ""}
             aiu={pdfCot.aiuConfig || DEFAULT_AIU}
           />
         </Box>

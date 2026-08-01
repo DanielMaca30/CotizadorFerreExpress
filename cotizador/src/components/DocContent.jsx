@@ -1,26 +1,49 @@
 /**
- * DocContent.jsx  v2
- * Soporta dos modos:
- *   tipo = 'comercial'  → IVA por producto (comportamiento anterior)
- *   tipo = 'obra'       → Tabla sin IVA; resumen AIU + IVA sobre utilidad
+ * DocContent.jsx  v3 — Cotización · Remisión
+ * ─────────────────────────────────────────────────────────────────
+ * El mismo documento sirve de cotización y de remisión de domicilio,
+ * así que está pensado para imprimirse y firmarse:
+ *
+ *   • HOJA CARTA COMPLETA. Altura fija (279 mm) en columna flexible: la
+ *     tabla de productos ocupa el centro y se estira, de modo que la hoja
+ *     queda llena tanto con 3 productos como con 25. Antes el documento
+ *     medía lo que midiera el contenido y quedaba media página en blanco.
+ *   • DATOS DE ENTREGA destacados: nombre, dirección y celular. Lo demás
+ *     (empresa, NIT, contacto, correo, ciudad) solo se imprime si existe.
+ *   • TABLA SIMPLE de seis columnas. El valor unitario es el precio real
+ *     del producto, con IVA incluido; el IVA va discriminado en el resumen.
+ *   • OBSERVACIONES al pie, con renglones para escribir a mano sobre la
+ *     hoja impresa, y bloque de firma de recibido.
+ *
+ * Dos modos:
+ *   tipo = 'comercial' → resumen con IVA discriminado
+ *   tipo = 'obra'      → sin discriminar IVA; AIU solo si se configuró
  */
 
 import React from "react";
-import { money, fmtDate, calcRow, precioBase, ivaUnidad } from "../utils";
+import { money, fmtDate, calcRow } from "../utils";
 
-const FY   = "#F9BF20";
-const DARK = "#3A3A38";
+const FY    = "#F9BF20";
+const DARK  = "#3A3A38";
+const LINE  = "#dedbd5";   // filete general
+const LINEL = "#efedE8";   // filete suave entre filas
+const MUTED = "#8a8884";
+const LABEL = "#a09e99";
+
+/* Hoja carta a 96 ppp: 216 × 279 mm */
+export const PAGE_W = 816;
+export const PAGE_H = 1054;
 
 /* ── Logo: base64 → /logo.jpg → "FE" ── */
 function DocLogo({ src }) {
   const [phase, setPhase] = React.useState(src ? 0 : 1);
   React.useEffect(() => setPhase(src ? 0 : 1), [src]);
 
-  const imgSt = { height: 60, maxWidth: 150, objectFit: "contain", display: "block" };
+  const imgSt = { height: 46, maxWidth: 132, objectFit: "contain", display: "block" };
   const boxSt = {
-    background: FY, color: DARK, fontWeight: 900, fontSize: 22,
-    width: 52, height: 52, display: "flex", alignItems: "center",
-    justifyContent: "center", borderRadius: 6, flexShrink: 0,
+    background: FY, color: DARK, fontWeight: 900, fontSize: 20,
+    width: 46, height: 46, display: "flex", alignItems: "center",
+    justifyContent: "center", borderRadius: 4, flexShrink: 0,
   };
 
   if (phase === 0 && src)
@@ -30,384 +53,371 @@ function DocLogo({ src }) {
   return <div style={boxSt}>FE</div>;
 }
 
-export default function DocContent({ empresa, cot, cli, items, descG, totals, notas, aiu }) {
-  const tipo    = cot?.tipo || "comercial";
-  const esObra  = tipo === "obra";
-  const filled  = items.filter((r) => r.desc || r.price);
-  const ivaRate = (parseFloat(cot.iva) || 0) / 100;
+/* Etiqueta pequeña en versalitas */
+const Lbl = ({ children, style }) => (
+  <div style={{
+    fontSize: 7, letterSpacing: 1.6, color: LABEL, fontWeight: 700,
+    textTransform: "uppercase", ...style,
+  }}>{children}</div>
+);
+
+/* Encabezado de columna de la tabla */
+const TH_BASE = {
+  padding: "7px 4px", textAlign: "left", fontSize: 7.5,
+  letterSpacing: 1.1, fontWeight: 700, whiteSpace: "nowrap",
+};
+const Th = ({ w, align = "left", pad, children }) => (
+  <th style={{ ...TH_BASE, width: w, textAlign: align, padding: pad || TH_BASE.padding }}>
+    {children}
+  </th>
+);
+
+export default function DocContent({
+  empresa, cot, cli, items, descG, totals, notas, observaciones, aiu,
+}) {
+  const tipo   = cot?.tipo || "comercial";
+  const esObra = tipo === "obra";
+  const filled = items.filter((r) => r.desc || r.price);
   const aiuData = aiu || { admin: 0, imprevistos: 0, utilidad: 0, anticipo: 0 };
-  /* ¿Esta obra realmente lleva AIU? Si no, el documento se imprime simple:
-     productos y total, sin desglose ni filas en cero. */
+
+  /* ¿Esta obra lleva AIU? Si no, se imprime simple: productos y total. */
   const hayAIU = esObra &&
     (aiuData.admin > 0 || aiuData.imprevistos > 0 || aiuData.utilidad > 0);
 
-  /* ─── estilos inline ─── */
+  const hayDesc = filled.some((r) => parseFloat(r.disc) > 0);
+  const moneda  = cot.moneda || "COP";
+
+  /* Datos opcionales del cliente: se imprimen solo si están */
+  const extras = [cli.empresa, cli.nit && `NIT ${cli.nit}`, cli.ciudad,
+    cli.contacto && `Attn: ${cli.contacto}`, cli.correo].filter(Boolean).join("  ·  ");
+
   const st = {
     page: {
       fontFamily: "Arial, Helvetica, sans-serif",
-      fontSize: 10.5,
       color: "#1a1a1a",
       background: "#fff",
-      lineHeight: 1.45,
-    },
-    header: {
-      background: DARK,
-      padding: "20px 28px 18px",
+      width: PAGE_W,
+      height: PAGE_H,
       display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      gap: 20,
+      flexDirection: "column",
+      boxSizing: "border-box",
     },
-    hLeft:   { display: "flex", alignItems: "flex-start", gap: 12 },
-    hName:   { fontWeight: 700, fontSize: 13, color: FY, marginBottom: 4, lineHeight: 1.2 },
-    hSub:    { fontSize: 9.5, color: "rgba(255,255,255,.58)", lineHeight: 1.9 },
-    hRight:  { textAlign: "right", flexShrink: 0 },
-    hLabel:  {
-      fontSize: 8.5, letterSpacing: "0.15em", textTransform: "uppercase",
-      color: "rgba(249,191,32,.65)", fontWeight: 700, marginBottom: 4,
+    td: { padding: "8px 4px", fontSize: 11, verticalAlign: "top" },
+    resRow: {
+      display: "flex", justifyContent: "space-between",
+      padding: "6px 11px", fontSize: 10.5, color: "#555",
     },
-    hNum:    { fontSize: 48, fontWeight: 900, color: "#fff", lineHeight: 1, marginBottom: 6 },
-    hMeta:   { fontSize: 9.5, color: "rgba(255,255,255,.45)", lineHeight: 1.85 },
-    twoCol:  { display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid #e8e8e8" },
-    col:     { padding: "12px 28px", borderRight: "1px solid #e8e8e8" },
-    colLast: { padding: "12px 28px" },
-    secLbl:  {
-      fontSize: 7.5, fontWeight: 700, letterSpacing: "0.14em",
-      textTransform: "uppercase", color: "#aaa",
-      borderBottom: "1px solid #e8e8e8",
-      paddingBottom: 3, marginBottom: 7, display: "block",
-    },
-    cliName: { fontWeight: 700, fontSize: 12, color: "#111", marginBottom: 2 },
-    cliLine: { fontSize: 10, color: "#444", lineHeight: 1.8 },
-    fechaRow:   { display: "grid", gridTemplateColumns: "1fr 1fr", background: "#f8f8f8", borderBottom: "2px solid #e0e0e0" },
-    fechaCell:  { padding: "9px 28px", borderRight: "1px solid #e8e8e8" },
-    fechaCellL: { padding: "9px 28px" },
-    fechaLbl:   { fontSize: 7.5, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#bbb", display: "block", marginBottom: 1 },
-    fechaVal:   { fontSize: 11.5, fontWeight: 700, color: "#111" },
-    table:   { width: "100%", borderCollapse: "collapse", fontSize: 10 },
-    thBase:  { fontSize: 7.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444", padding: "8px 8px", textAlign: "left",   borderBottom: "2px solid #d0d0d0", background: "#f0f0f0", whiteSpace: "nowrap" },
-    thR:     { fontSize: 7.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444", padding: "8px 8px", textAlign: "right",  borderBottom: "2px solid #d0d0d0", background: "#f0f0f0", whiteSpace: "nowrap" },
-    thC:     { fontSize: 7.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444", padding: "8px 8px", textAlign: "center", borderBottom: "2px solid #d0d0d0", background: "#f0f0f0", whiteSpace: "nowrap" },
-    tdBase:  { padding: "7px 8px", borderBottom: "1px solid #f0f0f0", color: "#333", fontSize: 10 },
-    tdBold:  { padding: "7px 8px", borderBottom: "1px solid #f0f0f0", color: "#111", fontWeight: 600, fontSize: 10 },
-    tdNum:   { padding: "7px 8px", borderBottom: "1px solid #f0f0f0", color: "#111", textAlign: "right",  fontWeight: 600, fontSize: 10 },
-    tdC:     { padding: "7px 8px", borderBottom: "1px solid #f0f0f0", color: "#555", textAlign: "center", fontSize: 10 },
-    tdSm:    { padding: "7px 8px", borderBottom: "1px solid #f0f0f0", color: "#777", fontSize: 9.5 },
-    bottom:  { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 28, padding: "18px 28px", borderTop: "1px solid #e8e8e8" },
-    notasWrap: { flex: 1, minWidth: 180 },
-    notasLbl:  { fontSize: 7.5, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#bbb", borderBottom: "1px solid #e8e8e8", paddingBottom: 3, marginBottom: 8, display: "block" },
-    notasText: { fontSize: 9.5, color: "#666", lineHeight: 1.85, whiteSpace: "pre-line" },
-    resBox:    { width: 260, flexShrink: 0, border: "1px solid #e0e0e0", borderRadius: 3, overflow: "hidden" },
-    resHdr:    { background: "#f0f0f0", padding: "7px 13px", fontSize: 7.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#888", borderBottom: "1px solid #e0e0e0" },
-    resRow:    { display: "flex", justifyContent: "space-between", padding: "6px 13px", borderBottom: "1px solid #f5f5f5", fontSize: 10.5 },
-    resRowSub: { display: "flex", justifyContent: "space-between", padding: "5px 13px 5px 20px", borderBottom: "1px solid #f5f5f5", fontSize: 9.5, background: "#fafafa" },
-    resLbl:    { color: "#888" },
-    resLblSub: { color: "#aaa" },
-    resVal:    { fontWeight: 600, color: "#222" },
-    resDivider:{ height: 1, background: "#e0e0e0", margin: "0" },
-    resTotal:  { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", background: DARK },
-    resTotalLbl: { fontWeight: 700, fontSize: 11, color: "#fff" },
-    resTotalVal: { fontWeight: 900, fontSize: 20, color: FY },
-    footer:    { background: DARK, padding: "9px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" },
-    footNota:  { fontSize: 8.5, color: "rgba(255,255,255,.28)" },
-    footBrand: { fontSize: 10, color: "rgba(249,191,32,.55)", fontStyle: "italic" },
-    badge:     { display: "inline-block", background: esObra ? "#1a5276" : "#1a3a1a", color: esObra ? "#aed6f1" : "#abebc6", fontSize: 8, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 3, marginTop: 4 },
-  };
-
-  /* ── Forma de pago con anticipo ── */
-  const fmtFormaPago = () => {
-    const fp = cot.formaPago || "";
-    if (esObra && aiuData.anticipo > 0) {
-      return `${fp} — Anticipo ${aiuData.anticipo}%`;
-    }
-    return fp;
+    firma: { borderBottom: `1px solid ${DARK}`, height: 30 },
   };
 
   return (
     <div style={st.page}>
 
-      {/* ═══ HEADER ═══ */}
-      <div style={st.header}>
-        <div style={st.hLeft}>
-          <DocLogo src={empresa.logo} />
-          <div>
-            <div style={st.hName}>{empresa.nombre}</div>
-            <div style={st.hSub}>
-              NIT {empresa.nit}<br />
-              {empresa.dir}<br />
-              {empresa.ciudad}<br />
-              Tel: {empresa.tel}<br />
-              {empresa.correo}
+      {/* ═══ ENCABEZADO ═══ */}
+      <div style={{
+        background: DARK, padding: "16px 26px", display: "flex",
+        justifyContent: "space-between", alignItems: "center", flex: "0 0 auto",
+      }}>
+        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <DocLogo src={empresa?.logo} />
+          <div style={{ fontSize: 9, color: "#b8b6b1", lineHeight: 1.65 }}>
+            <div style={{ color: FY, fontWeight: 700, fontSize: 14, letterSpacing: 0.3 }}>
+              {empresa?.nombre || "FerreExpress S.A.S."}
             </div>
+            {empresa?.nit && `NIT ${empresa.nit}`}
+            {empresa?.dir && `  ·  ${empresa.dir}`}
+            {empresa?.ciudad && `, ${empresa.ciudad}`}
+            <br />
+            {empresa?.tel && `Tel ${empresa.tel}`}
+            {empresa?.correo && `  ·  ${empresa.correo}`}
           </div>
         </div>
-        <div style={st.hRight}>
-          <div style={st.hLabel}>{esObra ? "Cotización de Obra" : "Cotización Comercial"}</div>
-          <div style={st.hNum}>{cot.numero || "—"}</div>
-          <div style={st.hMeta}>
-            Generación: {fmtDate(cot.fecha)}<br />
-            Válida hasta: {fmtDate(cot.vigencia)}
+        <div style={{ textAlign: "right" }}>
+          <div style={{ color: FY, fontSize: 8, letterSpacing: 2.2, fontWeight: 700 }}>
+            COTIZACIÓN · REMISIÓN
           </div>
-          {hayAIU && <div style={st.badge}>AIU</div>}
-        </div>
-      </div>
-
-      {/* ═══ CLIENTE / CONDICIONES ═══ */}
-      <div style={st.twoCol}>
-        <div style={st.col}>
-          <span style={st.secLbl}>Señores</span>
-          {cli.nombre
-            ? <div style={st.cliName}>{cli.nombre}</div>
-            : <div style={{ ...st.cliLine, color: "#ccc", fontStyle: "italic" }}>Sin datos</div>}
-          {cli.empresa  && <div style={st.cliLine}>{cli.empresa}</div>}
-          {cli.nit      && <div style={st.cliLine}>NIT / CC: {cli.nit}</div>}
-          {cli.contacto && <div style={st.cliLine}>Attn: {cli.contacto}</div>}
-          {cli.tel      && <div style={st.cliLine}>Tel: {cli.tel}</div>}
-          {cli.correo   && <div style={st.cliLine}>{cli.correo}</div>}
-          {cli.ciudad   && <div style={st.cliLine}>Ciudad: {cli.ciudad}</div>}
-        </div>
-        <div style={st.colLast}>
-          <span style={st.secLbl}>Condiciones</span>
-          {[
-            ["Moneda",        cot.moneda],
-            ["Forma de pago", fmtFormaPago()],
-            !esObra && ["IVA", `${cot.iva}%`],
-            /* En obra, cada concepto del AIU solo se imprime si tiene valor:
-               una obra sin AIU no debe mostrar condiciones en cero al cliente. */
-            esObra && aiuData.admin       > 0 && ["Administración", `${aiuData.admin}%`],
-            esObra && aiuData.imprevistos > 0 && ["Imprevistos",    `${aiuData.imprevistos}%`],
-            esObra && aiuData.utilidad    > 0 && ["Utilidad",       `${aiuData.utilidad}%`],
-            esObra && aiuData.utilidad    > 0 && ["IVA (s/ utilidad)", "19%"],
-            parseFloat(descG) > 0 && ["Desc. global", `${descG}%`],
-          ].filter(Boolean).map(([l, v]) => (
-            <div key={l} style={st.cliLine}>
-              {l}: <strong style={{ color: "#111" }}>{v}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ═══ FECHAS ═══ */}
-      <div style={st.fechaRow}>
-        <div style={st.fechaCell}>
-          <span style={st.fechaLbl}>Fecha de emisión</span>
-          <span style={st.fechaVal}>{fmtDate(cot.fecha)}</span>
-        </div>
-        <div style={st.fechaCellL}>
-          <span style={st.fechaLbl}>N° Cotización</span>
-          <span style={st.fechaVal}>{cot.numero || "—"}</span>
-        </div>
-      </div>
-
-      {/* ═══ TABLA ═══ */}
-      {esObra ? (
-        /* ── TABLA OBRA: sin columnas de IVA por producto ── */
-        <table style={st.table}>
-          <thead>
-            <tr>
-              <th style={{ ...st.thBase, width: 28  }}>Ítem</th>
-              <th style={{ ...st.thBase, width: 72  }}>Código</th>
-              <th style={st.thBase}>Descripción / Actividad</th>
-              <th style={{ ...st.thC,    width: 48 }}>Cantidad</th>
-              <th style={{ ...st.thBase, width: 44 }}>Unidad</th>
-              <th style={{ ...st.thR,    width: 90 }}>Vr. Unitario</th>
-              <th style={{ ...st.thC,    width: 44 }}>% Desc.</th>
-              <th style={{ ...st.thR,    width: 90 }}>Vr. Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filled.length === 0 ? (
-              <tr>
-                <td colSpan={8} style={{ ...st.tdBase, textAlign: "center", color: "#bbb", fontStyle: "italic", padding: "24px" }}>
-                  Sin actividades / productos
-                </td>
-              </tr>
-            ) : filled.map((r, i) => {
-              const p     = parseFloat(r.price) || 0;
-              const total = calcRow(r);
-              return (
-                <tr key={r.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...st.tdSm, textAlign: "center" }}>{i + 1}</td>
-                  <td style={st.tdSm}>{r.ref || "—"}</td>
-                  <td style={st.tdBold}>{r.desc || "—"}</td>
-                  <td style={st.tdC}>{r.qty}</td>
-                  <td style={st.tdSm}>{r.unit}</td>
-                  <td style={st.tdNum}>{money(p, cot.moneda)}</td>
-                  <td style={st.tdC}>{parseFloat(r.disc) > 0 ? `${r.disc} %` : "0 %"}</td>
-                  <td style={st.tdNum}>{money(total, cot.moneda)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        /* ── TABLA COMERCIAL: con IVA por producto ── */
-        <table style={st.table}>
-          <thead>
-            <tr>
-              <th style={{ ...st.thBase, width: 28  }}>Ítem</th>
-              <th style={{ ...st.thBase, width: 82  }}>Código</th>
-              <th style={st.thBase}>Nombre Producto</th>
-              <th style={{ ...st.thC,   width: 48  }}>Cantidad</th>
-              <th style={{ ...st.thBase,width: 44  }}>Unidad</th>
-              <th style={{ ...st.thR,   width: 82  }}>Vr. Unit. s/IVA</th>
-              <th style={{ ...st.thR,   width: 72  }}>IVA Unit.</th>
-              <th style={{ ...st.thR,   width: 82  }}>Vr. Unit. c/IVA</th>
-              <th style={{ ...st.thC,   width: 44  }}>% Desc.</th>
-              <th style={{ ...st.thR,   width: 84  }}>Vr. Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filled.length === 0 ? (
-              <tr>
-                <td colSpan={10} style={{ ...st.tdBase, textAlign: "center", color: "#bbb", fontStyle: "italic", padding: "24px" }}>
-                  Sin productos
-                </td>
-              </tr>
-            ) : filled.map((r, i) => {
-              const p     = parseFloat(r.price) || 0;
-              const pSin  = r.sinIva ? p : precioBase(p, ivaRate);
-              const pIva  = r.sinIva ? 0 : ivaUnidad(p, ivaRate);
-              const total = calcRow(r);
-              return (
-                <tr key={r.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...st.tdSm, textAlign: "center" }}>{i + 1}</td>
-                  <td style={st.tdSm}>{r.ref || "—"}</td>
-                  <td style={st.tdBold}>{r.desc || "—"}{r.sinIva ? " *" : ""}</td>
-                  <td style={st.tdC}>{r.qty}</td>
-                  <td style={st.tdSm}>{r.unit}</td>
-                  <td style={st.tdNum}>{money(pSin, cot.moneda)}</td>
-                  <td style={r.sinIva ? { ...st.tdNum, color: "#999", fontWeight: 400, fontSize: 8.5 } : st.tdNum}>
-                    {r.sinIva ? "Excluido" : money(pIva, cot.moneda)}
-                  </td>
-                  <td style={st.tdNum}>{money(p,    cot.moneda)}</td>
-                  <td style={st.tdC}>{parseFloat(r.disc) > 0 ? `${r.disc} %` : "0 %"}</td>
-                  <td style={st.tdNum}>{money(total, cot.moneda)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-
-      {/* Nota transporte excluido de IVA */}
-      {!esObra && filled.some((r) => r.sinIva) && (
-        <div style={{ padding: "6px 28px 0", fontSize: 8.5, color: "#888", fontStyle: "italic" }}>
-          * Servicio de transporte excluido de IVA (Art. 476 del Estatuto Tributario).
-        </div>
-      )}
-
-      {/* ═══ NOTAS + RESUMEN ═══ */}
-      <div style={st.bottom}>
-        <div style={st.notasWrap}>
-          <span style={st.notasLbl}>Notas y condiciones</span>
-          <div style={st.notasText}>{notas}</div>
-        </div>
-
-        <div style={st.resBox}>
-          <div style={st.resHdr}>Resumen Económico</div>
-
-          {esObra ? (
-            /* ── Resumen Obra (AIU) ──
-               Con el AIU en cero la cotización de obra es simplemente el
-               listado sin discriminar IVA: en ese caso se omiten el desglose
-               y los subtotales intermedios, para no imprimir filas en $0. */
-            <>
-              <div style={st.resRow}>
-                <span style={st.resLbl}>{hayAIU ? "Costo Directo" : "Subtotal"}</span>
-                <span style={st.resVal}>{money(totals.costoDirecto, cot.moneda)}</span>
-              </div>
-              {parseFloat(descG) > 0 && (
-                <div style={st.resRow}>
-                  <span style={st.resLbl}>Descuento ({descG}%)</span>
-                  <span style={{ ...st.resVal, color: "#b00" }}>− {money(totals.descGAmt, cot.moneda)}</span>
-                </div>
-              )}
-              {hayAIU && (
-                <>
-                  <div style={st.resRow}>
-                    <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Costo Base</span>
-                    <span style={st.resVal}>{money(totals.costoBase, cot.moneda)}</span>
-                  </div>
-                  <div style={st.resDivider} />
-                  {aiuData.admin > 0 && (
-                    <div style={st.resRowSub}>
-                      <span style={st.resLblSub}>Administración ({aiuData.admin}%)</span>
-                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.adminAmt, cot.moneda)}</span>
-                    </div>
-                  )}
-                  {aiuData.imprevistos > 0 && (
-                    <div style={st.resRowSub}>
-                      <span style={st.resLblSub}>Imprevistos ({aiuData.imprevistos}%)</span>
-                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.impAmt, cot.moneda)}</span>
-                    </div>
-                  )}
-                  {aiuData.utilidad > 0 && (
-                    <div style={st.resRowSub}>
-                      <span style={st.resLblSub}>Utilidad ({aiuData.utilidad}%)</span>
-                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.utilAmt, cot.moneda)}</span>
-                    </div>
-                  )}
-                  <div style={st.resDivider} />
-                  <div style={st.resRow}>
-                    <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Subtotal AIU</span>
-                    <span style={st.resVal}>{money(totals.subtotalAIU, cot.moneda)}</span>
-                  </div>
-                </>
-              )}
-              {aiuData.utilidad > 0 && (
-                <div style={st.resRow}>
-                  <span style={st.resLbl}>IVA 19% s/ Utilidad</span>
-                  <span style={st.resVal}>{money(totals.ivaUtilidad, cot.moneda)}</span>
-                </div>
-              )}
-              {aiuData.anticipo > 0 && (
-                <div style={{ ...st.resRow, background: "#fffde7" }}>
-                  <span style={st.resLbl}>Anticipo ({aiuData.anticipo}%)</span>
-                  <span style={{ ...st.resVal, color: "#7d6608" }}>{money(totals.totalPagar * aiuData.anticipo / 100, cot.moneda)}</span>
-                </div>
-              )}
-            </>
-          ) : (
-            /* ── Resumen Comercial ── */
-            <>
-              <div style={st.resRow}>
-                <span style={st.resLbl}>Total Bruto</span>
-                <span style={st.resVal}>{money(totals.totalBruto, cot.moneda)}</span>
-              </div>
-              {(totals.exento || 0) > 0 && (
-                <div style={st.resRow}>
-                  <span style={st.resLbl}>Transporte (excluido de IVA)</span>
-                  <span style={st.resVal}>{money(totals.exento, cot.moneda)}</span>
-                </div>
-              )}
-              {parseFloat(descG) > 0 && (
-                <div style={st.resRow}>
-                  <span style={st.resLbl}>Descuento ({descG}%)</span>
-                  <span style={{ ...st.resVal, color: "#b00" }}>− {money(totals.descGAmt, cot.moneda)}</span>
-                </div>
-              )}
-              <div style={st.resRow}>
-                <span style={st.resLbl}>IVA {cot.iva}%</span>
-                <span style={st.resVal}>{money(totals.ivaTotal, cot.moneda)}</span>
-              </div>
-            </>
+          <div style={{ color: "#fff", fontSize: 37, fontWeight: 700, lineHeight: 1.1, letterSpacing: -0.5 }}>
+            {cot.numero || "—"}
+          </div>
+          {esObra && (
+            <div style={{
+              display: "inline-block", background: "#1a5276", color: "#d6eaf8",
+              fontSize: 7.5, fontWeight: 700, letterSpacing: 1.4,
+              padding: "2px 9px", borderRadius: 3, marginTop: 2,
+            }}>OBRA</div>
           )}
+        </div>
+      </div>
 
-          <div style={st.resTotal}>
-            <span style={st.resTotalLbl}>Total a Pagar</span>
-            <span style={st.resTotalVal}>{money(totals.totalPagar, cot.moneda)}</span>
+      {/* ═══ CLIENTE Y CONDICIONES ═══ */}
+      <div style={{ display: "flex", borderBottom: `2px solid ${DARK}`, flex: "0 0 auto" }}>
+        <div style={{ flex: 1.75, padding: "13px 26px", borderRight: `1px solid ${LINE}` }}>
+          <Lbl style={{ marginBottom: 7 }}>Cliente</Lbl>
+          <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, marginBottom: 7 }}>
+            {cli.nombre || "—"}
           </div>
+          <table style={{ borderCollapse: "collapse" }}>
+            <tbody>
+              <tr>
+                <td style={{ fontSize: 8, color: LABEL, letterSpacing: 0.8, width: 62, padding: "2px 0", verticalAlign: "baseline", fontWeight: 700 }}>
+                  DIRECCIÓN
+                </td>
+                <td style={{ fontSize: 12, fontWeight: 700, padding: "2px 0" }}>
+                  {cli.direccion || "—"}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ fontSize: 8, color: LABEL, letterSpacing: 0.8, padding: "2px 0", verticalAlign: "baseline", fontWeight: 700 }}>
+                  CELULAR
+                </td>
+                <td style={{ fontSize: 12, fontWeight: 700, padding: "2px 0" }}>
+                  {cli.tel || "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          {extras && (
+            <div style={{ fontSize: 8.5, color: LABEL, marginTop: 6 }}>{extras}</div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, padding: "13px 26px" }}>
+          <Lbl style={{ marginBottom: 7 }}>Condiciones</Lbl>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+            <tbody>
+              {[
+                ["Emisión", fmtDate(cot.fecha)],
+                ["Válida hasta", fmtDate(cot.vigencia)],
+                ["Forma de pago", cot.formaPago],
+                [esObra ? "Moneda" : `Moneda · IVA`, esObra ? moneda : `${moneda} · ${cot.iva}%`],
+                hayAIU && ["AIU", `${aiuData.admin}% · ${aiuData.imprevistos}% · ${aiuData.utilidad}%`],
+                aiuData.anticipo > 0 && ["Anticipo", `${aiuData.anticipo}%`],
+                parseFloat(descG) > 0 && ["Descuento", `${descG}%`],
+              ].filter(Boolean).map(([l, v]) => (
+                <tr key={l}>
+                  <td style={{ color: MUTED, padding: "2.5px 0" }}>{l}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, padding: "2.5px 0" }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ═══ TABLA DE PRODUCTOS — se estira hasta el pie ═══ */}
+      <div style={{
+        flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column",
+        margin: "0 26px", border: `1px solid ${LINE}`, borderTop: "none",
+      }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: DARK, color: FY }}>
+              <Th w={30} pad="7px 4px 7px 11px">N°</Th>
+              <Th>Descripción</Th>
+              <Th w={46} align="center">Cant.</Th>
+              <Th w={42} align="center">Und.</Th>
+              <Th w={86} align="right">Vr. unitario</Th>
+              {hayDesc && <Th w={44} align="right">Desc.</Th>}
+              <Th w={92} align="right" pad="7px 11px 7px 4px">Vr. total</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {filled.map((r, i) => (
+              <tr key={r.id || i} style={{
+                borderBottom: `1px solid ${LINEL}`,
+                background: i % 2 === 1 ? "#fbfaf8" : "#fff",
+              }}>
+                <td style={{ ...st.td, padding: "8px 4px 8px 11px", color: "#b5b3ae", fontSize: 9 }}>{i + 1}</td>
+                <td style={{ ...st.td, fontWeight: 700 }}>
+                  {r.desc || "—"}
+                  {r.ref && <span style={{ color: MUTED, fontWeight: 400, fontSize: 9 }}>  ({r.ref})</span>}
+                </td>
+                <td style={{ ...st.td, textAlign: "center", fontWeight: 700 }}>{r.qty || 1}</td>
+                <td style={{ ...st.td, textAlign: "center", color: MUTED, fontSize: 9.5 }}>{r.unit || "Und"}</td>
+                <td style={{ ...st.td, textAlign: "right" }}>{money(parseFloat(r.price) || 0, moneda)}</td>
+                {hayDesc && (
+                  <td style={{ ...st.td, textAlign: "right", color: MUTED, fontSize: 9.5 }}>
+                    {parseFloat(r.disc) > 0 ? `${r.disc}%` : "—"}
+                  </td>
+                )}
+                <td style={{ ...st.td, padding: "8px 11px 8px 4px", textAlign: "right", fontWeight: 700 }}>
+                  {money(calcRow(r), moneda)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Espacio libre: mantiene la hoja llena sin dibujar nada */}
+        <div style={{ flex: 1, minHeight: 0 }} />
+
+        <div style={{
+          padding: "6px 11px", borderTop: `1px solid ${LINE}`, background: "#fbfaf8",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 9, color: MUTED, letterSpacing: 0.4 }}>
+            Total ítems: <strong style={{ color: DARK }}>{filled.length}</strong>
+          </span>
+          <span style={{ fontSize: 9, color: LABEL, fontStyle: "italic" }}>
+            {esObra
+              ? "Valores en pesos colombianos"
+              : "Valores en pesos colombianos con IVA incluido"}
+          </span>
+        </div>
+      </div>
+
+      {/* ═══ OBSERVACIONES + RESUMEN ═══ */}
+      <div style={{ display: "flex", gap: 14, padding: "13px 26px 0", flex: "0 0 auto" }}>
+        <div style={{ flex: 1.5, display: "flex", flexDirection: "column" }}>
+          <Lbl style={{ marginBottom: 5 }}>Observaciones</Lbl>
+          <div style={{
+            border: `1px solid ${LINE}`, borderRadius: 2, padding: "7px 10px",
+            height: 86, display: "flex", flexDirection: "column", boxSizing: "border-box",
+          }}>
+            {observaciones && (
+              <div style={{ fontSize: 10, color: "#333", lineHeight: 1.45, whiteSpace: "pre-wrap", marginBottom: 4 }}>
+                {observaciones}
+              </div>
+            )}
+            {/* Renglones para escribir a mano sobre la hoja impresa */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 14, paddingBottom: 2 }}>
+              <div style={{ borderBottom: `1px solid #eae7e1` }} />
+              <div style={{ borderBottom: `1px solid #eae7e1` }} />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <Lbl style={{ marginBottom: 5 }}>Resumen</Lbl>
+          <div style={{ border: `1px solid ${LINE}`, borderRadius: 2, overflow: "hidden" }}>
+            {esObra ? (
+              <>
+                <div style={st.resRow}>
+                  <span>{hayAIU ? "Costo directo" : "Subtotal"}</span>
+                  <strong style={{ color: "#333" }}>{money(totals.costoDirecto, moneda)}</strong>
+                </div>
+                {parseFloat(descG) > 0 && (
+                  <div style={st.resRow}>
+                    <span>Descuento ({descG}%)</span>
+                    <strong style={{ color: "#b00" }}>− {money(totals.descGAmt, moneda)}</strong>
+                  </div>
+                )}
+                {hayAIU && (
+                  <>
+                    {aiuData.admin > 0 && (
+                      <div style={st.resRow}>
+                        <span>Administración ({aiuData.admin}%)</span>
+                        <strong style={{ color: "#333" }}>{money(totals.adminAmt, moneda)}</strong>
+                      </div>
+                    )}
+                    {aiuData.imprevistos > 0 && (
+                      <div style={st.resRow}>
+                        <span>Imprevistos ({aiuData.imprevistos}%)</span>
+                        <strong style={{ color: "#333" }}>{money(totals.impAmt, moneda)}</strong>
+                      </div>
+                    )}
+                    {aiuData.utilidad > 0 && (
+                      <div style={st.resRow}>
+                        <span>Utilidad ({aiuData.utilidad}%)</span>
+                        <strong style={{ color: "#333" }}>{money(totals.utilAmt, moneda)}</strong>
+                      </div>
+                    )}
+                  </>
+                )}
+                {aiuData.utilidad > 0 && (
+                  <div style={{ ...st.resRow, borderBottom: `1px solid ${LINEL}` }}>
+                    <span>IVA 19% s/ utilidad</span>
+                    <strong style={{ color: "#333" }}>{money(totals.ivaUtilidad, moneda)}</strong>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={st.resRow}>
+                  <span>Subtotal</span>
+                  <strong style={{ color: "#333" }}>{money(totals.totalBruto, moneda)}</strong>
+                </div>
+                {(totals.exento || 0) > 0 && (
+                  <div style={st.resRow}>
+                    <span>Transporte (sin IVA)</span>
+                    <strong style={{ color: "#333" }}>{money(totals.exento, moneda)}</strong>
+                  </div>
+                )}
+                {parseFloat(descG) > 0 && (
+                  <div style={st.resRow}>
+                    <span>Descuento ({descG}%)</span>
+                    <strong style={{ color: "#b00" }}>− {money(totals.descGAmt, moneda)}</strong>
+                  </div>
+                )}
+                <div style={{ ...st.resRow, borderBottom: `1px solid ${LINEL}` }}>
+                  <span>IVA {cot.iva}%</span>
+                  <strong style={{ color: "#333" }}>{money(totals.ivaTotal, moneda)}</strong>
+                </div>
+              </>
+            )}
+
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "10px 11px", background: DARK,
+            }}>
+              <span style={{ fontSize: 9.5, color: "#fff", fontWeight: 700, letterSpacing: 1.2 }}>
+                TOTAL A PAGAR
+              </span>
+              <span style={{ fontSize: 21, color: FY, fontWeight: 700 }}>
+                {money(totals.totalPagar, moneda)}
+              </span>
+            </div>
+
+            {aiuData.anticipo > 0 && (
+              <div style={{ ...st.resRow, background: "#fffde7" }}>
+                <span>Anticipo ({aiuData.anticipo}%)</span>
+                <strong style={{ color: "#7d6608" }}>
+                  {money(totals.totalPagar * aiuData.anticipo / 100, moneda)}
+                </strong>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ NOTAS ═══ */}
+      {notas && (
+        <div style={{ padding: "11px 26px 0", flex: "0 0 auto" }}>
+          <div style={{ fontSize: 8.5, color: MUTED, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+            {notas}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FIRMA DE RECIBIDO ═══ */}
+      <div style={{ display: "flex", gap: 30, padding: "18px 26px 12px", flex: "0 0 auto" }}>
+        <div style={{ flex: 1 }}>
+          <div style={st.firma} />
+          <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Recibí conforme · firma</Lbl>
+        </div>
+        <div style={{ flex: 0.9 }}>
+          <div style={st.firma} />
+          <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Nombre y C.C.</Lbl>
+        </div>
+        <div style={{ flex: 0.55 }}>
+          <div style={st.firma} />
+          <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Fecha entrega</Lbl>
         </div>
       </div>
 
       {/* ═══ PIE ═══ */}
-      <div style={st.footer}>
-        <span style={st.footNota}>
-          Generado el {new Date().toLocaleDateString("es-CO")} — No constituye factura de venta
+      <div style={{
+        background: DARK, padding: "7px 26px", display: "flex",
+        justifyContent: "space-between", alignItems: "center", flex: "0 0 auto",
+      }}>
+        <span style={{ fontSize: 8, color: MUTED }}>
+          {cot.numero || ""} · Documento informativo, no constituye factura de venta
         </span>
-        <span style={st.footBrand}>{empresa.nombre}</span>
+        <span style={{ fontSize: 8.5, color: FY, fontStyle: "italic", fontWeight: 700 }}>
+          {empresa?.nombre || "FerreExpress S.A.S."}
+        </span>
       </div>
+
     </div>
   );
 }

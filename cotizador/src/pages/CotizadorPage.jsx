@@ -40,7 +40,7 @@ import { usePDF } from '../hooks/usePDF';
 import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
 import AutocompleteInput from '../components/AutocompleteInput';
-import DocContent from '../components/DocContent';
+import DocContent, { PAGE_W } from '../components/DocContent';
 import ImportModal from '../components/ImportModal';
 import ModalConvertirTipo from '../components/ModalConvertirTipo';
 import { TABS_BAR_H } from '../components/TabsBar';
@@ -57,7 +57,7 @@ import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
    reguardar (ni reordenar el historial) al saltar entre pestañas. */
 const firmaDe = (s) => JSON.stringify({
   cliente: s.cliente, cotConfig: s.cotConfig, items: s.items,
-  descG: s.descG, notas: s.notas, aiuConfig: s.aiuConfig,
+  descG: s.descG, notas: s.notas, observaciones: s.observaciones, aiuConfig: s.aiuConfig,
 });
 
 /* ── Borrador local (protección contra pérdida de trabajo) ── */
@@ -265,26 +265,43 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
 const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const C = k => ({ value: cliente[k] ?? '', onChange: e => setCliente(p => ({ ...p, [k]: e.target.value })) });
+  const faltan = ['nombre', 'direccion', 'tel'].filter(k => !String(cliente[k] ?? '').trim());
   return (
     <Stack spacing={3} p={4}>
+      {/* Los tres datos con los que se entrega un domicilio */}
       <Box><FL required>Nombre / Razón social</FL><Input {...ip} placeholder="Juan García" {...C('nombre')} /></Box>
+      <Box><FL required>Dirección de entrega</FL>
+        <Input {...ip} placeholder="Cra 100 #11-60, Ciudad Jardín" {...C('direccion')} /></Box>
+      <Box><FL required>Celular</FL><Input {...ip} type="tel" placeholder="311 308 5083" {...C('tel')} /></Box>
+
+      {faltan.length > 0 && (
+        <Text fontSize="10px" color="orange.500" fontWeight="600" mt={-1}>
+          Falta {faltan.length === 1 ? 'el' : 'llenar'}{' '}
+          {faltan.map(k => ({ nombre: 'nombre', direccion: 'dirección', tel: 'celular' }[k])).join(', ')}
+        </Text>
+      )}
+
+      <Divider />
+      <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
+        Opcionales
+      </Text>
+      <Text fontSize="10px" color="gray.500" mt={-1}>
+        Solo se imprimen en el documento si los llenas.
+      </Text>
       <Box><FL>Empresa</FL><Input {...ip} placeholder="Constructora XYZ" {...C('empresa')} /></Box>
       <Flex gap={2}>
         <Box flex={1}><FL>NIT / Cédula</FL><Input {...ip} {...C('nit')} /></Box>
         <Box flex={1}><FL>Ciudad</FL><Input {...ip} placeholder="Cali" {...C('ciudad')} /></Box>
       </Flex>
       <Box><FL>Contacto</FL><Input {...ip} placeholder="Attn: nombre" {...C('contacto')} /></Box>
-      <Flex gap={2}>
-        <Box flex={1}><FL>Correo</FL><Input {...ip} type="email" placeholder="correo@..." {...C('correo')} /></Box>
-        <Box flex={1}><FL>Teléfono</FL><Input {...ip} placeholder="3XX..." {...C('tel')} /></Box>
-      </Flex>
+      <Box><FL>Correo</FL><Input {...ip} type="email" placeholder="correo@..." {...C('correo')} /></Box>
     </Stack>
   );
 });
 
 const PanelCotizacion = memo(function PanelCotizacion({
   cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas,
-  aiuConfig, setAiuConfig, inputBg, onChangeTipo,
+  observaciones, setObservaciones, aiuConfig, setAiuConfig, inputBg, onChangeTipo,
 }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const esObra = cotConfig.tipo === 'obra';
@@ -388,8 +405,21 @@ const PanelCotizacion = memo(function PanelCotizacion({
         </Box>
       )}
       <Divider />
+      {/* Observaciones del pedido — distintas de las notas legales.
+          Van en el recuadro del pie del documento, junto al total. */}
       <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
-        Notas
+        Observaciones
+      </Text>
+      <Textarea value={observaciones ?? ''} onChange={e => setObservaciones(e.target.value)}
+        placeholder="Entregar en portería, preguntar por Andrés…"
+        fontSize="11px" rows={3} rounded="md" focusBorderColor={FY} resize="none" bg={inputBg} />
+      <Text fontSize="10px" color="gray.500" mt={-1}>
+        Salen impresas al pie. Debajo quedan renglones para escribir a mano.
+      </Text>
+
+      <Divider />
+      <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
+        Notas y condiciones
       </Text>
       <Textarea value={notas} onChange={e => setNotas(e.target.value)}
         fontSize="11px" rows={6} rounded="md" focusBorderColor={FY} resize="none" bg={inputBg} />
@@ -950,6 +980,7 @@ export default function CotizadorPage() {
   const [aiuConfig, setAiuConfig] = useState({ ...DEFAULT_AIU });
   const [items, setItems] = useState([blankRow(), blankRow()]);
   const [notas, setNotas] = useState(DEFAULT_NOTAS);
+  const [observaciones, setObservaciones] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isPreview, setIsPreview] = useState(false);
@@ -977,12 +1008,12 @@ export default function CotizadorPage() {
     });
   }, []);
 
-  useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, descLocal, aiuConfig]);
+  useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig]);
 
   const stRef = useRef({});
   const itemsRef = useRef(items);   // lectura estable para los atajos de teclado
   useEffect(() => {
-    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, editingId, aiuConfig };
+    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, observaciones, editingId, aiuConfig };
     itemsRef.current = items;
   });
 
@@ -1013,6 +1044,7 @@ export default function CotizadorPage() {
     setDescLocal(String(cot.descG || 0));
     setItems(cot.items?.length ? cot.items : [blankRow(), blankRow()]);
     setNotas(cot.notas || DEFAULT_NOTAS);
+    setObservaciones(cot.observaciones || '');
     setAiuConfig(cot.aiuConfig || DEFAULT_AIU);
     setEditingId(id);
     setHasChanges(false);
@@ -1024,6 +1056,7 @@ export default function CotizadorPage() {
       items:     cot.items?.length ? cot.items : [],
       descG:     cot.descG || 0,
       notas:     cot.notas || DEFAULT_NOTAS,
+      observaciones: cot.observaciones || '',
       aiuConfig: cot.aiuConfig || DEFAULT_AIU,
     });
   }, [id]); // eslint-disable-line
@@ -1052,10 +1085,10 @@ export default function CotizadorPage() {
     if (editingId || !hasChanges) return;
     if (!items.some(r => r.desc?.trim())) return;
     const t = setTimeout(() => {
-      saveDraft({ cliente, cotConfig, items, notas, descLocal, aiuConfig, savedAt: Date.now() });
+      saveDraft({ cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig, savedAt: Date.now() });
     }, 800);
     return () => clearTimeout(t);
-  }, [editingId, hasChanges, cliente, cotConfig, items, notas, descLocal, aiuConfig]);
+  }, [editingId, hasChanges, cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig]);
 
   /* Recuperar borrador al abrir el cotizador nuevo */
   useEffect(() => {
@@ -1082,6 +1115,7 @@ export default function CotizadorPage() {
     setCotConfig(d.cotConfig || { ...DEFAULT_CONFIG });
     setItems(d.items?.length ? d.items : [blankRow(), blankRow()]);
     setNotas(d.notas ?? DEFAULT_NOTAS);
+    setObservaciones(d.observaciones ?? '');
     setDescLocal(String(d.descLocal ?? '0'));
     setAiuConfig(d.aiuConfig || { ...DEFAULT_AIU });
     setShowTipoModal(false);
@@ -1426,7 +1460,7 @@ export default function CotizadorPage() {
 
   /* ── Guardado ── */
   const autoSave = useCallback(async () => {
-    const { empresa, cliente, cotConfig, items, descG, notas, editingId, aiuConfig } = stRef.current;
+    const { empresa, cliente, cotConfig, items, descG, notas, observaciones, editingId, aiuConfig } = stRef.current;
     if (!items.some(r => r.desc?.trim())) return null;
     /* Sin cambios reales no se reguarda: así saltar entre pestañas no
        reordena el historial ni genera escrituras en la nube. */
@@ -1438,7 +1472,7 @@ export default function CotizadorPage() {
       ? calcTotalsObra(items, descG, aiuConfig)
       : calcTotals(items, descG, cfg.iva);
     try {
-      const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig });
+      const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, observaciones, totals: tot, aiuConfig });
       clearDraft();
       sigRef.current = sig;
       /* Si era la pestaña "Nueva", pasa a ser su COT-XXX sin moverse de sitio */
@@ -1463,7 +1497,7 @@ export default function CotizadorPage() {
     setIsSaving(true);
     const descG = parseFloat(descLocal) || 0;
     try {
-      const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, totals, aiuConfig };
+      const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, observaciones, totals, aiuConfig };
       const saved = await saveCotizacion(payload);
       aprenderProductos(items);
       clearDraft();
@@ -1486,7 +1520,7 @@ export default function CotizadorPage() {
       toast({ title: 'Error al guardar', description: e.message, status: 'error', duration: 4000 });
       return null;
     } finally { setIsSaving(false); }
-  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, aiuConfig,
+  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, observaciones, totals, aiuConfig,
     saveCotizacion, navigate, toast, replaceTab]);
 
   useEffect(() => { saveRef.current = handleSave; }, [handleSave]);
@@ -1518,6 +1552,7 @@ export default function CotizadorPage() {
     setAiuConfig({ ...DEFAULT_AIU });
     setItems([blankRow(), blankRow()]);
     setNotas(DEFAULT_NOTAS);
+    setObservaciones('');
     setDescLocal('0');
     setEditingId(null);
     setHasChanges(false);
@@ -1622,7 +1657,7 @@ export default function CotizadorPage() {
   const previewBg = useColorModeValue('gray.100', 'gray.900');
 
   const ivaRate = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
-  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, aiu: aiuConfig };
+  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, observaciones, aiu: aiuConfig };
   const tablaProps = {
     items, tableRef, handleTableKeyDown, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
@@ -1632,7 +1667,7 @@ export default function CotizadorPage() {
   };
   const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg };
-  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
+  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, observaciones, setObservaciones, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
   const mobileCardProps = { upItem, removeItem, duplicateItem, toggleSinIva, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId };
 
   /* ════════════════════════════════════════════════
@@ -1640,7 +1675,7 @@ export default function CotizadorPage() {
   ════════════════════════════════════════════════ */
   if (isPreview) return (
     <Box minH="100vh" bg={previewBg}>
-      <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
+      <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w={`${PAGE_W}px`} bg="white">
         <DocContent {...docProps} />
       </Box>
       <Box bg={barBg} borderBottom="1px solid" borderColor={border}
@@ -1683,7 +1718,7 @@ export default function CotizadorPage() {
     <Box minH="100vh" bg={bg}>
       {/* PDF oculto — se monta solo al exportar para no re-renderizar en cada tecla */}
       {pdfReady && (
-        <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w="794px" bg="white">
+        <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w={`${PAGE_W}px`} bg="white">
           <DocContent {...docProps} />
         </Box>
       )}

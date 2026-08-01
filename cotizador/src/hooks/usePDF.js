@@ -4,9 +4,15 @@ import jsPDF from "jspdf";
 
 /**
  * usePDF — FerreExpress
- * Captura un elemento DOM y genera PDF A4.
- * Usa JPEG (calidad 0.82) en lugar de PNG para reducir tamaño
- * del archivo ~65-75% vs la versión anterior.
+ * Captura un elemento DOM y genera un PDF en HOJA CARTA (216 × 279 mm),
+ * que es el tamaño estándar en Colombia y el que cargan las impresoras
+ * de oficina sin ajustes.
+ *
+ * El documento (DocContent) tiene la altura exacta de una carta, así que
+ * la imagen capturada encaja de borde a borde y la hoja queda llena. Si el
+ * contenido creciera más de una página, se reparte en varias.
+ *
+ * Usa JPEG (calidad 0.82) en lugar de PNG para reducir el peso del archivo.
  */
 export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
   const [loading, setLoading] = useState(false);
@@ -35,13 +41,16 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
 
       // JPEG calidad 0.82 en vez de PNG — reduce ~60-70% de peso
       const imgData = canvas.toDataURL("image/jpeg", 0.82);
-      const pdf     = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pdf     = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
       const pW      = pdf.internal.pageSize.getWidth();
       const pH      = pdf.internal.pageSize.getHeight();
       const imgH    = (canvas.height * pW) / canvas.width;
 
-      if (imgH <= pH) {
-        pdf.addImage(imgData, "JPEG", 0, 0, pW, imgH);
+      /* Tolerancia de 1 mm: el documento mide una carta exacta, pero el
+         redondeo del navegador puede sobrarle una fracción de milímetro y
+         no queremos que eso genere una segunda página en blanco. */
+      if (imgH <= pH + 1) {
+        pdf.addImage(imgData, "JPEG", 0, 0, pW, Math.min(imgH, pH));
       } else {
         let y = 0;
         while (y < imgH) {

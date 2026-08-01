@@ -246,9 +246,12 @@ export const DEFAULT_EMPRESA = {
   logo:    "",
 };
 
+/* Los tres primeros son los que de verdad importan: el documento sirve de
+   remisión de domicilio, así que sin dirección y celular no se puede entregar.
+   El resto es opcional y solo se imprime si está diligenciado. */
 export const DEFAULT_CLIENTE = {
-  nombre: "", empresa: "", nit: "",
-  contacto: "", correo: "", tel: "", ciudad: "",
+  nombre: "", direccion: "", tel: "",
+  empresa: "", nit: "", contacto: "", correo: "", ciudad: "",
 };
 
 export const DEFAULT_CONFIG = {

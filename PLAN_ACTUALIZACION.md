@@ -122,6 +122,20 @@ También corrige un fallo actual: hoy el chip "Tipo" reabre el modal inicial y *
 
 ---
 
+## 4 bis. Documento nuevo — cotización y remisión
+
+El PDF anterior ocupaba media hoja y tenía diez columnas. Se rehízo entero.
+
+**Hoja carta completa.** El documento mide exactamente 216 × 279 mm y se arma en columna flexible: la tabla de productos ocupa el centro y se estira. Con 3 productos queda espacio dentro del recuadro; con 25 se llena. En ambos casos la hoja está completa y el pie queda anclado abajo. Antes el documento medía lo que midiera el contenido, y por eso quedaba media página en blanco. El PDF pasó de A4 a carta, que es lo que cargan las impresoras sin ajustes.
+
+**Datos de entrega.** Se añadió el campo **dirección**, que no existía — sin él el documento no sirve como remisión de domicilio. Nombre, dirección y celular van arriba en el formulario, marcados como obligatorios y con un aviso si falta alguno. Empresa, NIT, contacto, correo y ciudad quedan abajo como opcionales y solo se imprimen si están diligenciados.
+
+**Tabla de seis columnas.** Se quitaron código, precio sin IVA, IVA unitario y la columna de descuento (esta última aparece sola si alguna línea la usa). El valor unitario impreso es el precio real del producto, con IVA incluido; el IVA sigue discriminado en el resumen del pie.
+
+**Observaciones y firma.** Campo de observaciones nuevo, independiente de las notas legales: lo que escribas en la app sale impreso en el recuadro del pie, y debajo quedan renglones para escribir a mano sobre la hoja. El bloque de «Recibí conforme» con firma, nombre y cédula, y fecha de entrega va siempre: en una cotización simplemente queda en blanco.
+
+---
+
 ## 5. Ajustes hechos sobre el plan original
 
 Tres cosas que aparecieron al implementar:
@@ -136,7 +150,8 @@ Tres cosas que aparecieron al implementar:
 
 - `vite build` y `eslint` sin errores ni advertencias (el proyecto partía de 0 errores y sigue en 0).
 - **Aritmética de la conversión**, comprobada con datos reales: 10 × 35.000 = 350.000 en comercial → 423.325 en obra con el AIU por defecto (10/5/5) → con el AIU en 0 se queda en 350.000 exactos → de vuelta a comercial regresa a 350.000 con los precios y la marca de transporte intactos.
-- **19 pruebas automatizadas de interfaz** sobre la app real (render headless), todas en verde:
+- **27 pruebas automatizadas de interfaz** sobre la app real (render headless), todas en verde:
+  - documento: mide una hoja carta exacta con 3 productos y sigue midiendo lo mismo con 25; imprime nombre, dirección y celular; omite los opcionales vacíos; lleva el bloque de firma; imprime las observaciones; muestra el precio con IVA sin columnas de IVA por línea; la columna de descuento solo aparece si se usa;
   - paginación: 5 de 37 por defecto, cambio a 20, navegación a la página 2, filtrar devuelve a la página 1, y sin controles cuando hay menos de una página;
   - pestañas: se restauran de localStorage con número y cliente, se ocultan si no hay ninguna, se cierran, descartan cotizaciones inexistentes y se crean al abrir una cotización;
   - conversión: el modal muestra 350.000 → 350.000 (el total no se mueve), subir la utilidad al 10 % lo mueve en vivo a 391.650, al confirmar cambia el tipo respetando los precios, e ida y vuelta devuelve el total exacto;
