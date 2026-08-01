@@ -38,15 +38,24 @@ const ORG = import.meta.env.VITE_ORG_ID || "ferreexpress";
    COTIZACIONES
 ════════════════════════════════════════════════════════════ */
 
-/** Descarga todas las cotizaciones de la nube (array, más recientes primero). */
-export async function pullCotizaciones() {
+/**
+ * Descarga cotizaciones de la nube (array, más recientes primero).
+ *
+ * @param {string|null} desde  ISO de la última sincronización. Si se indica,
+ *   solo se traen las filas modificadas después de esa marca — la primera
+ *   carga es completa y las siguientes son diferenciales. Antes se descargaba
+ *   la tabla entera cada minuto y en cada vuelta a la ventana, lo que hacía
+ *   pesado el historial a medida que crecía el archivo.
+ */
+export async function pullCotizaciones(desde = null) {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from("cotizaciones")
       .select("data")
-      .eq("org", ORG)
-      .order("updated_at", { ascending: false });
+      .eq("org", ORG);
+    if (desde) q = q.gt("updated_at", desde);
+    const { data, error } = await q.order("updated_at", { ascending: false });
     if (error) throw error;
     return (data || []).map((r) => r.data).filter(Boolean);
   } catch (e) {

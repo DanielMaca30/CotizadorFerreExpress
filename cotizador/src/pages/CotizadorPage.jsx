@@ -35,13 +35,15 @@ import {
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCotizaciones } from '../hooks/useCotizaciones';
+import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
 import { usePDF } from '../hooks/usePDF';
 import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
 import AutocompleteInput from '../components/AutocompleteInput';
 import DocContent from '../components/DocContent';
 import ImportModal from '../components/ImportModal';
+import ModalConvertirTipo from '../components/ModalConvertirTipo';
+import { TABS_BAR_H } from '../components/TabsBar';
 import {
   blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
   precioBase, ivaUnidad, formatPriceCO, parsePriceCO, esTransporte,
@@ -50,6 +52,13 @@ import {
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
+
+/* Firma del contenido: sirve para saber si algo cambió DE VERDAD y no
+   reguardar (ni reordenar el historial) al saltar entre pestañas. */
+const firmaDe = (s) => JSON.stringify({
+  cliente: s.cliente, cotConfig: s.cotConfig, items: s.items,
+  descG: s.descG, notas: s.notas, aiuConfig: s.aiuConfig,
+});
 
 /* ── Borrador local (protección contra pérdida de trabajo) ── */
 const DRAFT_KEY = 'ferreexpress_borrador_v1';
@@ -66,8 +75,6 @@ const RED = '#E21219';
 const FIELD_ORDER = ['desc', 'qty', 'unit', 'price', 'disc'];
 
 const MotionBox = motion(Box);
-const MotionTr = motion(Tr);
-const spr = (r) => r ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32, mass: 0.7 };
 
 /* ════════════════════════════════════════════════════════════
    UTILIDADES UI
@@ -405,8 +412,10 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem, toggle
   const mutedC = useColorModeValue('gray.500', 'gray.400');
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
 
+  /* Sin animación de layout, igual que en la tabla de escritorio:
+     medía la tarjeta en el DOM con cada tecla. */
   return (
-    <MotionBox layout data-drag-row={r.id} bg={cardBg} border="1px solid"
+    <Box data-drag-row={r.id} bg={cardBg} border="1px solid"
       borderColor={isDragging ? FY : (expanded ? FY : border)}
       rounded="xl" mb={2} overflow="hidden"
       style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}
@@ -541,7 +550,7 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem, toggle
           </Stack>
         </Box>
       )}
-    </MotionBox>
+    </Box>
   );
 }
 
@@ -549,7 +558,7 @@ function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem, toggle
    TABLA DESKTOP (sin cambios estructurales, se arregló scroll)
 ════════════════════════════════════════════════════════════ */
 const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
-  ivaRate, esObra, cotConfig, rm, upItem, removeItem, toggleSinIva,
+  ivaRate, esObra, cotConfig, upItem, removeItem, toggleSinIva,
   handleAcceptSugerencia, getSugerencias, itemsLen, duplicateItem, tableRef,
   startRowDrag, dragId }) {
   const hoverBg = useColorModeValue('yellow.50', 'whiteAlpha.50');
@@ -560,13 +569,16 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
   const pSin = r.sinIva ? p : precioBase(p, ivaRate);
   const pIva = r.sinIva ? 0 : ivaUnidad(p, ivaRate);
 
+  /* Fila SIN animación de layout a propósito.
+     Con `layout`, framer-motion medía en el DOM la posición de todas las filas
+     en cada render — es decir, un recálculo forzado del navegador por cada
+     tecla que escribías. En una tabla de captura de datos, la fluidez al
+     teclear vale mucho más que la transición al reordenar. */
   return (
-    <MotionTr layout
+    <Tr
       data-drag-row={r.id}
-      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }} transition={spr(rm)}
       bg={rowBg} _hover={{ bg: hoverBg }}
-      style={{ display: 'table-row', position: 'relative', zIndex: isDragging ? 3 : 'auto' }}>
+      style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}>
       <Td borderColor={border} color={mutedL} fontSize="11px" pl={2} pr={0} w="40px">
         <HStack spacing={0.5}>
           <Box as="span" onPointerDown={e => startRowDrag(e, r.id)}
@@ -660,14 +672,14 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
             onClick={() => removeItem(r.id)} isDisabled={itemsLen === 1} tabIndex={-1} />
         </HStack>
       </Td>
-    </MotionTr>
+    </Tr>
   );
 });
 
 const TablaProductos = memo(function TablaProductos({
   items, tableRef, handleTableKeyDown, esObra,
   border, mutedL, inputBg, tableBg, stripeBg,
-  ivaRate, cotConfig, rm, upItem, removeItem, toggleSinIva,
+  ivaRate, cotConfig, upItem, removeItem, toggleSinIva,
   handleAcceptSugerencia, getSugerencias, addItem, addTransporte, duplicateItem,
   startRowDrag, dragId,
 }) {
@@ -703,21 +715,19 @@ const TablaProductos = memo(function TablaProductos({
           </Tr>
         </Thead>
         <Tbody>
-          <AnimatePresence>
-            {items.map((r, i) => (
-              <ItemRow key={r.id} r={r} i={i}
-                border={border} mutedL={mutedL} inputBg={inputBg}
-                tableBg={tableBg} stripeBg={stripeBg}
-                ivaRate={ivaRate} esObra={esObra} cotConfig={cotConfig} rm={rm}
-                upItem={upItem} removeItem={removeItem} duplicateItem={duplicateItem}
-                toggleSinIva={toggleSinIva}
-                handleAcceptSugerencia={handleAcceptSugerencia}
-                getSugerencias={getSugerencias}
-                itemsLen={items.length}
-                tableRef={tableRef}
-                startRowDrag={startRowDrag} dragId={dragId} />
-            ))}
-          </AnimatePresence>
+          {items.map((r, i) => (
+            <ItemRow key={r.id} r={r} i={i}
+              border={border} mutedL={mutedL} inputBg={inputBg}
+              tableBg={tableBg} stripeBg={stripeBg}
+              ivaRate={ivaRate} esObra={esObra} cotConfig={cotConfig}
+              upItem={upItem} removeItem={removeItem} duplicateItem={duplicateItem}
+              toggleSinIva={toggleSinIva}
+              handleAcceptSugerencia={handleAcceptSugerencia}
+              getSugerencias={getSugerencias}
+              itemsLen={items.length}
+              tableRef={tableRef}
+              startRowDrag={startRowDrag} dragId={dragId} />
+          ))}
           <Tr>
             <Td colSpan={cols.length} borderColor={border} px={3} py={2}>
               <Flex align="center" gap={3}>
@@ -776,18 +786,26 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
                 <Text fontSize={fs} color="red.300" fontWeight="500">− {money(totals.descGAmt, cotConfig.moneda)}</Text>
               </Flex>
             )}
-            <Flex justify="space-between">
-              <Text fontSize={fs} color="whiteAlpha.300">Adm. {aiu.admin}% + Imp. {aiu.imprevistos}%</Text>
-              <Text fontSize={fs} color="whiteAlpha.500">{money((totals.adminAmt ?? 0) + (totals.impAmt ?? 0), cotConfig.moneda)}</Text>
-            </Flex>
-            <Flex justify="space-between">
-              <Text fontSize={fs} color="whiteAlpha.400">Utilidad {aiu.utilidad}%</Text>
-              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.utilAmt ?? 0, cotConfig.moneda)}</Text>
-            </Flex>
-            <Flex justify="space-between">
-              <Text fontSize={fs} color="whiteAlpha.400">IVA 19% s/ utilidad</Text>
-              <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.ivaUtilidad ?? 0, cotConfig.moneda)}</Text>
-            </Flex>
+            {/* Las líneas del AIU solo aparecen si tienen valor: una obra sin
+                AIU se ve limpia — productos y total, sin filas en cero. */}
+            {(aiu.admin > 0 || aiu.imprevistos > 0) && (
+              <Flex justify="space-between">
+                <Text fontSize={fs} color="whiteAlpha.300">Adm. {aiu.admin}% + Imp. {aiu.imprevistos}%</Text>
+                <Text fontSize={fs} color="whiteAlpha.500">{money((totals.adminAmt ?? 0) + (totals.impAmt ?? 0), cotConfig.moneda)}</Text>
+              </Flex>
+            )}
+            {aiu.utilidad > 0 && (
+              <>
+                <Flex justify="space-between">
+                  <Text fontSize={fs} color="whiteAlpha.400">Utilidad {aiu.utilidad}%</Text>
+                  <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.utilAmt ?? 0, cotConfig.moneda)}</Text>
+                </Flex>
+                <Flex justify="space-between">
+                  <Text fontSize={fs} color="whiteAlpha.400">IVA 19% s/ utilidad</Text>
+                  <Text fontSize={fs} color="whiteAlpha.600" fontWeight="500">{money(totals.ivaUtilidad ?? 0, cotConfig.moneda)}</Text>
+                </Flex>
+              </>
+            )}
             {aiu.anticipo > 0 && (
               <Flex justify="space-between">
                 <Text fontSize={fs} color="yellow.400">Anticipo ({aiu.anticipo}%)</Text>
@@ -831,9 +849,10 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
   );
 }
 
-function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
-  cliente, rm, safeNavigate, handleSave, isSaving, hasChanges }) {
+const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
+  cliente, safeNavigate, handleSave, isSaving, hasChanges }) {
   const esObra = cotConfig.tipo === 'obra';
+  const visibles = items.filter(r => r.desc || r.price);
   return (
     <Box bg={DARK} rounded="xl" overflow="hidden" display="flex" flexDirection="column"
       border="1px solid" borderColor="whiteAlpha.100" h="full">
@@ -859,27 +878,25 @@ function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
       <Box h="1px" bg="whiteAlpha.100" mx={5} />
       <Box flex={1} overflowY="auto" px={5} py={3}
         sx={{ '&::-webkit-scrollbar': { w: '3px' }, '&::-webkit-scrollbar-thumb': { bg: 'whiteAlpha.200' } }}>
-        <AnimatePresence>
-          {items.filter(r => r.desc || r.price).length === 0
-            ? <Text fontSize="11px" color="whiteAlpha.300" fontStyle="italic">Agrega productos →</Text>
-            : items.filter(r => r.desc || r.price).map(r => (
-              <MotionBox key={r.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spr(rm)}>
-                <Flex justify="space-between" align="flex-start" py={2}
-                  borderBottom="1px solid" borderColor="whiteAlpha.100" gap={2}>
-                  <Box flex={1} minW={0}>
-                    <Text fontSize="12px" color="whiteAlpha.800" noOfLines={1}>{r.desc || 'Sin nombre'}</Text>
-                    <Text fontSize="10px" color="whiteAlpha.400">
-                      {r.qty} {r.unit}{parseFloat(r.disc) > 0 ? ` · ${r.disc}% desc.` : ''}
-                    </Text>
-                  </Box>
-                  <Text fontSize="12px" fontWeight="700" color={FY} whiteSpace="nowrap">
-                    {money(calcRow(r), cotConfig.moneda)}
-                  </Text>
-                </Flex>
-              </MotionBox>
-            ))
-          }
-        </AnimatePresence>
+        {/* Sin animación de layout: se repinta con cada tecla y medir cada
+            renglón en el DOM era otro freno al escribir. */}
+        {visibles.length === 0
+          ? <Text fontSize="11px" color="whiteAlpha.300" fontStyle="italic">Agrega productos →</Text>
+          : visibles.map(r => (
+            <Flex key={r.id} justify="space-between" align="flex-start" py={2}
+              borderBottom="1px solid" borderColor="whiteAlpha.100" gap={2}>
+              <Box flex={1} minW={0}>
+                <Text fontSize="12px" color="whiteAlpha.800" noOfLines={1}>{r.desc || 'Sin nombre'}</Text>
+                <Text fontSize="10px" color="whiteAlpha.400">
+                  {r.qty} {r.unit}{parseFloat(r.disc) > 0 ? ` · ${r.disc}% desc.` : ''}
+                </Text>
+              </Box>
+              <Text fontSize="12px" fontWeight="700" color={FY} whiteSpace="nowrap">
+                {money(calcRow(r), cotConfig.moneda)}
+              </Text>
+            </Flex>
+          ))
+        }
       </Box>
       <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
       <Box px={5} py={4}>
@@ -895,7 +912,7 @@ function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
       </Box>
     </Box>
   );
-}
+});
 
 /* ════════════════════════════════════════════════════════════
    STEPPER MOBILE
@@ -913,8 +930,15 @@ export default function CotizadorPage() {
   const cancelRef = useRef();
   const tableRef = useRef(null);
   const saveRef = useRef(null);
+  const sigRef = useRef(null);   // firma del contenido ya guardado
 
-  const { getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion } = useCotizaciones();
+  const {
+    getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion,
+    tabs, openTab, replaceTab, registerAutoSave,
+  } = useCotizaciones();
+
+  /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
+  const topOffset = tabs.length ? TABS_BAR_H : 0;
   const { downloadPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
   const { getSugerencias } = useProductosFrecuentes();
   const importHook = useImport();
@@ -937,6 +961,7 @@ export default function CotizadorPage() {
   const [showImport, setShowImport] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
+  const [showConvertir, setShowConvertir] = useState(false);
 
   const { isOpen: isDelOpen, onOpen: onDelOpen, onClose: onDelClose } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
@@ -955,8 +980,10 @@ export default function CotizadorPage() {
   useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, descLocal, aiuConfig]);
 
   const stRef = useRef({});
+  const itemsRef = useRef(items);   // lectura estable para los atajos de teclado
   useEffect(() => {
     stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, editingId, aiuConfig };
+    itemsRef.current = items;
   });
 
   /* Título */
@@ -966,6 +993,11 @@ export default function CotizadorPage() {
     document.title = `${num}${cli} | FerreExpress`;
     return () => { document.title = 'FerreExpress — Cotizador'; };
   }, [cotConfig.numero, cliente.nombre]);
+
+  /* Registrar la cotización abierta como pestaña.
+     Se hace aquí (y no en cada botón) para cubrir todas las entradas:
+     clic en el historial, botón editar, o URL pegada a mano. */
+  useEffect(() => { openTab(id || NEW_TAB_ID); }, [id, openTab]);
 
   /* Cargar por ID */
   useEffect(() => {
@@ -985,6 +1017,15 @@ export default function CotizadorPage() {
     setEditingId(id);
     setHasChanges(false);
     setShowTipoModal(false);
+    /* Firma de referencia: si al cambiar de pestaña sigue igual, no se reguarda */
+    sigRef.current = firmaDe({
+      cliente:   cot.cliente || DEFAULT_CLIENTE,
+      cotConfig: cot.config  || DEFAULT_CONFIG,
+      items:     cot.items?.length ? cot.items : [],
+      descG:     cot.descG || 0,
+      notas:     cot.notas || DEFAULT_NOTAS,
+      aiuConfig: cot.aiuConfig || DEFAULT_AIU,
+    });
   }, [id]); // eslint-disable-line
 
   /* Ctrl+S global */
@@ -1209,10 +1250,11 @@ export default function CotizadorPage() {
     /* Delete / Suprimir en cualquier campo — eliminar fila si está vacía,
        o limpiar el campo actual si tiene contenido */
     if (e.key === 'Delete') {
-      const row = items.find(r => r.id === rowId);
+      const lista = itemsRef.current;
+      const row = lista.find(r => r.id === rowId);
       if (!row) return;
       const isEmpty = !row.desc?.trim() && !String(row.price || '').trim() && String(row.qty) === '1';
-      if (isEmpty && items.length > 1) {
+      if (isEmpty && lista.length > 1) {
         // Fila vacía → eliminarla
         e.preventDefault();
         e.stopPropagation();
@@ -1377,23 +1419,41 @@ export default function CotizadorPage() {
         }
       }
     }
-  }, [duplicateItem, items, upItem]);
+    /* Sin `items` en las dependencias a propósito: se lee de itemsRef.
+       Si dependiera de items, este manejador se recrearía en cada tecla y
+       anularía la memoización de toda la tabla de productos. */
+  }, [duplicateItem, upItem]);
 
   /* ── Guardado ── */
   const autoSave = useCallback(async () => {
     const { empresa, cliente, cotConfig, items, descG, notas, editingId, aiuConfig } = stRef.current;
     if (!items.some(r => r.desc?.trim())) return null;
-    const cfg = { ...cotConfig, estado: 'borrador' };
+    /* Sin cambios reales no se reguarda: así saltar entre pestañas no
+       reordena el historial ni genera escrituras en la nube. */
+    const sig = firmaDe(stRef.current);
+    if (editingId && sig === sigRef.current) return null;
+    /* Al actualizar una existente se respeta su estado; solo las nuevas nacen como borrador */
+    const cfg = editingId ? { ...cotConfig } : { ...cotConfig, estado: 'borrador' };
     const tot = cfg.tipo === 'obra'
       ? calcTotalsObra(items, descG, aiuConfig)
       : calcTotals(items, descG, cfg.iva);
     try {
       const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, totals: tot, aiuConfig });
       clearDraft();
+      sigRef.current = sig;
+      /* Si era la pestaña "Nueva", pasa a ser su COT-XXX sin moverse de sitio */
+      if (!editingId && saved?.id) replaceTab(NEW_TAB_ID, saved.id);
       return saved;
     }
     catch (err) { console.error('[autoSave]', err); return null; }
-  }, [saveCotizacion]);
+  }, [saveCotizacion, replaceTab]);
+
+  /* La barra de pestañas usa esto para guardar antes de cambiar de cotización.
+     Se limpia al desmontar para que no quede apuntando a un editor cerrado. */
+  useEffect(() => {
+    registerAutoSave(autoSave);
+    return () => registerAutoSave(null);
+  }, [registerAutoSave, autoSave]);
 
   const handleSave = useCallback(async () => {
     if (!items.some(r => r.desc?.trim())) {
@@ -1407,9 +1467,11 @@ export default function CotizadorPage() {
       const saved = await saveCotizacion(payload);
       aprenderProductos(items);
       clearDraft();
+      sigRef.current = firmaDe(stRef.current);   // queda como referencia de "ya guardado"
       if (!editingId) {
         if (saved?.config) setCotConfig(saved.config);
         setEditingId(saved.id);
+        replaceTab(NEW_TAB_ID, saved.id);   // la pestaña "Nueva" pasa a ser COT-XXX
         navigate(`/cotizador/${saved.id}`, { replace: true });
         toast({
           title: 'Cotización creada ✓', description: saved?.numero ? `Número: ${saved.numero}` : '',
@@ -1425,7 +1487,7 @@ export default function CotizadorPage() {
       return null;
     } finally { setIsSaving(false); }
   }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, totals, aiuConfig,
-    saveCotizacion, navigate, toast]);
+    saveCotizacion, navigate, toast, replaceTab]);
 
   useEffect(() => { saveRef.current = handleSave; }, [handleSave]);
 
@@ -1509,6 +1571,28 @@ export default function CotizadorPage() {
     else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
   }, [editingId, hasChanges, items, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
 
+  /* ── Convertir Comercial ⇄ Obra ──
+     Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
+     (si la actual no aplica) y las notas (solo si siguen siendo las de fábrica).
+     `abrirConvertir` es un callback estable: como arrow suelto se recreaba en
+     cada tecla y tumbaba la memoización del panel de configuración. */
+  const abrirConvertir = useCallback(() => setShowConvertir(true), []);
+
+  const handleConvertirConfirm = useCallback((conv) => {
+    setCotConfig(conv.config);
+    setAiuConfig(conv.aiuConfig);
+    setNotas(conv.notas);
+    setHasChanges(true);
+    const esObraDest = conv.config.tipo === 'obra';
+    toast({
+      title: `Ahora es ${esObraDest ? 'Obra' : 'Comercial'} ✓`,
+      description: conv.notasPreservadas
+        ? 'Tus notas personalizadas se conservaron.'
+        : 'Recuerda guardar para aplicar el cambio.',
+      status: 'success', duration: 3500, position: 'top-right',
+    });
+  }, [toast]);
+
   /* ── Confirmar importación ── */
   const handleImportConfirm = useCallback(({ items: imp, cliente: cli, cotConfig: cfg, notas: n }) => {
     if (imp?.length) setItems(imp.map(r => (
@@ -1542,13 +1626,13 @@ export default function CotizadorPage() {
   const tablaProps = {
     items, tableRef, handleTableKeyDown, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
-    ivaRate, cotConfig, rm, upItem, removeItem, duplicateItem, toggleSinIva,
+    ivaRate, cotConfig, upItem, removeItem, duplicateItem, toggleSinIva,
     handleAcceptSugerencia, getSugerencias, addItem, addTransporte,
     startRowDrag, dragId,
   };
   const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg };
-  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg, onChangeTipo: () => setShowTipoModal(true) };
+  const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
   const mobileCardProps = { upItem, removeItem, duplicateItem, toggleSinIva, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId };
 
   /* ════════════════════════════════════════════════
@@ -1618,8 +1702,22 @@ export default function CotizadorPage() {
         onConfirm={handleImportConfirm}
       />
 
+      {showConvertir && (
+        <ModalConvertirTipo
+          isOpen
+          onClose={() => setShowConvertir(false)}
+          onConfirm={handleConvertirConfirm}
+          cotConfig={cotConfig}
+          aiuConfig={aiuConfig}
+          notas={notas}
+          items={items}
+          descG={descGNum}
+        />
+      )}
+
       {/* ═══ TOPBAR ═══ */}
-      <Box bg={barBg} borderBottom="1px solid" borderColor={border} position="sticky" top={0} zIndex={100}>
+      <Box bg={barBg} borderBottom="1px solid" borderColor={border}
+        position="sticky" top={topOffset} zIndex={100}>
         <Flex maxW="1600px" mx="auto" px={{ base: 3, md: 5 }}
           h={{ base: 'auto', md: '54px' }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
@@ -1628,10 +1726,14 @@ export default function CotizadorPage() {
             {cotConfig.numero
               ? <Badge bg={FY} color={DARK} rounded="full" fontSize="10px" px={3} fontWeight="700">{cotConfig.numero}</Badge>
               : <Tag size="sm" colorScheme="gray" rounded="full">Nueva</Tag>}
-            <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'}
-              rounded="full" fontSize="8px" px={2} display={{ base: 'none', sm: 'block' }}>
-              {esObra ? 'OBRA' : 'COMERCIAL'}
-            </Badge>
+            <Tooltip label={`Convertir a ${esObra ? 'Comercial' : 'Obra'}`} hasArrow>
+              <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'}
+                rounded="full" fontSize="8px" px={2} cursor="pointer"
+                _hover={{ opacity: 0.75 }} onClick={() => setShowConvertir(true)}
+                display={{ base: 'none', sm: 'block' }}>
+                {esObra ? 'OBRA' : 'COMERCIAL'} ⇄
+              </Badge>
+            </Tooltip>
             {hasChanges && (
               <HStack spacing={1}>
                 <Icon as={FiAlertCircle} color="orange.400" boxSize={3} />
@@ -1701,7 +1803,10 @@ export default function CotizadorPage() {
 
           {/* Col 1: Formularios */}
           <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column">
-            <Tabs variant="unstyled" size="sm" display="flex" flexDirection="column" h="full">
+            {/* isLazy: solo se dibuja la pestaña visible. Antes se renderizaban
+                los tres paneles en cada tecla, aunque solo vieras uno. */}
+            <Tabs variant="unstyled" size="sm" isLazy
+              display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
                 {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
@@ -1749,7 +1854,7 @@ export default function CotizadorPage() {
           {/* Col 3: Resumen */}
           <ResumenDesktop
             items={items} cotConfig={cotConfig} totals={totals} descGNum={descGNum}
-            aiuConfig={aiuConfig} cliente={cliente} rm={rm} safeNavigate={safeNavigate}
+            aiuConfig={aiuConfig} cliente={cliente} safeNavigate={safeNavigate}
             handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges} />
         </Box>
 
@@ -1823,7 +1928,7 @@ export default function CotizadorPage() {
             <AnimatePresence mode="wait">
               <MotionBox key={mobileStep}
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.15 }}>
+                exit={{ opacity: 0, x: -20 }} transition={{ duration: rm ? 0 : 0.15 }}>
                 {mobileStep === 0 && <PanelEmpresa {...panelEmpresaProps} />}
                 {mobileStep === 1 && <PanelCliente {...panelClienteProps} />}
                 {mobileStep === 2 && (

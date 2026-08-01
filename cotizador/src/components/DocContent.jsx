@@ -36,6 +36,10 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
   const filled  = items.filter((r) => r.desc || r.price);
   const ivaRate = (parseFloat(cot.iva) || 0) / 100;
   const aiuData = aiu || { admin: 0, imprevistos: 0, utilidad: 0, anticipo: 0 };
+  /* ¿Esta obra realmente lleva AIU? Si no, el documento se imprime simple:
+     productos y total, sin desglose ni filas en cero. */
+  const hayAIU = esObra &&
+    (aiuData.admin > 0 || aiuData.imprevistos > 0 || aiuData.utilidad > 0);
 
   /* ─── estilos inline ─── */
   const st = {
@@ -144,7 +148,7 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
             Generación: {fmtDate(cot.fecha)}<br />
             Válida hasta: {fmtDate(cot.vigencia)}
           </div>
-          {esObra && <div style={st.badge}>AIU</div>}
+          {hayAIU && <div style={st.badge}>AIU</div>}
         </div>
       </div>
 
@@ -168,10 +172,12 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
             ["Moneda",        cot.moneda],
             ["Forma de pago", fmtFormaPago()],
             !esObra && ["IVA", `${cot.iva}%`],
-            esObra  && ["Administración", `${aiuData.admin}%`],
-            esObra  && ["Imprevistos",    `${aiuData.imprevistos}%`],
-            esObra  && ["Utilidad",       `${aiuData.utilidad}%`],
-            esObra  && ["IVA (s/ utilidad)", "19%"],
+            /* En obra, cada concepto del AIU solo se imprime si tiene valor:
+               una obra sin AIU no debe mostrar condiciones en cero al cliente. */
+            esObra && aiuData.admin       > 0 && ["Administración", `${aiuData.admin}%`],
+            esObra && aiuData.imprevistos > 0 && ["Imprevistos",    `${aiuData.imprevistos}%`],
+            esObra && aiuData.utilidad    > 0 && ["Utilidad",       `${aiuData.utilidad}%`],
+            esObra && aiuData.utilidad    > 0 && ["IVA (s/ utilidad)", "19%"],
             parseFloat(descG) > 0 && ["Desc. global", `${descG}%`],
           ].filter(Boolean).map(([l, v]) => (
             <div key={l} style={st.cliLine}>
@@ -302,10 +308,13 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
           <div style={st.resHdr}>Resumen Económico</div>
 
           {esObra ? (
-            /* ── Resumen Obra (AIU) ── */
+            /* ── Resumen Obra (AIU) ──
+               Con el AIU en cero la cotización de obra es simplemente el
+               listado sin discriminar IVA: en ese caso se omiten el desglose
+               y los subtotales intermedios, para no imprimir filas en $0. */
             <>
               <div style={st.resRow}>
-                <span style={st.resLbl}>Costo Directo</span>
+                <span style={st.resLbl}>{hayAIU ? "Costo Directo" : "Subtotal"}</span>
                 <span style={st.resVal}>{money(totals.costoDirecto, cot.moneda)}</span>
               </div>
               {parseFloat(descG) > 0 && (
@@ -314,32 +323,44 @@ export default function DocContent({ empresa, cot, cli, items, descG, totals, no
                   <span style={{ ...st.resVal, color: "#b00" }}>− {money(totals.descGAmt, cot.moneda)}</span>
                 </div>
               )}
-              <div style={st.resRow}>
-                <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Costo Base</span>
-                <span style={st.resVal}>{money(totals.costoBase, cot.moneda)}</span>
-              </div>
-              <div style={st.resDivider} />
-              <div style={st.resRowSub}>
-                <span style={st.resLblSub}>Administración ({aiuData.admin}%)</span>
-                <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.adminAmt, cot.moneda)}</span>
-              </div>
-              <div style={st.resRowSub}>
-                <span style={st.resLblSub}>Imprevistos ({aiuData.imprevistos}%)</span>
-                <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.impAmt, cot.moneda)}</span>
-              </div>
-              <div style={st.resRowSub}>
-                <span style={st.resLblSub}>Utilidad ({aiuData.utilidad}%)</span>
-                <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.utilAmt, cot.moneda)}</span>
-              </div>
-              <div style={st.resDivider} />
-              <div style={st.resRow}>
-                <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Subtotal AIU</span>
-                <span style={st.resVal}>{money(totals.subtotalAIU, cot.moneda)}</span>
-              </div>
-              <div style={st.resRow}>
-                <span style={st.resLbl}>IVA 19% s/ Utilidad</span>
-                <span style={st.resVal}>{money(totals.ivaUtilidad, cot.moneda)}</span>
-              </div>
+              {hayAIU && (
+                <>
+                  <div style={st.resRow}>
+                    <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Costo Base</span>
+                    <span style={st.resVal}>{money(totals.costoBase, cot.moneda)}</span>
+                  </div>
+                  <div style={st.resDivider} />
+                  {aiuData.admin > 0 && (
+                    <div style={st.resRowSub}>
+                      <span style={st.resLblSub}>Administración ({aiuData.admin}%)</span>
+                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.adminAmt, cot.moneda)}</span>
+                    </div>
+                  )}
+                  {aiuData.imprevistos > 0 && (
+                    <div style={st.resRowSub}>
+                      <span style={st.resLblSub}>Imprevistos ({aiuData.imprevistos}%)</span>
+                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.impAmt, cot.moneda)}</span>
+                    </div>
+                  )}
+                  {aiuData.utilidad > 0 && (
+                    <div style={st.resRowSub}>
+                      <span style={st.resLblSub}>Utilidad ({aiuData.utilidad}%)</span>
+                      <span style={{ ...st.resVal, fontSize: 9.5 }}>{money(totals.utilAmt, cot.moneda)}</span>
+                    </div>
+                  )}
+                  <div style={st.resDivider} />
+                  <div style={st.resRow}>
+                    <span style={{ ...st.resLbl, fontWeight: 600, color: "#555" }}>Subtotal AIU</span>
+                    <span style={st.resVal}>{money(totals.subtotalAIU, cot.moneda)}</span>
+                  </div>
+                </>
+              )}
+              {aiuData.utilidad > 0 && (
+                <div style={st.resRow}>
+                  <span style={st.resLbl}>IVA 19% s/ Utilidad</span>
+                  <span style={st.resVal}>{money(totals.ivaUtilidad, cot.moneda)}</span>
+                </div>
+              )}
               {aiuData.anticipo > 0 && (
                 <div style={{ ...st.resRow, background: "#fffde7" }}>
                   <span style={st.resLbl}>Anticipo ({aiuData.anticipo}%)</span>

@@ -1,7 +1,9 @@
-import { ChakraProvider, extendTheme, ColorModeScript } from "@chakra-ui/react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ChakraProvider, extendTheme, ColorModeScript, Box } from "@chakra-ui/react";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import CotizadorPage from "./pages/CotizadorPage";
 import HistorialPage from "./pages/HistorialPage";
+import TabsBar from "./components/TabsBar";
+import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
 /* ── Tema FerreExpress ──────────────────────────────────── */
 const theme = extendTheme({
@@ -46,21 +48,40 @@ const theme = extendTheme({
   },
 });
 
+/* ── Layout común ─────────────────────────────────────────
+   La barra de pestañas es global: se ve tanto en el historial como
+   en el cotizador, así se puede saltar entre cotizaciones abiertas
+   desde cualquier punto. Se oculta sola cuando no hay ninguna. */
+function Layout() {
+  return (
+    <Box minH="100vh">
+      <TabsBar />
+      <Outlet />
+    </Box>
+  );
+}
+
 /* ── App ─────────────────────────────────────────────────── */
 export default function App() {
   return (
     <>
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
       <ChakraProvider theme={theme}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/"              element={<Navigate to="/historial" replace />} />
-            <Route path="/cotizador"     element={<CotizadorPage />} />
-            <Route path="/cotizador/:id" element={<CotizadorPage />} />
-            <Route path="/historial"     element={<HistorialPage />} />
-            <Route path="*"              element={<Navigate to="/historial" replace />} />
-          </Routes>
-        </BrowserRouter>
+        {/* Estado compartido: una sola copia de las cotizaciones y una sola
+            sincronización con la nube para toda la aplicación. */}
+        <CotizacionesProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/"              element={<Navigate to="/historial" replace />} />
+                <Route path="/cotizador"     element={<CotizadorPage />} />
+                <Route path="/cotizador/:id" element={<CotizadorPage />} />
+                <Route path="/historial"     element={<HistorialPage />} />
+                <Route path="*"              element={<Navigate to="/historial" replace />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </CotizacionesProvider>
       </ChakraProvider>
     </>
   );

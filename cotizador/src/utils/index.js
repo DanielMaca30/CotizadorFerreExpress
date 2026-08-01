@@ -202,6 +202,17 @@ export const calcTotalsObra = (items, descG, aiu) => {
   };
 };
 
+/* ── Totales según el tipo de cotización ─────────────────────── */
+
+/**
+ * Atajo: calcula los totales con el motor que corresponda al tipo.
+ * @param {'comercial'|'obra'} tipo
+ */
+export const calcTotalsPorTipo = (tipo, items, descG, { iva = 19, aiu } = {}) =>
+  tipo === "obra"
+    ? calcTotalsObra(items, descG, aiu || DEFAULT_AIU)
+    : calcTotals(items, descG, iva);
+
 /* ── Constantes de dominio ───────────────────────────────────── */
 
 export const UNITS = [
@@ -251,11 +262,17 @@ export const DEFAULT_CONFIG = {
   tipo:      "comercial",  // 'comercial' | 'obra'
 };
 
+/* AIU en cero por defecto.
+   Una cotización de obra es, ante todo, los mismos precios sin discriminar IVA:
+   el total debe ser la suma de los productos. Si un trabajo concreto necesita
+   administración, imprevistos o utilidad, se escriben los porcentajes y el
+   total los recoge. Las cotizaciones de obra ya guardadas conservan su propio
+   AIU, así que este cambio no las altera. */
 export const DEFAULT_AIU = {
-  admin:       10,
-  imprevistos:  5,
-  utilidad:     5,
-  anticipo:    30,
+  admin:        0,
+  imprevistos:  0,
+  utilidad:     0,
+  anticipo:     0,
 };
 
 export const DEFAULT_NOTAS =
@@ -273,6 +290,55 @@ export const DEFAULT_NOTAS_OBRA =
   "• Los valores están sujetos a variaciones en el costo de materiales y mano de obra.\n" +
   "• Para confirmar la propuesta, comuníquese indicando el número de esta cotización.\n\n" +
   "Agradecemos su interés en FerreExpress S.A.S.";
+
+/* ── Conversión Comercial ⇄ Obra ─────────────────────────────── */
+
+/**
+ * ¿Las notas fueron editadas a mano?
+ * (si siguen siendo una de las plantillas, se pueden intercambiar sin perder nada)
+ */
+export const notasSonPersonalizadas = (notas) => {
+  const t = String(notas ?? "").trim();
+  if (!t) return false;
+  return t !== DEFAULT_NOTAS.trim() && t !== DEFAULT_NOTAS_OBRA.trim();
+};
+
+/**
+ * Convierte una cotización de comercial a obra (o al revés).
+ *
+ * REGLA DE NEGOCIO: los precios de los productos NO se modifican.
+ * El precio digitado siempre se ingresa con IVA incluido y sigue siendo
+ * el mismo número; lo único que cambia es el motor de cálculo del total
+ * (IVA discriminado en comercial · AIU + IVA sobre utilidad en obra).
+ *
+ * También se conservan las marcas `sinIva` de transporte, de modo que
+ * convertir ida y vuelta devuelve la cotización a su estado original.
+ *
+ * @param {'comercial'|'obra'} tipoDestino
+ * @returns {{config, aiuConfig, notas, items, notasPreservadas, formaPagoCambiada}}
+ */
+export const convertirTipo = (tipoDestino, source = {}) => {
+  const { config = {}, aiuConfig, notas, items = [] } = source;
+  const esObra = tipoDestino === "obra";
+
+  const listaPago = esObra ? FORMAS_PAGO_OBRA : FORMAS_PAGO;
+  const formaPagoOk = listaPago.includes(config.formaPago);
+  const formaPago = formaPagoOk ? config.formaPago : listaPago[0];
+
+  const personalizadas = notasSonPersonalizadas(notas);
+  const notasFinal = personalizadas
+    ? notas
+    : esObra ? DEFAULT_NOTAS_OBRA : DEFAULT_NOTAS;
+
+  return {
+    config: { ...config, tipo: tipoDestino, formaPago },
+    aiuConfig: { ...DEFAULT_AIU, ...(aiuConfig || {}) },
+    notas: notasFinal,
+    items,                                  // intactos — el precio es el precio
+    notasPreservadas: personalizadas,
+    formaPagoCambiada: !formaPagoOk,
+  };
+};
 
 /* ── Persistencia empresa en localStorage ────────────────────── */
 

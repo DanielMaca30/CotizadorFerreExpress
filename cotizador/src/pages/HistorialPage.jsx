@@ -1,12 +1,17 @@
 /**
- * HistorialPage.jsx  v3
+ * HistorialPage.jsx  v4
  * FIXES:
  *   ✓ PDF del historial usa loadEmpresaLocal() como fallback si falta empresa en el objeto
  *   ✓ Cambio de estado inline desde la tabla y tarjetas
  *   ✓ Logo fallback logo.jpg
  *   ✓ Título de página dinámico
+ * v4 — rendimiento y comodidad:
+ *   ✓ Paginación (5 por defecto · 10 · 20 · 50 · todas) en tabla y tarjetas
+ *   ✓ Índice de búsqueda incremental — solo recalcula lo que cambió
+ *   ✓ Fila y tarjeta memoizadas — editar una no repinta la lista entera
+ *   ✓ Convertir Comercial ⇄ Obra desde el menú de cada cotización
  */
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box, Flex, HStack, VStack, Stack, Text, Icon, Badge, Tag,
@@ -22,13 +27,26 @@ import {
   FiPlus, FiTrash2, FiEdit2, FiCopy, FiDownload, FiSearch,
   FiFileText, FiRefreshCw, FiCheckCircle,
   FiSend, FiGrid, FiList, FiMoreVertical,
-  FiDollarSign, FiUser, FiCloud,
+  FiDollarSign, FiUser, FiCloud, FiTool, FiShoppingCart,
 } from "react-icons/fi";
-import { motion, AnimatePresence } from "framer-motion";
-import { useCotizaciones }  from "../hooks/useCotizaciones";
+import { motion } from "framer-motion";
+import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { usePDF }           from "../hooks/usePDF";
 import DocContent            from "../components/DocContent";
+import Paginacion, { TODAS } from "../components/Paginacion";
+import { TABS_BAR_H }        from "../components/TabsBar";
+import ModalConvertirTipo    from "../components/ModalConvertirTipo";
 import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU } from "../utils";
+
+/* ─── Preferencias de vista (se recuerdan entre sesiones) ─── */
+const PREFS_KEY = "ferreexpress_historial_prefs";
+const loadPrefs = () => {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {}; }
+  catch { return {}; }
+};
+const savePrefs = (p) => {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* noop */ }
+};
 
 const FY   = "#F9BF20";
 const DARK = "#3A3A38";
@@ -141,12 +159,40 @@ function EstadoSelect({ cot, onCambiar }) {
   );
 }
 
-/* ─── Tarjeta de cotización ─── */
-function CotizacionCard({ cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado }) {
+/* ─── Menú de acciones (compartido por tabla y tarjetas) ─── */
+function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, pdfDisabled }) {
+  const esObra = getTipo(cot) === "obra";
+  return (
+    <MenuList fontSize="13px" onClick={(e) => e.stopPropagation()}>
+      <MenuItem icon={<FiEdit2 size={13} />} onClick={() => onEdit(cot.id)}>Editar</MenuItem>
+      <MenuItem icon={<FiCopy size={13} />}  onClick={() => onDuplicate(cot.id)}>Duplicar</MenuItem>
+      <MenuItem icon={<FiDownload size={13} />} onClick={() => onPDF(cot)} isDisabled={pdfDisabled}>
+        Descargar PDF
+      </MenuItem>
+      <MenuDivider />
+      <MenuItem icon={esObra ? <FiShoppingCart size={13} /> : <FiTool size={13} />}
+        onClick={() => onConvertir(cot)}>
+        Convertir a {esObra ? "Comercial" : "Obra"}
+      </MenuItem>
+      <MenuDivider />
+      <MenuItem icon={<FiTrash2 size={13} />} color="red.500" onClick={() => onDelete(cot)}>
+        Eliminar
+      </MenuItem>
+    </MenuList>
+  );
+}
+
+/* ─── Tarjeta de cotización ───
+   Memoizada: cambiar el estado de una no repinta toda la rejilla. */
+const CotizacionCard = memo(function CotizacionCard({
+  cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado, onConvertir,
+}) {
   const navigate = useNavigate();
   const estado   = getEstado(cot);
   const border   = useColorModeValue("gray.200", "whiteAlpha.200");
   const muted    = useColorModeValue("gray.500", "gray.400");
+  const totalCol = useColorModeValue("gray.800", "white");
+  const nItems   = cot.items?.filter((i) => i.desc || i.price).length || 0;
 
   return (
     <GlassCard rounded="xl" overflow="hidden" cursor="pointer"
@@ -173,16 +219,9 @@ function CotizacionCard({ cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading,
               <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md"
                 aria-label="Opciones" icon={<FiMoreVertical size={14} />}
                 onClick={(e) => e.stopPropagation()} />
-              <MenuList fontSize="13px" onClick={(e) => e.stopPropagation()}>
-                <MenuItem icon={<FiEdit2 size={13} />} onClick={() => onEdit(cot.id)}>Editar</MenuItem>
-                <MenuItem icon={<FiCopy size={13} />}  onClick={() => onDuplicate(cot.id)}>Duplicar</MenuItem>
-                <MenuItem icon={<FiDownload size={13} />} onClick={() => onPDF(cot)}
-                  isDisabled={pdfLoading && pdfCotId === cot.id}>Descargar PDF</MenuItem>
-                <MenuDivider />
-                <MenuItem icon={<FiTrash2 size={13} />} color="red.500" onClick={() => onDelete(cot)}>
-                  Eliminar
-                </MenuItem>
-              </MenuList>
+              <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
+                onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
+                pdfDisabled={pdfLoading && pdfCotId === cot.id} />
             </Menu>
           </Flex>
         </Flex>
@@ -200,17 +239,81 @@ function CotizacionCard({ cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading,
         <Flex justify="space-between" align="center" mt={3} pt={3}
           borderTop="1px solid" borderColor={border}>
           <Text fontSize="10px" color={muted}>
-            {cot.items?.filter((i) => i.desc || i.price).length || 0} ítem
-            {(cot.items?.filter((i) => i.desc || i.price).length || 0) !== 1 ? "s" : ""}
+            {nItems} ítem{nItems !== 1 ? "s" : ""}
           </Text>
-          <Text fontWeight="800" fontSize="15px" color={useColorModeValue("gray.800", "white")}>
+          <Text fontWeight="800" fontSize="15px" color={totalCol}>
             {money(getTotal(cot), cot.config?.moneda || "COP")}
           </Text>
         </Flex>
       </Box>
     </GlassCard>
   );
-}
+});
+
+/* ─── Fila de la tabla ───
+   Memoizada por el mismo motivo: con 50 filas en pantalla, cambiar el
+   estado de una sola dejaba de repintar las otras 49. */
+const FilaCotizacion = memo(function FilaCotizacion({
+  cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir,
+  pdfLoading, pdfCotId, tableBg, stripeBg, hoverBg, border, muted, mutedL,
+}) {
+  const navigate = useNavigate();
+  return (
+    <Tr bg={par ? tableBg : stripeBg}
+      _hover={{ bg: hoverBg, cursor: "pointer" }}
+      onClick={() => navigate(`/cotizador/${cot.id}`)}>
+      <Td borderColor={border} fontWeight="700" fontSize="13px">
+        <Tooltip label={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`} hasArrow>
+          <Text>{getNumero(cot)}</Text>
+        </Tooltip>
+        <TipoBadge cot={cot} mt={1} />
+      </Td>
+      <Td borderColor={border}>
+        <Text fontSize="13px" fontWeight="600" noOfLines={1}>
+          {cot.cliente?.nombre || <Text as="span" color={mutedL} fontStyle="italic">Sin cliente</Text>}
+        </Text>
+        {cot.cliente?.empresa && (
+          <Text fontSize="10px" color={muted} noOfLines={1}>{cot.cliente.empresa}</Text>
+        )}
+      </Td>
+      <Td borderColor={border} fontSize="12px" color={muted}>
+        <Tooltip label={fmtDateShort(cot.updatedAt?.slice(0, 10))} hasArrow>
+          <Text>{fmtRelativa(cot.updatedAt)}</Text>
+        </Tooltip>
+      </Td>
+      {/* Estado editable inline */}
+      <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
+        <EstadoSelect cot={cot} onCambiar={onCambiarEstado} />
+      </Td>
+      <Td borderColor={border} isNumeric>
+        <Text fontWeight="800" fontSize="14px" fontVariantNumeric="tabular-nums">
+          {money(getTotal(cot), cot.config?.moneda || "COP")}
+        </Text>
+      </Td>
+      <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
+        <HStack spacing={1}>
+          <Tooltip label="Editar" hasArrow>
+            <IconButton size="xs" variant="ghost" rounded="md" aria-label="Editar"
+              icon={<FiEdit2 size={13} />} onClick={() => navigate(`/cotizador/${cot.id}`)} />
+          </Tooltip>
+          <Tooltip label="Descargar PDF" hasArrow>
+            <IconButton size="xs" variant="ghost" rounded="md" aria-label="PDF"
+              icon={<FiDownload size={13} />}
+              isLoading={pdfLoading && pdfCotId === cot.id}
+              onClick={() => onPDF(cot)} />
+          </Tooltip>
+          <Menu isLazy>
+            <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md"
+              aria-label="Más opciones" icon={<FiMoreVertical size={13} />} />
+            <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
+              onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
+              pdfDisabled={pdfLoading && pdfCotId === cot.id} />
+          </Menu>
+        </HStack>
+      </Td>
+    </Tr>
+  );
+});
 
 /* ═══════════════════════════════════════════════════════════
    PÁGINA PRINCIPAL
@@ -222,8 +325,13 @@ export default function HistorialPage() {
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, stats,
-    nubeActiva, syncing, sync } = useCotizaciones();
+    convertirCotizacion, openTab, tabs, nubeActiva, syncing, sync } = useCotizaciones();
+
+  /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
+  const topOffset = tabs.length ? TABS_BAR_H : 0;
   const { downloadPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
+
+  const [prefs0] = useState(loadPrefs);   // preferencias guardadas, leídas una sola vez
 
   const [search,   setSearch]   = useState("");
   const [debSearch, setDebSearch] = useState("");   // búsqueda con debounce
@@ -235,8 +343,18 @@ export default function HistorialPage() {
   const [sortDir,  setSortDir]  = useState("desc");
   const [toDelete, setToDelete] = useState(null);
   const [pdfCot,   setPdfCot]   = useState(null);
-  const [viewMode, setViewMode] = useState("tabla");
+  const [viewMode, setViewMode] = useState(prefs0.viewMode || "tabla");
+  const [toConvert, setToConvert] = useState(null);   // cotización a convertir
+  /* Paginación — 5 por defecto para que la vista abra al instante */
+  const [pageSize, setPageSize] = useState(
+    Number.isFinite(prefs0.pageSize) ? prefs0.pageSize : 5
+  );
+  const [page,     setPage]     = useState(1);
   const searchRef = useRef();
+  const listTopRef = useRef(null);
+
+  /* Recordar tamaño de página y tipo de vista */
+  useEffect(() => { savePrefs({ pageSize, viewMode }); }, [pageSize, viewMode]);
 
   /* ─── Título dinámico ─── */
   useEffect(() => {
@@ -272,16 +390,33 @@ export default function HistorialPage() {
   const inputBg  = useColorModeValue("white", "gray.700");
   const hoverBg  = useColorModeValue("yellow.50", "whiteAlpha.50");
 
-  /* \u00cdndice de b\u00fasqueda: se arma UNA vez por lista (no en cada tecla).
-     Incluye n\u00famero, datos del cliente y nombres de productos. */
-  const indexed = useMemo(() => cotizaciones.map((c) => ({
-    c,
-    hay: normStr([
-      getNumero(c), c.cliente?.nombre, c.cliente?.empresa, c.cliente?.ciudad,
-      c.cliente?.nit, c.cliente?.contacto,
-      ...(c.items || []).map((i) => i.desc),
-    ].filter(Boolean).join(" ")),
-  })), [cotizaciones]);
+  /* \u00cdndice de b\u00fasqueda INCREMENTAL.
+     Antes se reconstru\u00eda entero cada vez que cambiaba cualquier cotizaci\u00f3n
+     (recorriendo todos los \u00edtems de todas). Ahora se cachea por id+updatedAt:
+     al guardar una, solo se recalcula esa. */
+  const [cache] = useState(() => new Map());
+  const indexed = useMemo(() => {
+    const vivos = new Set();
+    const out = cotizaciones.map((c) => {
+      const key = `${c.id}|${c.updatedAt || ""}`;
+      vivos.add(key);
+      const hit = cache.get(key);
+      if (hit && hit.c === c) return hit;
+      const entry = {
+        c,
+        hay: normStr([
+          getNumero(c), c.cliente?.nombre, c.cliente?.empresa, c.cliente?.ciudad,
+          c.cliente?.nit, c.cliente?.contacto,
+          ...(c.items || []).map((i) => i.desc),
+        ].filter(Boolean).join(" ")),
+      };
+      cache.set(key, entry);
+      return entry;
+    });
+    // Purgar entradas de cotizaciones borradas o ya actualizadas
+    cache.forEach((_, k) => { if (!vivos.has(k)) cache.delete(k); });
+    return out;
+  }, [cotizaciones, cache]);
 
   const filtered = useMemo(() => {
     const term = normStr(debSearch.trim());
@@ -308,6 +443,34 @@ export default function HistorialPage() {
     return list;
   }, [indexed, debSearch, estado, tipo, rangoDesde, sortBy, sortDir]);
 
+  /* ─── Paginación ───
+     Aquí está la ganancia gorda: se pintan `pageSize` cotizaciones,
+     no las N que haya en el historial. */
+  const totalPages = pageSize === TODAS ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  /* Página efectiva: se acota al vuelo. Si un filtro reduce los resultados
+     y la página guardada ya no existe, se muestra la última válida sin
+     necesidad de un efecto que corrija el estado después de pintar. */
+  const pageSegura = Math.min(page, totalPages);
+
+  const paged = useMemo(() => {
+    if (pageSize === TODAS) return filtered;
+    const ini = (pageSegura - 1) * pageSize;
+    return filtered.slice(ini, ini + pageSize);
+  }, [filtered, pageSegura, pageSize]);
+
+  const irAPagina = useCallback((p) => {
+    setPage(p);
+    listTopRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
+
+  /* Cualquier cambio de filtro, orden o tamaño devuelve a la página 1 —
+     se hace en el propio manejador, no en un efecto posterior. */
+  const cambiarBusqueda = useCallback((v) => { setSearch(v);   setPage(1); }, []);
+  const cambiarTipo     = useCallback((v) => { setTipo(v);     setPage(1); }, []);
+  const cambiarEstadoF  = useCallback((v) => { setEstado(v);   setPage(1); }, []);
+  const cambiarPageSize = useCallback((v) => { setPageSize(v); setPage(1); }, []);
+
   /* Fecha: calcula el umbral en el manejador (fuera del render puro) */
   const onRango = useCallback((v) => {
     setRango(v);
@@ -317,19 +480,22 @@ export default function HistorialPage() {
     else if (v === "30")  { desde = Date.now() - 30 * 86400000; }
     else if (v === "mes") { const s = new Date(); s.setDate(1); s.setHours(0, 0, 0, 0); desde = s.getTime(); }
     setRangoDesde(desde);
+    setPage(1);
   }, []);
 
   const filtrosActivos = !!(search || estado !== "todos" || tipo !== "todos" || rango !== "todos");
   const limpiarFiltros = useCallback(() => {
     setSearch(""); setEstado("todos"); setTipo("todos"); setRango("todos"); setRangoDesde(0);
+    setPage(1);
   }, []);
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
     else { setSortBy(col); setSortDir("desc"); }
+    setPage(1);
   };
   const ordenValue = `${sortBy}:${sortDir}`;
-  const onOrden = (v) => { const [b, d] = v.split(":"); setSortBy(b); setSortDir(d); };
+  const onOrden = (v) => { const [b, d] = v.split(":"); setSortBy(b); setSortDir(d); setPage(1); };
 
   const confirmDelete  = useCallback((cot) => { setToDelete(cot); onOpen(); }, [onOpen]);
 
@@ -353,6 +519,26 @@ export default function HistorialPage() {
     const meta = ESTADO_META[nuevoEstado];
     toast({ title: `Estado: ${meta?.label}`, status: "success", duration: 1800, position: "top-right" });
   }, [cambiarEstado, toast]);
+
+  /* Abrir en pestaña */
+  const handleEditar = useCallback((id) => { openTab(id); navigate(`/cotizador/${id}`); }, [openTab, navigate]);
+  const handleNueva  = useCallback(() => { openTab(NEW_TAB_ID); navigate("/cotizador"); }, [openTab, navigate]);
+
+  /* ─── Convertir Comercial ⇄ Obra ─── */
+
+  const handleConvertir = useCallback((cot) => setToConvert(cot), []);
+
+  const confirmarConversion = useCallback((conv) => {
+    if (!toConvert) return;
+    const destino = conv.config.tipo;
+    convertirCotizacion(toConvert.id, destino, conv.aiuConfig);
+    toast({
+      title: `Convertida a ${destino === "obra" ? "Obra" : "Comercial"} ✓`,
+      description: conv.notasPreservadas ? "Tus notas personalizadas se conservaron." : undefined,
+      status: "success", duration: 3000, position: "top-right",
+    });
+    setToConvert(null);
+  }, [toConvert, convertirCotizacion, toast]);
 
   const handlePDF = useCallback(async (cot) => {
     setPdfCot(cot);
@@ -394,8 +580,23 @@ export default function HistorialPage() {
         </Box>
       )}
 
-      {/* TOPBAR */}
-      <Box bg={barBg} borderBottom="1px solid" borderColor={border} position="sticky" top={0} zIndex={100}>
+      {/* Modal de conversión Comercial ⇄ Obra */}
+      {toConvert && (
+        <ModalConvertirTipo
+          isOpen
+          onClose={() => setToConvert(null)}
+          onConfirm={confirmarConversion}
+          cotConfig={toConvert.config || {}}
+          aiuConfig={toConvert.aiuConfig}
+          notas={toConvert.notas}
+          items={toConvert.items || []}
+          descG={toConvert.descG || 0}
+        />
+      )}
+
+      {/* TOPBAR — se apoya bajo la barra de pestañas cuando hay alguna abierta */}
+      <Box bg={barBg} borderBottom="1px solid" borderColor={border}
+        position="sticky" top={topOffset} zIndex={100}>
         <Flex maxW="1200px" mx="auto" px={{ base: 3, md: 6 }}
           h={{ base: "auto", md: "54px" }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
@@ -423,7 +624,7 @@ export default function HistorialPage() {
                 onClick={() => setViewMode((v) => v === "tabla" ? "tarjetas" : "tabla")} />
             </Tooltip>
             <Button size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700"
-              leftIcon={<FiPlus />} onClick={() => navigate("/cotizador")}
+              leftIcon={<FiPlus />} onClick={handleNueva}
               _hover={{ bg: "#e0b010" }}>
               Nueva cotización
             </Button>
@@ -436,11 +637,11 @@ export default function HistorialPage() {
         {/* KPIs — clic para filtrar por estado */}
         <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
           <KpiCard label="Total" value={cotizaciones.length} icon={FiFileText} accent={mutedL}
-            onClick={() => setEstado("todos")} active={estado === "todos"} />
+            onClick={() => cambiarEstadoF("todos")} active={estado === "todos"} />
           <KpiCard label="Enviadas" value={stats.enviadas} icon={FiSend} accent="blue.400"
-            onClick={() => setEstado("enviada")} active={estado === "enviada"} />
+            onClick={() => cambiarEstadoF("enviada")} active={estado === "enviada"} />
           <KpiCard label="Aceptadas" value={stats.aceptadas} icon={FiCheckCircle} accent="green.400"
-            onClick={() => setEstado("aceptada")} active={estado === "aceptada"} />
+            onClick={() => cambiarEstadoF("aceptada")} active={estado === "aceptada"} />
           <KpiCard label="Valor total" value={money(stats.valorTotal)} icon={FiDollarSign} accent={FY}
             sub={`${cotizaciones.length} cotizaciones`} />
         </SimpleGrid>
@@ -455,17 +656,17 @@ export default function HistorialPage() {
               <Input ref={searchRef} rounded="md" bg={inputBg} focusBorderColor={FY}
                 placeholder="Buscar por número, cliente, producto…  ( / )"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") { setSearch(""); e.currentTarget.blur(); } }} />
+                onChange={(e) => cambiarBusqueda(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") { cambiarBusqueda(""); e.currentTarget.blur(); } }} />
           </InputGroup>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
-              w={{ base: "48%", sm: "125px" }} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              w={{ base: "48%", sm: "125px" }} value={tipo} onChange={(e) => cambiarTipo(e.target.value)}>
               <option value="todos">Todo tipo</option>
               <option value="comercial">Comercial</option>
               <option value="obra">Obra</option>
             </Select>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
-              w={{ base: "48%", sm: "150px" }} value={estado} onChange={(e) => setEstado(e.target.value)}>
+              w={{ base: "48%", sm: "150px" }} value={estado} onChange={(e) => cambiarEstadoF(e.target.value)}>
               <option value="todos">Todos los estados</option>
               <option value="borrador">Borrador</option>
               <option value="enviada">Enviada</option>
@@ -506,35 +707,42 @@ export default function HistorialPage() {
           filtered.length === 0
             ? <EmptyState cotizaciones={cotizaciones} navigate={navigate} />
             : (
-              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
-                <AnimatePresence>
-                  {filtered.map((cot) => (
+              <Box ref={listTopRef}>
+                <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
+                  {paged.map((cot) => (
                     <MotionBox key={cot.id}
-                      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.15 }}>
                       <CotizacionCard
                         cot={cot}
-                        onEdit={(id) => navigate(`/cotizador/${id}`)}
+                        onEdit={handleEditar}
                         onDuplicate={handleDuplicate}
                         onDelete={confirmDelete}
                         onPDF={handlePDF}
                         pdfLoading={pdfLoading}
                         pdfCotId={pdfCot?.id}
                         onCambiarEstado={handleCambiarEstado}
+                        onConvertir={handleConvertir}
                       />
                     </MotionBox>
                   ))}
-                </AnimatePresence>
-              </SimpleGrid>
+                </SimpleGrid>
+                <GlassCard rounded="xl" mt={4}>
+                  <Paginacion page={pageSegura} pageSize={pageSize} total={filtered.length}
+                    onPage={irAPagina} onPageSize={cambiarPageSize} />
+                </GlassCard>
+              </Box>
             )
         )}
 
         {/* ─── VISTA TABLA ─── */}
         {viewMode === "tabla" && (
           <GlassCard rounded="xl" overflow="hidden">
+            <Box ref={listTopRef} />
             {filtered.length === 0
               ? <EmptyState cotizaciones={cotizaciones} navigate={navigate} />
               : (
+                <>
                 <TableContainer overflowX="auto"
                   sx={{ "&::-webkit-scrollbar": { h: "4px" }, "&::-webkit-scrollbar-thumb": { bg: "gray.200", borderRadius: "2px" } }}>
                   <Table size="sm" variant="simple">
@@ -575,67 +783,33 @@ export default function HistorialPage() {
                       </Tr>
                     </Thead>
                     <Tbody>
-                      {filtered.map((cot, i) => (
-                        <Tr key={cot.id}
-                          bg={i % 2 === 0 ? tableBg : stripeBg}
-                          _hover={{ bg: hoverBg, cursor: "pointer" }}
-                          onClick={() => navigate(`/cotizador/${cot.id}`)}>
-                          <Td borderColor={border} fontWeight="700" fontSize="13px">
-                            <Tooltip label={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`} hasArrow>
-                              <Text>{getNumero(cot)}</Text>
-                            </Tooltip>
-                            <TipoBadge cot={cot} mt={1} />
-                          </Td>
-                          <Td borderColor={border}>
-                            <Text fontSize="13px" fontWeight="600" noOfLines={1}>
-                              {cot.cliente?.nombre || <Text as="span" color={mutedL} fontStyle="italic">Sin cliente</Text>}
-                            </Text>
-                            {cot.cliente?.empresa && (
-                              <Text fontSize="10px" color={muted} noOfLines={1}>{cot.cliente.empresa}</Text>
-                            )}
-                          </Td>
-                          <Td borderColor={border} fontSize="12px" color={muted}>
-                            <Tooltip label={fmtDateShort(cot.updatedAt?.slice(0, 10))} hasArrow>
-                              <Text>{fmtRelativa(cot.updatedAt)}</Text>
-                            </Tooltip>
-                          </Td>
-                          {/* Estado editable inline */}
-                          <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
-                            <EstadoSelect cot={cot} onCambiar={handleCambiarEstado} />
-                          </Td>
-                          <Td borderColor={border} isNumeric>
-                            <Text fontWeight="800" fontSize="14px" fontVariantNumeric="tabular-nums">
-                              {money(getTotal(cot), cot.config?.moneda || "COP")}
-                            </Text>
-                          </Td>
-                          <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
-                            <HStack spacing={1}>
-                              <Tooltip label="Editar" hasArrow>
-                                <IconButton size="xs" variant="ghost" rounded="md" aria-label="Editar"
-                                  icon={<FiEdit2 size={13} />} onClick={() => navigate(`/cotizador/${cot.id}`)} />
-                              </Tooltip>
-                              <Tooltip label="Duplicar" hasArrow>
-                                <IconButton size="xs" variant="ghost" rounded="md" aria-label="Duplicar"
-                                  icon={<FiCopy size={13} />} onClick={() => handleDuplicate(cot.id)} />
-                              </Tooltip>
-                              <Tooltip label="Descargar PDF" hasArrow>
-                                <IconButton size="xs" variant="ghost" rounded="md" aria-label="PDF"
-                                  icon={<FiDownload size={13} />}
-                                  isLoading={pdfLoading && pdfCot?.id === cot.id}
-                                  onClick={() => handlePDF(cot)} />
-                              </Tooltip>
-                              <Tooltip label="Eliminar" hasArrow>
-                                <IconButton size="xs" variant="ghost" colorScheme="red" rounded="md"
-                                  aria-label="Eliminar" icon={<FiTrash2 size={13} />}
-                                  onClick={() => confirmDelete(cot)} />
-                              </Tooltip>
-                            </HStack>
-                          </Td>
-                        </Tr>
+                      {paged.map((cot, i) => (
+                        <FilaCotizacion
+                          key={cot.id}
+                          cot={cot}
+                          par={i % 2 === 0}
+                          onEdit={handleEditar}
+                          onDuplicate={handleDuplicate}
+                          onDelete={confirmDelete}
+                          onPDF={handlePDF}
+                          onCambiarEstado={handleCambiarEstado}
+                          onConvertir={handleConvertir}
+                          pdfLoading={pdfLoading}
+                          pdfCotId={pdfCot?.id}
+                          tableBg={tableBg}
+                          stripeBg={stripeBg}
+                          hoverBg={hoverBg}
+                          border={border}
+                          muted={muted}
+                          mutedL={mutedL}
+                        />
                       ))}
                     </Tbody>
                   </Table>
                 </TableContainer>
+                <Paginacion page={pageSegura} pageSize={pageSize} total={filtered.length}
+                  onPage={irAPagina} onPageSize={cambiarPageSize} />
+                </>
               )}
           </GlassCard>
         )}
