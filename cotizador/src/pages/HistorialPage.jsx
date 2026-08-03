@@ -12,7 +12,7 @@
  *   ✓ Convertir Comercial ⇄ Obra desde el menú de cada cotización
  */
 import { useState, useMemo, useRef, useCallback, useEffect, memo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Box, Flex, HStack, VStack, Stack, Text, Icon, Badge, Tag,
   Button, IconButton, Input, InputGroup, InputLeftElement,
@@ -32,7 +32,8 @@ import {
 import { motion } from "framer-motion";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { usePDF }           from "../hooks/usePDF";
-import DocContent, { PAGE_W } from "../components/DocContent";
+import DocContent          from "../components/DocContent";
+import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
 import { TABS_BAR_H }        from "../components/TabsBar";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
@@ -46,6 +47,15 @@ const loadPrefs = () => {
 };
 const savePrefs = (p) => {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* noop */ }
+};
+
+/** Umbral de fecha a partir de la etiqueta del filtro (0 = sin límite) */
+const desdeDe = (v) => {
+  if (v === "hoy") { const s = new Date(); s.setHours(0, 0, 0, 0); return s.getTime(); }
+  if (v === "7")   return Date.now() - 7  * 86400000;
+  if (v === "30")  return Date.now() - 30 * 86400000;
+  if (v === "mes") { const s = new Date(); s.setDate(1); s.setHours(0, 0, 0, 0); return s.getTime(); }
+  return 0;
 };
 
 const FY   = "#F9BF20";
@@ -185,7 +195,8 @@ function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, 
 /* ─── Tarjeta de cotización ───
    Memoizada: cambiar el estado de una no repinta toda la rejilla. */
 const CotizacionCard = memo(function CotizacionCard({
-  cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado, onConvertir,
+  cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
+  onConvertir, onVerCliente,
 }) {
   const navigate = useNavigate();
   const estado   = getEstado(cot);
@@ -226,11 +237,17 @@ const CotizacionCard = memo(function CotizacionCard({
           </Flex>
         </Flex>
 
-        <HStack mb={1}>
+        <HStack mb={1} onClick={(e) => e.stopPropagation()}>
           <Icon as={FiUser} boxSize={3.5} color={muted} />
-          <Text fontSize="13px" fontWeight="600" noOfLines={1}>
-            {cot.cliente?.nombre || <Text as="span" color={muted} fontStyle="italic">Sin cliente</Text>}
-          </Text>
+          {cot.cliente?.nombre ? (
+            <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer"
+              _hover={{ color: "#B8860B", textDecoration: "underline" }}
+              onClick={() => onVerCliente(cot.cliente.nombre)}>
+              {cot.cliente.nombre}
+            </Text>
+          ) : (
+            <Text fontSize="13px" color={muted} fontStyle="italic">Sin cliente</Text>
+          )}
         </HStack>
         {cot.cliente?.empresa && (
           <Text fontSize="11px" color={muted} noOfLines={1} ml={5}>{cot.cliente.empresa}</Text>
@@ -254,7 +271,7 @@ const CotizacionCard = memo(function CotizacionCard({
    Memoizada por el mismo motivo: con 50 filas en pantalla, cambiar el
    estado de una sola dejaba de repintar las otras 49. */
 const FilaCotizacion = memo(function FilaCotizacion({
-  cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir,
+  cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir, onVerCliente,
   pdfLoading, pdfCotId, tableBg, stripeBg, hoverBg, border, muted, mutedL,
 }) {
   const navigate = useNavigate();
@@ -268,10 +285,19 @@ const FilaCotizacion = memo(function FilaCotizacion({
         </Tooltip>
         <TipoBadge cot={cot} mt={1} />
       </Td>
-      <Td borderColor={border}>
-        <Text fontSize="13px" fontWeight="600" noOfLines={1}>
-          {cot.cliente?.nombre || <Text as="span" color={mutedL} fontStyle="italic">Sin cliente</Text>}
-        </Text>
+      <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
+        {cot.cliente?.nombre ? (
+          /* Al cliente se llega desde su nombre: es donde uno lo busca */
+          <Tooltip label={`Ver todo de ${cot.cliente.nombre}`} hasArrow openDelay={400}>
+            <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer"
+              _hover={{ color: "#B8860B", textDecoration: "underline" }}
+              onClick={() => onVerCliente(cot.cliente.nombre)}>
+              {cot.cliente.nombre}
+            </Text>
+          </Tooltip>
+        ) : (
+          <Text fontSize="13px" color={mutedL} fontStyle="italic">Sin cliente</Text>
+        )}
         {cot.cliente?.empresa && (
           <Text fontSize="10px" color={muted} noOfLines={1}>{cot.cliente.empresa}</Text>
         )}
@@ -333,14 +359,20 @@ export default function HistorialPage() {
 
   const [prefs0] = useState(loadPrefs);   // preferencias guardadas, leídas una sola vez
 
-  const [search,   setSearch]   = useState("");
-  const [debSearch, setDebSearch] = useState("");   // búsqueda con debounce
-  const [estado,   setEstado]   = useState("todos");
-  const [tipo,     setTipo]     = useState("todos"); // comercial / obra
-  const [rango,    setRango]    = useState("todos"); // fecha (etiqueta)
-  const [rangoDesde, setRangoDesde] = useState(0);   // timestamp mínimo (0 = sin límite)
-  const [sortBy,   setSortBy]   = useState("updatedAt");
-  const [sortDir,  setSortDir]  = useState("desc");
+  /* Los filtros viven en la URL: así el botón atrás del navegador devuelve
+     el listado tal como estaba. Antes, entrar a una cotización y volver
+     borraba la búsqueda y había que filtrar de nuevo desde cero. */
+  const [params, setParams] = useSearchParams();
+  const [p0] = useState(() => Object.fromEntries(params));   // leídos una sola vez
+
+  const [search,   setSearch]   = useState(p0.q || "");
+  const [debSearch, setDebSearch] = useState(p0.q || "");   // búsqueda con debounce
+  const [estado,   setEstado]   = useState(p0.estado || "todos");
+  const [tipo,     setTipo]     = useState(p0.tipo || "todos"); // comercial / obra
+  const [rango,    setRango]    = useState(p0.fecha || "todos"); // fecha (etiqueta)
+  const [rangoDesde, setRangoDesde] = useState(() => desdeDe(p0.fecha));  // 0 = sin límite
+  const [sortBy,   setSortBy]   = useState(p0.orden?.split(":")[0] || "updatedAt");
+  const [sortDir,  setSortDir]  = useState(p0.orden?.split(":")[1] || "desc");
   const [toDelete, setToDelete] = useState(null);
   const [pdfCot,   setPdfCot]   = useState(null);
   const [viewMode, setViewMode] = useState(prefs0.viewMode || "tabla");
@@ -349,12 +381,25 @@ export default function HistorialPage() {
   const [pageSize, setPageSize] = useState(
     Number.isFinite(prefs0.pageSize) ? prefs0.pageSize : 5
   );
-  const [page,     setPage]     = useState(1);
+  const [page,     setPage]     = useState(Number(p0.pag) > 0 ? Number(p0.pag) : 1);
   const searchRef = useRef();
   const listTopRef = useRef(null);
 
   /* Recordar tamaño de página y tipo de vista */
   useEffect(() => { savePrefs({ pageSize, viewMode }); }, [pageSize, viewMode]);
+
+  /* Reflejar el estado del listado en la URL (reemplazando, para no llenar
+     el historial del navegador con una entrada por cada tecla) */
+  useEffect(() => {
+    const q = {};
+    if (debSearch.trim())   q.q = debSearch.trim();
+    if (estado !== "todos") q.estado = estado;
+    if (tipo   !== "todos") q.tipo = tipo;
+    if (rango  !== "todos") q.fecha = rango;
+    if (sortBy !== "updatedAt" || sortDir !== "desc") q.orden = `${sortBy}:${sortDir}`;
+    if (page > 1) q.pag = String(page);
+    setParams(q, { replace: true });
+  }, [debSearch, estado, tipo, rango, sortBy, sortDir, page, setParams]);
 
   /* ─── Título dinámico ─── */
   useEffect(() => {
@@ -474,12 +519,7 @@ export default function HistorialPage() {
   /* Fecha: calcula el umbral en el manejador (fuera del render puro) */
   const onRango = useCallback((v) => {
     setRango(v);
-    let desde = 0;
-    if (v === "hoy")      { const s = new Date(); s.setHours(0, 0, 0, 0); desde = s.getTime(); }
-    else if (v === "7")   { desde = Date.now() - 7  * 86400000; }
-    else if (v === "30")  { desde = Date.now() - 30 * 86400000; }
-    else if (v === "mes") { const s = new Date(); s.setDate(1); s.setHours(0, 0, 0, 0); desde = s.getTime(); }
-    setRangoDesde(desde);
+    setRangoDesde(desdeDe(v));
     setPage(1);
   }, []);
 
@@ -523,6 +563,8 @@ export default function HistorialPage() {
   /* Abrir en pestaña */
   const handleEditar = useCallback((id) => { openTab(id); navigate(`/cotizador/${id}`); }, [openTab, navigate]);
   const handleNueva  = useCallback(() => { openTab(NEW_TAB_ID); navigate("/cotizador"); }, [openTab, navigate]);
+  /* Navegación normal (no replace): el atrás devuelve el listado con sus filtros */
+  const handleVerCliente = useCallback((n) => navigate(`/cliente/${encodeURIComponent(n)}`), [navigate]);
 
   /* ─── Convertir Comercial ⇄ Obra ─── */
 
@@ -724,6 +766,7 @@ export default function HistorialPage() {
                         pdfCotId={pdfCot?.id}
                         onCambiarEstado={handleCambiarEstado}
                         onConvertir={handleConvertir}
+                        onVerCliente={handleVerCliente}
                       />
                     </MotionBox>
                   ))}
@@ -795,6 +838,7 @@ export default function HistorialPage() {
                           onPDF={handlePDF}
                           onCambiarEstado={handleCambiarEstado}
                           onConvertir={handleConvertir}
+                          onVerCliente={handleVerCliente}
                           pdfLoading={pdfLoading}
                           pdfCotId={pdfCot?.id}
                           tableBg={tableBg}

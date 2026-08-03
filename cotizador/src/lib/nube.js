@@ -192,6 +192,10 @@ export const pullEmpresa = () => pullConfig("empresa");
 export const pullFrecuentes = () => pullConfig("frecuentes");
 export const pushFrecuentes = (obj) => pushConfig("frecuentes", obj);
 
+/* Directorio de clientes — compartido entre todas las PC de la empresa */
+export const pullClientes = () => pullConfig("clientes");
+export const pushClientes = (obj) => pushConfig("clientes", obj);
+
 /* Empresa con debounce: se escribe seguido mientras el usuario teclea */
 let empresaTimer = null;
 export function pushEmpresaDebounced(obj, ms = 1200) {

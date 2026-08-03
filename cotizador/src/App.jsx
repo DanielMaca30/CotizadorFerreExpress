@@ -2,7 +2,10 @@ import { ChakraProvider, extendTheme, ColorModeScript, Box } from "@chakra-ui/re
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import CotizadorPage from "./pages/CotizadorPage";
 import HistorialPage from "./pages/HistorialPage";
+import ClientePage from "./pages/ClientePage";
 import TabsBar from "./components/TabsBar";
+import AvisoGuardado from "./components/AvisoGuardado";
+import PuertaAcceso from "./components/PuertaAcceso";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
 /* ── Tema FerreExpress ──────────────────────────────────── */
@@ -55,6 +58,7 @@ const theme = extendTheme({
 function Layout() {
   return (
     <Box minH="100vh">
+      <AvisoGuardado />
       <TabsBar />
       <Outlet />
     </Box>
@@ -69,19 +73,22 @@ export default function App() {
       <ChakraProvider theme={theme}>
         {/* Estado compartido: una sola copia de las cotizaciones y una sola
             sincronización con la nube para toda la aplicación. */}
-        <CotizacionesProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/"              element={<Navigate to="/historial" replace />} />
-                <Route path="/cotizador"     element={<CotizadorPage />} />
-                <Route path="/cotizador/:id" element={<CotizadorPage />} />
-                <Route path="/historial"     element={<HistorialPage />} />
-                <Route path="*"              element={<Navigate to="/historial" replace />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
-        </CotizacionesProvider>
+        <PuertaAcceso>
+          <CotizacionesProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/"                 element={<Navigate to="/historial" replace />} />
+                  <Route path="/cotizador"        element={<CotizadorPage />} />
+                  <Route path="/cotizador/:id"    element={<CotizadorPage />} />
+                  <Route path="/historial"        element={<HistorialPage />} />
+                  <Route path="/cliente/:nombre"  element={<ClientePage />} />
+                  <Route path="*"                 element={<Navigate to="/historial" replace />} />
+                </Route>
+              </Routes>
+            </BrowserRouter>
+          </CotizacionesProvider>
+        </PuertaAcceso>
       </ChakraProvider>
     </>
   );

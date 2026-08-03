@@ -44,18 +44,57 @@ const saveBorrados = (set) => {
 const loadFromStorage = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const lista = raw ? JSON.parse(raw) : [];
+    /* Limpieza de arrastre: quita los logos duplicados de datos antiguos */
+    return Array.isArray(lista) ? lista.map(aligerarCotizacion) : [];
   } catch {
     return [];
   }
 };
 
+/**
+ * El logo de la empresa es una imagen incrustada que puede pesar cientos de
+ * kilobytes. Guardarla dentro de CADA cotización multiplicaba ese peso por el
+ * número de cotizaciones y llenaba el almacenamiento del navegador (unos 5 MB),
+ * momento en el que los guardados empezaban a fallar en silencio.
+ *
+ * El logo vive en la configuración de empresa (y en la nube); el documento ya
+ * lo toma de ahí cuando la cotización no lo trae. Aquí se recorta antes de
+ * guardar y también al leer datos antiguos, para recuperar el espacio.
+ */
+const sinLogo = (empresa) => {
+  if (!empresa || typeof empresa !== "object") return empresa;
+  if (!empresa.logo) return empresa;
+  const { logo, ...resto } = empresa;   // eslint-disable-line no-unused-vars
+  return resto;
+};
+
+const aligerarCotizacion = (c) =>
+  c?.empresa?.logo ? { ...c, empresa: sinLogo(c.empresa) } : c;
+
 const saveToStorage = (data) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return null;
   } catch (e) {
     console.error("Error al guardar en localStorage:", e);
+    const lleno = /quota|exceeded|full/i.test(e?.name + " " + e?.message);
+    return lleno
+      ? "El almacenamiento del navegador está lleno. Las cotizaciones nuevas podrían no guardarse en este equipo."
+      : "No se pudo guardar en este equipo.";
   }
+};
+
+/** Espacio aproximado que ocupan los datos de la app, en MB */
+const uso = () => {
+  try {
+    let n = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("ferreexpress")) n += (localStorage.getItem(k) || "").length;
+    }
+    return n / 1048576;
+  } catch { return 0; }
 };
 
 /* ─── Pestañas abiertas ─── */
@@ -85,6 +124,9 @@ export function CotizacionesProvider({ children }) {
   const [cotizaciones, setCotizaciones] = useState(loadFromStorage);
   const [syncing, setSyncing] = useState(false);
   const [tabs, setTabs] = useState(loadTabs);
+  /* Problema de guardado visible para el usuario (antes solo iba a consola) */
+  const [errorGuardado, setErrorGuardado] = useState(null);
+  const descartarErrorGuardado = useCallback(() => setErrorGuardado(null), []);
 
   /* Ref siempre al día — para leer sin re-crear callbacks */
   const listRef = useRef(cotizaciones);
@@ -95,7 +137,7 @@ export function CotizacionesProvider({ children }) {
      del arrastre con listas grandes. Ahora se agrupa cada 400 ms y se
      fuerza el volcado al cerrar u ocultar la pestaña, así no se pierde nada. */
   useEffect(() => {
-    const t = setTimeout(() => saveToStorage(cotizaciones), SAVE_DEBOUNCE_MS);
+    const t = setTimeout(() => setErrorGuardado(saveToStorage(cotizaciones)), SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [cotizaciones]);
 
@@ -236,6 +278,10 @@ export function CotizacionesProvider({ children }) {
     const now = new Date().toISOString();
     let saved;
 
+    /* El logo no se guarda dentro de la cotización: pesa mucho y se repetiría
+       en cada una. El documento lo toma de la configuración de empresa. */
+    payload = { ...payload, empresa: sinLogo(payload.empresa) };
+
     if (payload.id) {
       /* Actualizar — preservar número existente */
       const existing = listRef.current.find((c) => c.id === payload.id);
@@ -268,7 +314,14 @@ export function CotizacionesProvider({ children }) {
       setCotizaciones((prev) => [saved, ...prev]);
     }
 
-    pushCotizacion(saved); // sube a la nube (no-op si no hay credenciales)
+    /* Subir a la nube (no-op sin credenciales). Si falla, el usuario debe
+       enterarse: antes el fallo solo quedaba en la consola y quien guardaba
+       creía que su cotización ya estaba en los demás equipos. */
+    pushCotizacion(saved).then((ok) => {
+      if (ok === false && nubeActiva()) {
+        setErrorGuardado("Guardado en este equipo, pero no se pudo subir a la nube. Los demás equipos aún no la ven.");
+      }
+    });
     return saved;
   }, [nextNumero]);
 
@@ -428,6 +481,10 @@ export function CotizacionesProvider({ children }) {
     cambiarEstado,
     convertirCotizacion,
     stats,
+    /* avisos de guardado */
+    errorGuardado,
+    descartarErrorGuardado,
+    usoAlmacenamiento: uso,
     /* pestañas */
     tabs,
     openTab,
@@ -440,6 +497,7 @@ export function CotizacionesProvider({ children }) {
   }), [
     cotizaciones, syncing, sync, getCotizacion, saveCotizacion, deleteCotizacion,
     duplicarCotizacion, cambiarEstado, convertirCotizacion, stats,
+    errorGuardado, descartarErrorGuardado,
     tabs, openTab, closeTab, closeOtherTabs, closeAllTabs, replaceTab,
     registerAutoSave, flushAutoSave,
   ]);

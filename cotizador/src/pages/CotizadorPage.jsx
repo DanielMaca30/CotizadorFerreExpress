@@ -32,6 +32,7 @@ import {
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
   FiEdit2, FiX, FiMaximize2, FiTruck,
+  FiCornerUpLeft, FiCornerUpRight,
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -39,8 +40,12 @@ import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
 import { usePDF } from '../hooks/usePDF';
 import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
+import { useClientesFrecuentes, aprenderCliente } from '../hooks/useClientesFrecuentes';
+import { useHistorialEdicion } from '../hooks/useHistorialEdicion';
 import AutocompleteInput from '../components/AutocompleteInput';
-import DocContent, { PAGE_W } from '../components/DocContent';
+import ClienteAutocomplete from '../components/ClienteAutocomplete';
+import DocContent from '../components/DocContent';
+import { PAGE_W } from '../lib/hojas';
 import ImportModal from '../components/ImportModal';
 import ModalConvertirTipo from '../components/ModalConvertirTipo';
 import { TABS_BAR_H } from '../components/TabsBar';
@@ -262,14 +267,21 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
   );
 });
 
-const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg }) {
+const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, getClientes, onUsarCliente }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const C = k => ({ value: cliente[k] ?? '', onChange: e => setCliente(p => ({ ...p, [k]: e.target.value })) });
   const faltan = ['nombre', 'direccion', 'tel'].filter(k => !String(cliente[k] ?? '').trim());
   return (
     <Stack spacing={3} p={4}>
       {/* Los tres datos con los que se entrega un domicilio */}
-      <Box><FL required>Nombre / Razón social</FL><Input {...ip} placeholder="Juan García" {...C('nombre')} /></Box>
+      <Box>
+        <FL required>Nombre / Razón social</FL>
+        <ClienteAutocomplete {...ip} placeholder="Juan García"
+          value={cliente.nombre}
+          onChange={v => setCliente(p => ({ ...p, nombre: v }))}
+          onAccept={onUsarCliente}
+          getClientes={getClientes} />
+      </Box>
       <Box><FL required>Dirección de entrega</FL>
         <Input {...ip} placeholder="Cra 100 #11-60, Ciudad Jardín" {...C('direccion')} /></Box>
       <Box><FL required>Celular</FL><Input {...ip} type="tel" placeholder="311 308 5083" {...C('tel')} /></Box>
@@ -961,6 +973,7 @@ export default function CotizadorPage() {
   const tableRef = useRef(null);
   const saveRef = useRef(null);
   const sigRef = useRef(null);   // firma del contenido ya guardado
+  const histRef = useRef(null);  // historial de deshacer (se llena más abajo)
 
   const {
     getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion,
@@ -971,6 +984,7 @@ export default function CotizadorPage() {
   const topOffset = tabs.length ? TABS_BAR_H : 0;
   const { downloadPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
   const { getSugerencias } = useProductosFrecuentes();
+  const { getClientes } = useClientesFrecuentes();
   const importHook = useImport();
 
   /* ── Estado principal ── */
@@ -993,6 +1007,7 @@ export default function CotizadorPage() {
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
   const [showConvertir, setShowConvertir] = useState(false);
+  const [showFaltantes, setShowFaltantes] = useState(false);
 
   const { isOpen: isDelOpen, onOpen: onDelOpen, onClose: onDelClose } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
@@ -1042,7 +1057,9 @@ export default function CotizadorPage() {
     setCliente(cot.cliente || DEFAULT_CLIENTE);
     setCotConfig(cot.config || DEFAULT_CONFIG);
     setDescLocal(String(cot.descG || 0));
-    setItems(cot.items?.length ? cot.items : [blankRow(), blankRow()]);
+    const itemsCargados = cot.items?.length ? cot.items : [blankRow(), blankRow()];
+    setItems(itemsCargados);
+    histRef.current?.reiniciar(itemsCargados);   // el deshacer no cruza cotizaciones
     setNotas(cot.notas || DEFAULT_NOTAS);
     setObservaciones(cot.observaciones || '');
     setAiuConfig(cot.aiuConfig || DEFAULT_AIU);
@@ -1061,14 +1078,29 @@ export default function CotizadorPage() {
     });
   }, [id]); // eslint-disable-line
 
-  /* Ctrl+S global */
+  /* Atajos globales: Ctrl+S guardar · Ctrl+Z deshacer · Ctrl+Shift+Z / Ctrl+Y rehacer */
   useEffect(() => {
     const h = e => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveRef.current?.(); }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 's') { e.preventDefault(); saveRef.current?.(); return; }
+      /* Se usa la ref y no `hist` directamente: este efecto se declara antes
+         que el hook del historial, y leerlo aquí sería usarlo sin inicializar. */
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (!histRef.current?.deshacer()) return;
+        toast.closeAll();
+        toast({ title: 'Deshecho', status: 'info', duration: 1200, position: 'bottom-right' });
+      } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+        e.preventDefault();
+        if (!histRef.current?.rehacer()) return;
+        toast.closeAll();
+        toast({ title: 'Rehecho', status: 'info', duration: 1200, position: 'bottom-right' });
+      }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, []);
+  }, [toast]);
 
   /* Aviso antes de cerrar/recargar con cambios sin guardar (solo si hay contenido real) */
   useEffect(() => {
@@ -1133,17 +1165,43 @@ export default function CotizadorPage() {
     [items, descGNum, cotConfig.iva, esObra, aiuConfig]
   );
 
+  /* ── Deshacer / rehacer sobre la tabla de productos ──
+     Se expone por ref porque el efecto que carga una cotización está
+     declarado más arriba y necesita reiniciar el historial. */
+  const hist = useHistorialEdicion(items, setItems);
+  useEffect(() => { histRef.current = hist; }, [hist]);
+
   /* ── Operaciones de ítems ── */
   const addItem = useCallback(() => {
+    hist.marcar('Fila agregada');
     const row = blankRow();
     setItems(p => [...p, row]);
     requestAnimationFrame(() => requestAnimationFrame(() =>
       focusInput(tableRef.current, row.id, 'desc')
     ));
-  }, []);
+  }, [hist]);
 
-  const removeItem = useCallback(rid => setItems(p => p.length <= 1 ? p : p.filter(r => r.id !== rid)), []);
+  /* Eliminar avisa con opción de deshacer: borrar sin red es la queja
+     clásica de estas tablas, y el producto ya digitado se pierde entero. */
+  const removeItem = useCallback(rid => {
+    let borrada = null;
+    hist.marcar('Fila eliminada');
+    setItems(p => {
+      if (p.length <= 1) return p;
+      borrada = p.find(r => r.id === rid);
+      return p.filter(r => r.id !== rid);
+    });
+    if (borrada?.desc?.trim()) {
+      toast({
+        title: `"${borrada.desc}" eliminado`,
+        description: 'Ctrl+Z para deshacer',
+        status: 'info', duration: 4000, position: 'bottom-right',
+      });
+    }
+  }, [hist, toast]);
+
   const duplicateItem = useCallback(rid => {
+    hist.marcar('Fila duplicada');
     setItems(p => {
       const idx = p.findIndex(r => r.id === rid);
       if (idx < 0) return p;
@@ -1152,7 +1210,7 @@ export default function CotizadorPage() {
       next.splice(idx + 1, 0, copy);
       return next;
     });
-  }, []);
+  }, [hist]);
   const upItem = useCallback((rid, k, v) => {
     if ((k === 'price' || k === 'disc') && parseFloat(v) < 0) v = '0';
     if (k === 'disc' && parseFloat(v) > 100) v = '100';
@@ -1500,6 +1558,7 @@ export default function CotizadorPage() {
       const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, observaciones, totals, aiuConfig };
       const saved = await saveCotizacion(payload);
       aprenderProductos(items);
+      aprenderCliente(cliente);   // alimenta el directorio para la próxima vez
       clearDraft();
       sigRef.current = firmaDe(stRef.current);   // queda como referencia de "ya guardado"
       if (!editingId) {
@@ -1583,11 +1642,8 @@ export default function CotizadorPage() {
     else doClear();
   }, [hasChanges, doClear, onExitOpen]);
 
-  const handlePDF = useCallback(async () => {
-    if (!items.some(r => r.desc?.trim())) {
-      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, position: 'top' });
-      return;
-    }
+  /* Genera el PDF de verdad, ya sin comprobaciones */
+  const generarPDF = useCallback(async () => {
     // PDF en un clic: si es nueva o hay cambios, guarda primero (asigna numero)
     let numero = cotConfig.numero;
     if (!editingId || hasChanges) {
@@ -1604,7 +1660,28 @@ export default function CotizadorPage() {
     setPdfReady(false);
     if (ok) toast({ title: 'PDF descargado \u2713', status: 'success', duration: 2500, position: 'top-right' });
     else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
-  }, [editingId, hasChanges, items, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
+  }, [editingId, hasChanges, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
+
+  /* Comprobaciones antes de descargar.
+     El documento sirve de remisi\u00f3n de domicilio: si sale sin direcci\u00f3n o sin
+     celular, el mensajero se queda sin saber a d\u00f3nde va. Mejor avisar aqu\u00ed
+     que imprimir guiones y descubrirlo en la calle. */
+  const faltantesCliente = useMemo(() => {
+    const f = [];
+    if (!String(cliente.nombre ?? '').trim())    f.push('nombre');
+    if (!String(cliente.direccion ?? '').trim()) f.push('direcci\u00f3n');
+    if (!String(cliente.tel ?? '').trim())       f.push('celular');
+    return f;
+  }, [cliente.nombre, cliente.direccion, cliente.tel]);
+
+  const handlePDF = useCallback(async () => {
+    if (!items.some(r => r.desc?.trim())) {
+      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, position: 'top' });
+      return;
+    }
+    if (faltantesCliente.length) { setShowFaltantes(true); return; }
+    await generarPDF();
+  }, [items, faltantesCliente, generarPDF, toast]);
 
   /* ── Convertir Comercial ⇄ Obra ──
      Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
@@ -1612,6 +1689,20 @@ export default function CotizadorPage() {
      `abrirConvertir` es un callback estable: como arrow suelto se recreaba en
      cada tecla y tumbaba la memoización del panel de configuración. */
   const abrirConvertir = useCallback(() => setShowConvertir(true), []);
+
+  /* Elegir un cliente del directorio rellena su ficha completa */
+  const handleUsarCliente = useCallback((c) => {
+    setCliente({
+      nombre: c.nombre || '', direccion: c.direccion || '', tel: c.tel || '',
+      empresa: c.empresa || '', nit: c.nit || '', contacto: c.contacto || '',
+      correo: c.correo || '', ciudad: c.ciudad || '',
+    });
+    toast({
+      title: `Cliente cargado: ${c.nombre}`,
+      description: c.direccion || undefined,
+      status: 'success', duration: 2200, position: 'top-right',
+    });
+  }, [toast]);
 
   const handleConvertirConfirm = useCallback((conv) => {
     setCotConfig(conv.config);
@@ -1666,7 +1757,7 @@ export default function CotizadorPage() {
     startRowDrag, dragId,
   };
   const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
-  const panelClienteProps = { cliente, setCliente, inputBg };
+  const panelClienteProps = { cliente, setCliente, inputBg, getClientes, onUsarCliente: handleUsarCliente };
   const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, observaciones, setObservaciones, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
   const mobileCardProps = { upItem, removeItem, duplicateItem, toggleSinIva, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId };
 
@@ -1737,6 +1828,38 @@ export default function CotizadorPage() {
         onConfirm={handleImportConfirm}
       />
 
+      {/* Aviso: faltan datos de entrega */}
+      <AlertDialog isOpen={showFaltantes} leastDestructiveRef={cancelRef}
+        onClose={() => setShowFaltantes(false)} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent rounded="xl">
+            <AlertDialogHeader fontWeight="900" fontSize="16px">
+              Faltan datos de entrega
+            </AlertDialogHeader>
+            <AlertDialogBody fontSize="14px">
+              <Text mb={3}>
+                Esta cotización no tiene{' '}
+                <strong>{faltantesCliente.join(', ').replace(/, ([^,]*)$/, ' ni $1')}</strong>.
+              </Text>
+              <Text fontSize="13px" color="gray.500">
+                El documento también sirve de remisión cuando entregas a domicilio,
+                y sin esos datos saldría impreso con guiones.
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter gap={2}>
+              <Button ref={cancelRef} size="sm" rounded="md"
+                onClick={() => { setShowFaltantes(false); setMobileStep(1); }}>
+                Completar datos
+              </Button>
+              <Button size="sm" rounded="md" variant="ghost" color="gray.500"
+                onClick={async () => { setShowFaltantes(false); await generarPDF(); }}>
+                Descargar así
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
       {showConvertir && (
         <ModalConvertirTipo
           isOpen
@@ -1788,6 +1911,17 @@ export default function CotizadorPage() {
                 display={{ base: 'none', sm: 'flex' }}>
                 Importar
               </Button>
+            </Tooltip>
+            {/* Deshacer visible: el atajo solo lo conoce quien ya lo probó */}
+            <Tooltip label={<HStack><Text>Deshacer</Text><Kbd fontSize="10px">Ctrl+Z</Kbd></HStack>} hasArrow>
+              <IconButton size="sm" variant="outline" rounded="md" aria-label="Deshacer"
+                icon={<FiCornerUpLeft />} isDisabled={!hist.puedeDeshacer}
+                onClick={() => hist.deshacer()} />
+            </Tooltip>
+            <Tooltip label={<HStack><Text>Rehacer</Text><Kbd fontSize="10px">Ctrl+Shift+Z</Kbd></HStack>} hasArrow>
+              <IconButton size="sm" variant="outline" rounded="md" aria-label="Rehacer"
+                icon={<FiCornerUpRight />} isDisabled={!hist.puedeRehacer}
+                onClick={() => hist.rehacer()} display={{ base: 'none', md: 'inline-flex' }} />
             </Tooltip>
             <Tooltip label="Historial" hasArrow>
               <IconButton size="sm" variant="outline" rounded="md" aria-label="Historial"
