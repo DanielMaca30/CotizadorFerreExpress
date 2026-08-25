@@ -92,6 +92,10 @@ export default function PuertaAcceso({ children }) {
                 Clave incorrecta.
               </Text>
             )}
+            <Text fontSize="11px" color={muted} mt={2}>
+              ¿No la recuerdas? La clave de la empresa siempre es{" "}
+              <Text as="span" fontWeight="800" color={DARK}>ferreexpress</Text>.
+            </Text>
           </Box>
 
           <Button type="submit" bg={FY} color={DARK} rounded="lg" fontWeight="700"

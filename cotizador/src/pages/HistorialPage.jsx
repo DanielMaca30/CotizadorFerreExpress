@@ -308,7 +308,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
         </Tooltip>
       </Td>
       {/* Estado editable inline */}
-      <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
+      <Td data-tour="estado" borderColor={border} onClick={(e) => e.stopPropagation()}>
         <EstadoSelect cot={cot} onCambiar={onCambiarEstado} />
       </Td>
       <Td borderColor={border} isNumeric>
@@ -316,7 +316,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
           {money(getTotal(cot), cot.config?.moneda || "COP")}
         </Text>
       </Td>
-      <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
+      <Td data-tour="acciones" borderColor={border} onClick={(e) => e.stopPropagation()}>
         <HStack spacing={1}>
           <Tooltip label="Editar" hasArrow>
             <IconButton size="xs" variant="ghost" rounded="md" aria-label="Editar"
@@ -666,7 +666,7 @@ export default function HistorialPage() {
                 aria-label="Cambiar vista"
                 onClick={() => setViewMode((v) => v === "tabla" ? "tarjetas" : "tabla")} />
             </Tooltip>
-            <Button size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700"
+            <Button data-tour="nueva" size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700"
               leftIcon={<FiPlus />} onClick={handleNueva}
               _hover={{ bg: "#e0b010" }}>
               Nueva cotización
@@ -678,7 +678,7 @@ export default function HistorialPage() {
       <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }} py={6}>
 
         {/* KPIs — clic para filtrar por estado */}
-        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+        <SimpleGrid data-tour="kpis" columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
           <KpiCard label="Total" value={cotizaciones.length} icon={FiFileText} accent={mutedL}
             onClick={() => cambiarEstadoF("todos")} active={estado === "todos"} />
           <KpiCard label="Enviadas" value={stats.enviadas} icon={FiSend} accent="blue.400"
@@ -696,7 +696,7 @@ export default function HistorialPage() {
               <InputLeftElement pointerEvents="none">
                 <Icon as={FiSearch} color={mutedL} boxSize={4} />
               </InputLeftElement>
-              <Input ref={searchRef} rounded="md" bg={inputBg} focusBorderColor={FY}
+              <Input data-tour="buscador" ref={searchRef} rounded="md" bg={inputBg} focusBorderColor={FY}
                 placeholder="Buscar por número, cliente, producto…  ( / )"
                 value={search}
                 onChange={(e) => cambiarBusqueda(e.target.value)}

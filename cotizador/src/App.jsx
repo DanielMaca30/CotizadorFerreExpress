@@ -1,11 +1,14 @@
 import { ChakraProvider, extendTheme, ColorModeScript, Box } from "@chakra-ui/react";
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import CotizadorPage from "./pages/CotizadorPage";
 import HistorialPage from "./pages/HistorialPage";
 import ClientePage from "./pages/ClientePage";
 import TabsBar from "./components/TabsBar";
 import AvisoGuardado from "./components/AvisoGuardado";
 import PuertaAcceso from "./components/PuertaAcceso";
+import AyudaApp from "./components/AyudaApp";
+import AyudaPage from "./pages/AyudaPage";
+import TourGuiado from "./components/TourGuiado";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
 /* ── Tema FerreExpress ──────────────────────────────────── */
@@ -56,11 +59,16 @@ const theme = extendTheme({
    en el cotizador, así se puede saltar entre cotizaciones abiertas
    desde cualquier punto. Se oculta sola cuando no hay ninguna. */
 function Layout() {
+  const { pathname } = useLocation();
   return (
     <Box minH="100vh">
       <AvisoGuardado />
       <TabsBar />
       <Outlet />
+      <AyudaApp />
+      {/* El recorrido de primera vez solo tiene sentido en el listado:
+          es donde están los botones que señala. */}
+      <TourGuiado activo={pathname === "/historial"} />
     </Box>
   );
 }
@@ -82,6 +90,7 @@ export default function App() {
                   <Route path="/cotizador"        element={<CotizadorPage />} />
                   <Route path="/cotizador/:id"    element={<CotizadorPage />} />
                   <Route path="/historial"        element={<HistorialPage />} />
+                  <Route path="/ayuda"            element={<AyudaPage />} />
                   <Route path="/cliente/:nombre"  element={<ClientePage />} />
                   <Route path="*"                 element={<Navigate to="/historial" replace />} />
                 </Route>

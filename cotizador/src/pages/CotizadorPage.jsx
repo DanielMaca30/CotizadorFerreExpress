@@ -32,7 +32,7 @@ import {
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
   FiEdit2, FiX, FiMaximize2, FiTruck,
-  FiCornerUpLeft, FiCornerUpRight,
+  FiCornerUpLeft, FiCornerUpRight, FiHelpCircle,
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -47,6 +47,7 @@ import ClienteAutocomplete from '../components/ClienteAutocomplete';
 import DocContent from '../components/DocContent';
 import { PAGE_W } from '../lib/hojas';
 import ImportModal from '../components/ImportModal';
+import ListaRapidaProductos from '../components/ListaRapidaProductos';
 import ModalConvertirTipo from '../components/ModalConvertirTipo';
 import { TABS_BAR_H } from '../components/TabsBar';
 import {
@@ -164,7 +165,11 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
 }
 
 function focusInput(container, rowId, field) {
-  const el = document.querySelector(`[data-row-id="${rowId}"][data-field="${field}"]`);
+  /* Puede haber varias copias del mismo campo en el DOM (la disposición de
+     escritorio, la de tablet y la de celular conviven ocultándose entre sí).
+     Hay que enfocar la que está a la vista, no la primera que aparezca. */
+  const todos = [...document.querySelectorAll(`[data-row-id="${rowId}"][data-field="${field}"]`)];
+  const el = todos.find(e => e.offsetParent !== null) || todos[0];
   if (!el) return;
   el.focus();
   if (el.tagName === 'INPUT') { try { el.select(); } catch { /* algunos input no soportan select */ } }
@@ -173,7 +178,7 @@ function focusInput(container, rowId, field) {
 /* ════════════════════════════════════════════════════════════
    MODAL SELECTOR DE TIPO
 ════════════════════════════════════════════════════════════ */
-function ModalTipo({ isOpen, onSelect, onCancel }) {
+function ModalTipo({ isOpen, onSelect, onCancel, onIrHistorial, onAyuda }) {
   const cardHover = useColorModeValue('gray.50', 'gray.700');
   return (
     <Modal isOpen={isOpen} onClose={onCancel || (() => { })} isCentered closeOnOverlayClick={!!onCancel} size="md">
@@ -215,6 +220,30 @@ function ModalTipo({ isOpen, onSelect, onCancel }) {
               </Box>
             ))}
           </Stack>
+
+          {(onIrHistorial || onAyuda) && (
+            <>
+              <Flex align="center" gap={2} my={4}>
+                <Box flex={1} h="1px" bg="gray.200" />
+                <Text fontSize="10px" color="gray.400" fontWeight="700">O SI PREFIERES</Text>
+                <Box flex={1} h="1px" bg="gray.200" />
+              </Flex>
+              <Stack spacing={2}>
+                {onIrHistorial && (
+                  <Button variant="outline" size="sm" rounded="lg" leftIcon={<FiHome />}
+                    onClick={onIrHistorial}>
+                    Ir al menú principal (listado de cotizaciones)
+                  </Button>
+                )}
+                {onAyuda && (
+                  <Button variant="ghost" size="sm" rounded="lg" leftIcon={<FiHelpCircle />}
+                    onClick={onAyuda}>
+                    ¿Cuál elijo? Ver la guía
+                  </Button>
+                )}
+              </Stack>
+            </>
+          )}
         </ModalBody>
       </ModalContent>
     </Modal>
@@ -439,162 +468,10 @@ const PanelCotizacion = memo(function PanelCotizacion({
   );
 });
 
-/* ════════════════════════════════════════════════════════════
-   TARJETA PRODUCTO MOBILE
-════════════════════════════════════════════════════════════ */
-function ProductCardMobile({ r, index, upItem, removeItem, duplicateItem, toggleSinIva,
-  cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId }) {
-  const esObra = cotConfig.tipo === 'obra';
-  const isDragging = dragId === r.id;
-  const [expanded, setExpanded] = useState(false);
-  const isValid = !!(r.desc || r.price);
-  const total = calcRow(r);
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const hdrBg = useColorModeValue('gray.50', 'gray.750');
-  const mutedC = useColorModeValue('gray.500', 'gray.400');
-  const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
-
-  /* Sin animación de layout, igual que en la tabla de escritorio:
-     medía la tarjeta en el DOM con cada tecla. */
-  return (
-    <Box data-drag-row={r.id} bg={cardBg} border="1px solid"
-      borderColor={isDragging ? FY : (expanded ? FY : border)}
-      rounded="xl" mb={2} overflow="hidden"
-      style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}
-      boxShadow={isDragging ? `0 8px 22px rgba(0,0,0,0.18)` : (expanded ? `0 0 0 2px ${FY}33` : '0 1px 4px rgba(0,0,0,0.06)')}>
-
-      {/* Cabecera siempre visible */}
-      <Flex
-        px={3} py={2.5} align="center" gap={2} cursor="pointer"
-        bg={expanded ? hdrBg : cardBg}
-        onClick={() => setExpanded(e => !e)}>
-        <Box as="span" onPointerDown={e => startRowDrag(e, r.id)} onClick={e => e.stopPropagation()}
-          title="Arrastrar para reordenar" cursor="grab" flexShrink={0}
-          style={{ touchAction: 'none', display: 'flex', alignItems: 'center' }}
-          color="gray.300" _hover={{ color: FY }}>
-          <Icon as={MdDragIndicator} boxSize={4} />
-        </Box>
-        <Box
-          w="22px" h="22px" rounded="full" flexShrink={0}
-          bg={isValid ? FY : 'gray.200'} display="flex" alignItems="center" justifyContent="center">
-          <Text fontSize="9px" fontWeight="800" color={isValid ? DARK : 'gray.400'}>{index + 1}</Text>
-        </Box>
-        <Text flex={1} fontSize="12px" fontWeight={isValid ? '700' : '400'}
-          color={isValid ? 'inherit' : mutedC} noOfLines={1}>
-          {r.desc || 'Toca para agregar producto'}
-        </Text>
-        {isValid && !expanded && (
-          <Text fontSize="12px" fontWeight="700" color={FY} flexShrink={0}>
-            {money(total, cotConfig.moneda)}
-          </Text>
-        )}
-        <Icon as={expanded ? FiX : FiEdit2} boxSize={3.5} color={mutedC} flexShrink={0} />
-      </Flex>
-
-      {/* Cuerpo expandido */}
-      {expanded && (
-        <Box px={3} pb={3}>
-          <Divider mb={3} />
-          <Stack spacing={3}>
-            <Box>
-              <FL>Descripción</FL>
-              <AutocompleteInput
-                value={r.desc}
-                onChange={val => upItem(r.id, 'desc', val)}
-                onAccept={sug => handleAcceptSugerencia(r.id, sug)}
-                getSugerencias={getSugerencias}
-                dataRowId={r.id}
-                inputBg={inputBg}
-                FY={FY}
-                bg={inputBg}
-                border="1px solid"
-                borderColor={border}
-                rounded="md"
-                px={2} py={1}
-                variant="unstyled"
-              />
-            </Box>
-            <Flex gap={2}>
-              <Box flex={1}>
-                <FL>Cantidad</FL>
-                <Input {...ip} type="number" min="1" value={r.qty}
-                  onChange={e => upItem(r.id, 'qty', e.target.value)} />
-              </Box>
-              <Box flex={1}>
-                <FL>Unidad</FL>
-                <Select {...ip} value={r.unit} onChange={e => upItem(r.id, 'unit', e.target.value)}>
-                  {UNITS.map(u => <option key={u}>{u}</option>)}
-                </Select>
-              </Box>
-            </Flex>
-            <Flex gap={2}>
-              <Box flex={1}>
-                <FL>Código / Ref.</FL>
-                <Input {...ip} value={r.ref}
-                  onChange={e => upItem(r.id, 'ref', e.target.value)} placeholder="—" />
-              </Box>
-              <Box flex={1}>
-                <FL>Desc. (%)</FL>
-                <Input {...ip} type="number" min="0" max="100" value={r.disc}
-                  onChange={e => upItem(r.id, 'disc', e.target.value)} />
-              </Box>
-            </Flex>
-            <Box>
-              <FL>{r.sinIva ? 'Precio (sin IVA)' : 'Precio (con IVA)'}</FL>
-              <PriceInput
-                value={r.price}
-                onChange={val => upItem(r.id, 'price', val)}
-                dataRowId={r.id} dataField="price"
-                inputBg={inputBg}
-                w="full" textAlign="left"
-                bg={inputBg} border="1px solid" borderColor={border} rounded="md" px={3}
-              />
-            </Box>
-            {!esObra && (
-              <Flex as="button" onClick={() => toggleSinIva(r.id)} align="center" justify="space-between"
-                px={3} py={2} rounded="lg" border="1px solid"
-                borderColor={r.sinIva ? 'blue.300' : border}
-                bg={r.sinIva ? 'blue.50' : 'transparent'}>
-                <HStack spacing={2}>
-                  <Icon as={FiTruck} boxSize={4} color={r.sinIva ? 'blue.500' : 'gray.400'} />
-                  <Text fontSize="12px" fontWeight="600" color={r.sinIva ? 'blue.700' : 'gray.500'}>
-                    Transporte (sin IVA)
-                  </Text>
-                </HStack>
-                <Box w="36px" h="20px" rounded="full" p="2px" transition="all 0.15s"
-                  bg={r.sinIva ? 'blue.500' : 'gray.300'}>
-                  <Box w="16px" h="16px" rounded="full" bg="white"
-                    transform={r.sinIva ? 'translateX(16px)' : 'translateX(0)'} transition="all 0.15s" />
-                </Box>
-              </Flex>
-            )}
-            {(parseFloat(r.price) > 0) && (
-              <Flex justify="space-between" align="center"
-                bg={DARK} px={3} py={2} rounded="lg">
-                <Text fontSize="11px" color="whiteAlpha.600">Total</Text>
-                <Text fontSize="16px" fontWeight="900" color={FY}>
-                  {money(total, cotConfig.moneda)}
-                </Text>
-              </Flex>
-            )}
-            <Flex gap={2}>
-              <Button flex={1} size="sm" variant="outline" rounded="lg"
-                leftIcon={<FiCopy size={13} />}
-                onClick={() => { duplicateItem(r.id); setExpanded(false); }}>
-                Duplicar
-              </Button>
-              <Button flex={1} size="sm" colorScheme="red" variant="ghost" rounded="lg"
-                leftIcon={<FiTrash2 size={13} />}
-                onClick={() => removeItem(r.id)}>
-                Eliminar
-              </Button>
-            </Flex>
-          </Stack>
-        </Box>
-      )}
-    </Box>
-  );
-}
+/* La tarjeta de producto para celular que había aquí (había que abrirla
+   y cerrarla una por una) se reemplazó por ListaRapidaProductos:
+   ../components/ListaRapidaProductos.jsx — todos los renglones abiertos
+   a la vez, pensado para atender en vitrina. */
 
 /* ════════════════════════════════════════════════════════════
    TABLA DESKTOP (sin cambios estructurales, se arregló scroll)
@@ -977,7 +854,7 @@ export default function CotizadorPage() {
 
   const {
     getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion,
-    tabs, openTab, replaceTab, registerAutoSave,
+    tabs, openTab, replaceTab, registerAutoSave, closeTab,
   } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
@@ -1008,6 +885,14 @@ export default function CotizadorPage() {
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
   const [showConvertir, setShowConvertir] = useState(false);
   const [showFaltantes, setShowFaltantes] = useState(false);
+  /* Tablet: modo rápido (por defecto) o tabla clásica. Se recuerda. */
+  const [modoTabla, setModoTablaState] = useState(() => {
+    try { return localStorage.getItem('ferreexpress_modo_tabla') === '1'; } catch { return false; }
+  });
+  const setModoTabla = useCallback(v => {
+    setModoTablaState(v);
+    try { localStorage.setItem('ferreexpress_modo_tabla', v ? '1' : '0'); } catch { /* noop */ }
+  }, []);
 
   const { isOpen: isDelOpen, onOpen: onDelOpen, onClose: onDelClose } = useDisclosure();
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
@@ -1180,6 +1065,18 @@ export default function CotizadorPage() {
       focusInput(tableRef.current, row.id, 'desc')
     ));
   }, [hist]);
+
+  /* Igual que addItem pero SIN mover el cursor: lo usa la lista rápida
+     de celular/tablet para dejar siempre un renglón vacío esperando
+     abajo, sin arrancarle el teclado de las manos a quien escribe. */
+  const addItemSilencioso = useCallback(() => {
+    setItems(p => {
+      const ult = p[p.length - 1];
+      // si el último ya está vacío no hace falta otro
+      if (ult && !ult.desc?.trim() && !(parseFloat(ult.price) > 0)) return p;
+      return [...p, blankRow()];
+    });
+  }, []);
 
   /* Eliminar avisa con opción de deshacer: borrar sin red es la queja
      clásica de estas tablas, y el producto ya digitado se pierde entero. */
@@ -1759,7 +1656,13 @@ export default function CotizadorPage() {
   const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg, getClientes, onUsarCliente: handleUsarCliente };
   const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, observaciones, setObservaciones, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
-  const mobileCardProps = { upItem, removeItem, duplicateItem, toggleSinIva, cotConfig, inputBg, border, getSugerencias, handleAcceptSugerencia, startRowDrag, dragId };
+  /* Captura rápida (celular y tablet): todos los renglones abiertos a la vez */
+  const listaRapidaProps = {
+    items, esObra, cotConfig, inputBg, border,
+    upItem, removeItem, duplicateItem, toggleSinIva,
+    addItem, addItemSilencioso, addTransporte,
+    getSugerencias, handleAcceptSugerencia, startRowDrag, dragId,
+  };
 
   /* ════════════════════════════════════════════════
      VISTA PREVIA PDF
@@ -1819,7 +1722,13 @@ export default function CotizadorPage() {
         setCotConfig(p => ({ ...p, tipo, formaPago: tipo === 'obra' ? 'Anticipo + Actas' : 'Efectivo' }));
         setNotas(tipo === 'obra' ? DEFAULT_NOTAS_OBRA : DEFAULT_NOTAS);
         setShowTipoModal(false);
-      }} />
+      }}
+        onIrHistorial={() => {
+          if (!editingId) closeTab(id || NEW_TAB_ID);
+          navigate('/historial');
+        }}
+        onAyuda={() => navigate('/ayuda?tema=nueva')}
+      />
 
       <ImportModal
         isOpen={showImport}
@@ -2048,16 +1957,36 @@ export default function CotizadorPage() {
             </Tabs>
           </GlassCard>
           <GlassCard rounded="xl" overflow="hidden">
-            <Flex align="center" px={4} py={3} justify="space-between" borderBottom="1px solid" borderColor={border}>
+            <Flex align="center" px={4} py={3} justify="space-between" borderBottom="1px solid" borderColor={border} gap={2}>
               <HStack>
                 <Icon as={FiPackage} color={mutedL} boxSize={4} />
                 <Text fontWeight="700">{esObra ? 'Actividades' : 'Productos'}</Text>
                 <Tag size="sm" colorScheme="gray" rounded="full">{items.filter(r => r.desc || r.price).length}</Tag>
               </HStack>
-              <Button size="xs" variant="outline" leftIcon={<FiUpload size={11} />} rounded="md"
-                onClick={() => setShowImport(true)}>Importar</Button>
+              <HStack spacing={2}>
+                {/* En tablet la tabla de 10 columnas queda muy apretada para
+                    el dedo. Por eso el modo rápido manda por defecto, y quien
+                    prefiera la tabla la tiene a un toque (se recuerda). */}
+                <Flex rounded="md" border="1px solid" borderColor={border} overflow="hidden">
+                  {[
+                    { k: false, txt: 'Rápido' },
+                    { k: true,  txt: 'Tabla'  },
+                  ].map(({ k, txt }) => (
+                    <Box key={txt} as="button" px={2.5} py={1} fontSize="11px" fontWeight="700"
+                      bg={modoTabla === k ? FY : 'transparent'}
+                      color={modoTabla === k ? DARK : mutedL}
+                      onClick={() => setModoTabla(k)}>
+                      {txt}
+                    </Box>
+                  ))}
+                </Flex>
+                <Button size="xs" variant="outline" leftIcon={<FiUpload size={11} />} rounded="md"
+                  onClick={() => setShowImport(true)}>Importar</Button>
+              </HStack>
             </Flex>
-            <TablaProductos {...tablaProps} />
+            {modoTabla
+              ? <TablaProductos {...tablaProps} />
+              : <ListaRapidaProductos {...listaRapidaProps} />}
           </GlassCard>
           <Box bg={DARK} rounded="xl" border="1px solid" borderColor="whiteAlpha.100">
             <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="md" />
@@ -2116,19 +2045,8 @@ export default function CotizadorPage() {
                         onClick={() => setShowImport(true)}>Importar</Button>
                     </Flex>
 
-                    {/* Tarjetas */}
-                    <Box px={3} py={3}>
-                      {items.map((r, i) => (
-                        <ProductCardMobile key={r.id} r={r} index={i} {...mobileCardProps} />
-                      ))}
-                      <Button w="full" size="md" variant="dashed" rounded="xl"
-                        border="2px dashed" borderColor={border}
-                        leftIcon={<FiPlus />} onClick={addItem}
-                        color={FY} fontWeight="700" mt={1}
-                        _hover={{ borderColor: FY, bg: yellowHover }}>
-                        + Agregar producto
-                      </Button>
-                    </Box>
+                    {/* Captura rápida: sin abrir ni cerrar tarjetas */}
+                    <ListaRapidaProductos {...listaRapidaProps} />
 
                     {/* Mini resumen */}
                     <Box bg={DARK} px={4} py={3} mt={2}>

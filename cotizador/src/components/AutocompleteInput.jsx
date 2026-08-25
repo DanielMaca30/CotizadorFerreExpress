@@ -40,17 +40,20 @@ function DropdownPortal({ sugerencias, highlighted, anchorRef, onAccept, onHighl
       zIndex={99999} bg={bg} border="1px solid" borderColor={borderC} rounded="md"
       boxShadow="0 4px 16px rgba(0,0,0,0.12)" overflow="hidden" minW="200px" maxW="320px">
       {sugerencias.map((sug, idx) => (
-        <Box key={sug.desc} px={2.5} py={1.5} cursor="pointer"
+        /* En celular cada opción va más alta: con el dedo, 17 px de alto
+           es imposible de acertar. En computador se queda compacta. */
+        <Box key={sug.desc} px={2.5} py={{ base: 2.5, md: 1.5 }} cursor="pointer"
           bg={idx === highlighted ? hoverBg : "transparent"}
           borderBottom={idx < sugerencias.length - 1 ? "1px solid" : "none"}
           borderColor={borderC}
           onMouseDown={(e) => { e.preventDefault(); onAccept(sug); }}
+          onTouchStart={(e) => { e.preventDefault(); onAccept(sug); }}
           onMouseEnter={() => onHighlight(idx)}
           onMouseLeave={() => onHighlight(-1)}>
-          <Text fontSize="11px" fontWeight="600" color={textC} noOfLines={1}>
+          <Text fontSize={{ base: "14px", md: "11px" }} fontWeight="600" color={textC} noOfLines={1}>
             <HighlightMatch text={sug.desc} query={query} accent={FY} />
           </Text>
-          <Text fontSize="9.5px" color={subC}>
+          <Text fontSize={{ base: "11.5px", md: "9.5px" }} color={subC}>
             {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
             {sug.unit ? ` · ${sug.unit}` : ""}
             {sug.count > 1 && <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>}
