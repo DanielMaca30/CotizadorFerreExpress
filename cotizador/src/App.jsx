@@ -1,13 +1,16 @@
-import { ChakraProvider, extendTheme, ColorModeScript, Box } from "@chakra-ui/react";
+import { Suspense, lazy } from "react";
+import { ChakraProvider, extendTheme, ColorModeScript, Box, Spinner, Flex } from "@chakra-ui/react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
-import CotizadorPage from "./pages/CotizadorPage";
-import HistorialPage from "./pages/HistorialPage";
-import ClientePage from "./pages/ClientePage";
+/* Cada pantalla se descarga cuando se entra a ella, no al abrir la app.
+   Quien solo consulta el listado no paga el peso del cotizador completo. */
+const CotizadorPage = lazy(() => import("./pages/CotizadorPage"));
+const HistorialPage = lazy(() => import("./pages/HistorialPage"));
+const ClientePage   = lazy(() => import("./pages/ClientePage"));
 import TabsBar from "./components/TabsBar";
 import AvisoGuardado from "./components/AvisoGuardado";
 import PuertaAcceso from "./components/PuertaAcceso";
 import AyudaApp from "./components/AyudaApp";
-import AyudaPage from "./pages/AyudaPage";
+const AyudaPage = lazy(() => import("./pages/AyudaPage"));
 import TourGuiado from "./components/TourGuiado";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
@@ -54,6 +57,15 @@ const theme = extendTheme({
   },
 });
 
+/* Lo que se ve el instante que tarda en llegar una pantalla */
+function Cargando() {
+  return (
+    <Flex minH="60vh" align="center" justify="center">
+      <Spinner size="lg" thickness="3px" color="#F9BF20" emptyColor="gray.200" />
+    </Flex>
+  );
+}
+
 /* ── Layout común ─────────────────────────────────────────
    La barra de pestañas es global: se ve tanto en el historial como
    en el cotizador, así se puede saltar entre cotizaciones abiertas
@@ -64,7 +76,9 @@ function Layout() {
     <Box minH="100vh">
       <AvisoGuardado />
       <TabsBar />
-      <Outlet />
+      <Suspense fallback={<Cargando />}>
+        <Outlet />
+      </Suspense>
       <AyudaApp />
       {/* El recorrido de primera vez solo tiene sentido en el listado:
           es donde están los botones que señala. */}

@@ -39,7 +39,7 @@ const PASOS = [
     sel: '[data-tour="kpis"]',
     titulo: "Estos recuadros son botones",
     texto:
-      "Total, Enviadas y Aceptadas filtran la lista al tocarlos, aunque no parezcan botones. Ojo: sus números son de TODO, no cambian cuando filtras.",
+      "Total, Enviadas y Aceptadas filtran la lista al tocarlos, aunque no parezcan botones. Y sus números siempre corresponden a lo que estás viendo en pantalla.",
   },
   {
     sel: '[data-tour="buscador"]',

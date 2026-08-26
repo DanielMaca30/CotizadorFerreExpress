@@ -21,38 +21,44 @@
 
 /* ── Formatters ──────────────────────────────────────────────── */
 
-export const money = (n, mon = "COP") =>
-  new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: mon,
-    maximumFractionDigits: 0,
-  }).format(n || 0);
+/* Crear un formateador de Intl cuesta caro (decenas de microsegundos) y
+   estas funciones se llaman una vez por producto, por total y por fecha en
+   CADA repintado — con una lista larga son miles de llamadas por tecla.
+   Se crean una sola vez por formato y se reutilizan. */
+const _money = new Map();
+const fmtMoney = (mon) => {
+  let f = _money.get(mon);
+  if (!f) {
+    f = new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: mon,
+      maximumFractionDigits: 0,
+    });
+    _money.set(mon, f);
+  }
+  return f;
+};
+
+export const money = (n, mon = "COP") => fmtMoney(mon).format(n || 0);
+
+const fLarga = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "long", year: "numeric" });
+const fCorta = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" });
 
 export const fmtDate = (iso) =>
-  iso
-    ? new Date(iso + "T12:00:00").toLocaleDateString("es-CO", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      })
-    : "—";
+  iso ? fLarga.format(new Date(iso + "T12:00:00")) : "—";
 
 export const fmtDateShort = (iso) =>
-  iso
-    ? new Date(iso + "T12:00:00").toLocaleDateString("es-CO", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      })
-    : "—";
+  iso ? fCorta.format(new Date(iso + "T12:00:00")) : "—";
 
 /* ── Formateo de precios estilo colombiano (1.500.000) ───────── */
 
 /** Formatea un número a "1.500.000" (sin símbolo de moneda) */
+const fMiles = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
+
 export const formatPriceCO = (value) => {
   const num = String(value ?? "").replace(/\D/g, "");
   if (!num) return "";
-  return parseInt(num, 10).toLocaleString("es-CO");
+  return fMiles.format(parseInt(num, 10));
 };
 
 /** Quita los puntos de formato y devuelve el número como string */

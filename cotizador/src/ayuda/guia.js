@@ -51,7 +51,7 @@ export const TEMAS = [
     ],
     ojo: [
       'Los tres primeros recuadros (Total, Enviadas, Aceptadas) SON BOTONES aunque no lo parezcan: al tocarlos filtran la lista. El cuarto, "Valor total", no hace nada al tocarlo.',
-      "Comprobado en pruebas: esos cuatro números NO cambian cuando filtras o buscas. Siempre muestran el total de todo. El número que sí responde a los filtros es el «N resultados» que está a la derecha de la fila de filtros, en letra pequeña.",
+      "Los cuatro números corresponden a lo que estás viendo: si filtras o buscas, cambian con la lista. Cuando hay un filtro puesto, el primer recuadro dice «En pantalla» y debajo aclara cuántas hay en total.",
       "Para volver aquí desde cualquier parte: el ícono de hoja en la barra de pestañas de arriba, o el botón de ayuda → «Ir al listado».",
     ],
     claves: ["listado", "historial", "pantalla principal", "inicio", "menu principal", "donde estan las cotizaciones", "ver todas"],
@@ -118,8 +118,7 @@ export const TEMAS = [
       'Para agregar más filas: el botón "+ Agregar fila" al pie de la tabla, o Ctrl+Enter.',
     ],
     ojo: [
-      'IMPORTANTE, comprobado en pruebas: la lista de sugerencias dice al pie «Enter/Tab aceptar», pero en el computador ESO NO FUNCIONA — Enter salta a Cantidad y deja escrito solo lo que alcanzaste a teclear. Para usar una sugerencia hay que hacerle CLIC con el mouse.',
-      "También comprobado: si escribes muy rápido justo después de saltar de fila con Enter, se puede perder la primera letra (queda «omicilio» en vez de «Domicilio»). Espera un instante después del Enter, o revisa el nombre antes de guardar.",
+      "Para aceptar una sugerencia con el teclado hay que RESALTARLA primero con la flecha ↓ y después pulsar Enter o Tab. Si pulsas Enter sin resaltar ninguna, se respeta lo que escribiste y el cursor pasa a Cantidad — así puedes escribir productos nuevos sin que te los cambie.",
       'En una cotización COMERCIAL, el precio que escribes YA INCLUYE EL IVA. Las columnas "P. s/IVA" e "IVA" se calculan solas: no se escriben.',
       "Si escribes 0 o un número negativo en la cantidad, el sistema lo corrige solo a 1.",
       'La columna "Ref." (el código del producto) no se alcanza con Tab ni con las flechas: hay que hacerle clic.',
@@ -229,7 +228,7 @@ export const TEMAS = [
     ojo: [
       "Descargar el PDF GUARDA la cotización primero. O sea que al pedir el PDF ya estás creando la cotización con su número definitivo.",
       'Si falta el nombre, la dirección o el celular del cliente, sale la ventana "Faltan datos de entrega" con dos botones: "Completar datos" y "Descargar así".',
-      'Comprobado: en el computador el botón "Completar datos" solo cierra el aviso — no te lleva a ninguna parte. Tienes que ir tú a la pestaña CLIENTE del panel izquierdo. En el celular sí te lleva al paso del cliente.',
+      'El botón "Completar datos" te lleva directo a los datos del cliente en cualquier pantalla: en computador y tablet abre la pestaña CLIENTE, y en el celular salta al paso del cliente.',
       "El PDF sale como una imagen de la cotización: se ve idéntico e imprime bien, pero el texto no se puede seleccionar ni copiar desde el PDF.",
       "Si sale «Error generando PDF», vuelve a intentarlo sin cambiar de pestaña del navegador mientras se genera.",
     ],
@@ -474,7 +473,7 @@ export const TEMAS = [
     ],
     ojo: [
       "La tecla Supr hace DOS cosas distintas: si la fila está vacía, la borra; si la fila tiene datos, borra solo la casilla donde estás.",
-      "Comprobado: Enter NO acepta las sugerencias de producto en el computador, aunque la lista diga que sí. Ahí toca el mouse.",
+      "Para aceptar una sugerencia con el teclado: ↓ para resaltarla y después Enter o Tab. Enter a secas respeta lo que escribiste y pasa a Cantidad.",
       "La chuleta de atajos que aparece al pie de la tabla solo se ve en pantallas grandes.",
     ],
     claves: ["atajos", "teclado", "ctrl", "teclas", "mas rapido", "tab", "enter"],

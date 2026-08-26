@@ -35,6 +35,7 @@ import { usePDF }           from "../hooks/usePDF";
 import DocContent          from "../components/DocContent";
 import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
+import { useListaProgresiva } from "../hooks/useListaProgresiva";
 import { TABS_BAR_H }        from "../components/TabsBar";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
 import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU } from "../utils";
@@ -141,15 +142,16 @@ function EstadoSelect({ cot, onCambiar }) {
   };
 
   return (
-    <Menu>
-      <Tooltip label="Cambiar estado" hasArrow>
-        <MenuButton as={Button} size="xs" variant="ghost" px={1}
-          onClick={(e) => e.stopPropagation()}>
-          <Badge colorScheme={meta.color} rounded="full" variant="subtle" fontSize="9px" cursor="pointer">
-            {meta.label} ▾
-          </Badge>
-        </MenuButton>
-      </Tooltip>
+    /* isLazy: el menú de estados no se construye hasta que se abre.
+       Con 300 cotizaciones en pantalla, construirlos todos costaba más
+       que dibujar la lista entera. */
+    <Menu isLazy>
+      <MenuButton as={Button} size="xs" variant="ghost" px={1} title="Cambiar estado"
+        onClick={(e) => e.stopPropagation()}>
+        <Badge colorScheme={meta.color} rounded="full" variant="subtle" fontSize="9px" cursor="pointer">
+          {meta.label} ▾
+        </Badge>
+      </MenuButton>
       <MenuList fontSize="12px" minW="140px" onClick={(e) => e.stopPropagation()} zIndex={300}>
         {ESTADOS.map((e) => {
           const m = ESTADO_META[e];
@@ -226,7 +228,7 @@ const CotizacionCard = memo(function CotizacionCard({
           </Box>
           <Flex align="center" gap={1}>
             <EstadoSelect cot={cot} onCambiar={onCambiarEstado} />
-            <Menu>
+            <Menu isLazy>
               <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md"
                 aria-label="Opciones" icon={<FiMoreVertical size={14} />}
                 onClick={(e) => e.stopPropagation()} />
@@ -280,21 +282,18 @@ const FilaCotizacion = memo(function FilaCotizacion({
       _hover={{ bg: hoverBg, cursor: "pointer" }}
       onClick={() => navigate(`/cotizador/${cot.id}`)}>
       <Td borderColor={border} fontWeight="700" fontSize="13px">
-        <Tooltip label={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`} hasArrow>
-          <Text>{getNumero(cot)}</Text>
-        </Tooltip>
+        <Text title={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`}>{getNumero(cot)}</Text>
         <TipoBadge cot={cot} mt={1} />
       </Td>
       <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
         {cot.cliente?.nombre ? (
           /* Al cliente se llega desde su nombre: es donde uno lo busca */
-          <Tooltip label={`Ver todo de ${cot.cliente.nombre}`} hasArrow openDelay={400}>
-            <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer"
-              _hover={{ color: "#B8860B", textDecoration: "underline" }}
-              onClick={() => onVerCliente(cot.cliente.nombre)}>
-              {cot.cliente.nombre}
-            </Text>
-          </Tooltip>
+          <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer"
+            title={`Ver todo de ${cot.cliente.nombre}`}
+            _hover={{ color: "#B8860B", textDecoration: "underline" }}
+            onClick={() => onVerCliente(cot.cliente.nombre)}>
+            {cot.cliente.nombre}
+          </Text>
         ) : (
           <Text fontSize="13px" color={mutedL} fontStyle="italic">Sin cliente</Text>
         )}
@@ -303,9 +302,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
         )}
       </Td>
       <Td borderColor={border} fontSize="12px" color={muted}>
-        <Tooltip label={fmtDateShort(cot.updatedAt?.slice(0, 10))} hasArrow>
-          <Text>{fmtRelativa(cot.updatedAt)}</Text>
-        </Tooltip>
+        <Text title={fmtDateShort(cot.updatedAt?.slice(0, 10))}>{fmtRelativa(cot.updatedAt)}</Text>
       </Td>
       {/* Estado editable inline */}
       <Td data-tour="estado" borderColor={border} onClick={(e) => e.stopPropagation()}>
@@ -318,16 +315,12 @@ const FilaCotizacion = memo(function FilaCotizacion({
       </Td>
       <Td data-tour="acciones" borderColor={border} onClick={(e) => e.stopPropagation()}>
         <HStack spacing={1}>
-          <Tooltip label="Editar" hasArrow>
-            <IconButton size="xs" variant="ghost" rounded="md" aria-label="Editar"
-              icon={<FiEdit2 size={13} />} onClick={() => navigate(`/cotizador/${cot.id}`)} />
-          </Tooltip>
-          <Tooltip label="Descargar PDF" hasArrow>
-            <IconButton size="xs" variant="ghost" rounded="md" aria-label="PDF"
-              icon={<FiDownload size={13} />}
-              isLoading={pdfLoading && pdfCotId === cot.id}
-              onClick={() => onPDF(cot)} />
-          </Tooltip>
+          <IconButton size="xs" variant="ghost" rounded="md" aria-label="Editar" title="Editar"
+            icon={<FiEdit2 size={13} />} onClick={() => navigate(`/cotizador/${cot.id}`)} />
+          <IconButton size="xs" variant="ghost" rounded="md" aria-label="PDF" title="Descargar PDF"
+            icon={<FiDownload size={13} />}
+            isLoading={pdfLoading && pdfCotId === cot.id}
+            onClick={() => onPDF(cot)} />
           <Menu isLazy>
             <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md"
               aria-label="Más opciones" icon={<FiMoreVertical size={13} />} />
@@ -504,6 +497,28 @@ export default function HistorialPage() {
     return filtered.slice(ini, ini + pageSize);
   }, [filtered, pageSegura, pageSize]);
 
+  /* Pintado progresivo: las primeras filas salen ya, el resto se va
+     agregando entre repintados. Sin esto, elegir "Todas" con cientos de
+     cotizaciones dejaba la pantalla pegada varios segundos. */
+  const { visibles: aPintar, faltan: faltanPorPintar } = useListaProgresiva(paged, { primeros: 25, paso: 40 });
+
+  /* Cifras de LO QUE SE ESTÁ VIENDO.
+     Antes estos cuatro recuadros mostraban siempre el total de todo, así que
+     al filtrar por "aceptadas" o buscar un cliente los números no cuadraban
+     con la lista de abajo y había que sacar la cuenta a mano. */
+  const cifras = useMemo(() => {
+    let enviadas = 0, aceptadas = 0, valor = 0;
+    for (const c of filtered) {
+      const e = getEstado(c);
+      if (e === "enviada") enviadas++;
+      else if (e === "aceptada") aceptadas++;
+      valor += getTotal(c);
+    }
+    return { total: filtered.length, enviadas, aceptadas, valor };
+  }, [filtered]);
+
+  const hayFiltro = !!debSearch.trim() || estado !== "todos" || tipo !== "todos" || !!rangoDesde;
+
   const irAPagina = useCallback((p) => {
     setPage(p);
     listTopRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -679,14 +694,16 @@ export default function HistorialPage() {
 
         {/* KPIs — clic para filtrar por estado */}
         <SimpleGrid data-tour="kpis" columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
-          <KpiCard label="Total" value={cotizaciones.length} icon={FiFileText} accent={mutedL}
+          <KpiCard label={hayFiltro ? "En pantalla" : "Total"} value={cifras.total} icon={FiFileText} accent={mutedL}
+            sub={hayFiltro ? `de ${cotizaciones.length} en total` : undefined}
             onClick={() => cambiarEstadoF("todos")} active={estado === "todos"} />
-          <KpiCard label="Enviadas" value={stats.enviadas} icon={FiSend} accent="blue.400"
+          <KpiCard label="Enviadas" value={cifras.enviadas} icon={FiSend} accent="blue.400"
             onClick={() => cambiarEstadoF("enviada")} active={estado === "enviada"} />
-          <KpiCard label="Aceptadas" value={stats.aceptadas} icon={FiCheckCircle} accent="green.400"
+          <KpiCard label="Aceptadas" value={cifras.aceptadas} icon={FiCheckCircle} accent="green.400"
             onClick={() => cambiarEstadoF("aceptada")} active={estado === "aceptada"} />
-          <KpiCard label="Valor total" value={money(stats.valorTotal)} icon={FiDollarSign} accent={FY}
-            sub={`${cotizaciones.length} cotizaciones`} />
+          <KpiCard label={hayFiltro ? "Valor de lo filtrado" : "Valor total"} value={money(cifras.valor)}
+            icon={FiDollarSign} accent={FY}
+            sub={`${cifras.total} ${cifras.total === 1 ? "cotización" : "cotizaciones"}`} />
         </SimpleGrid>
 
         {/* Filtros */}
@@ -752,7 +769,7 @@ export default function HistorialPage() {
             : (
               <Box ref={listTopRef}>
                 <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
-                  {paged.map((cot) => (
+                  {aPintar.map((cot) => (
                     <MotionBox key={cot.id}
                       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.15 }}>
@@ -827,7 +844,7 @@ export default function HistorialPage() {
                       </Tr>
                     </Thead>
                     <Tbody>
-                      {paged.map((cot, i) => (
+                      {aPintar.map((cot, i) => (
                         <FilaCotizacion
                           key={cot.id}
                           cot={cot}
@@ -852,6 +869,16 @@ export default function HistorialPage() {
                     </Tbody>
                   </Table>
                 </TableContainer>
+                {faltanPorPintar > 0 && (
+                  <Flex align="center" justify="center" gap={2} py={3} borderTop="1px solid" borderColor={border}>
+                    <Box w="12px" h="12px" rounded="full" border="2px solid" borderColor={FY}
+                      borderTopColor="transparent" animation="girar 0.7s linear infinite"
+                      sx={{ "@keyframes girar": { to: { transform: "rotate(360deg)" } } }} />
+                    <Text fontSize="11px" color={mutedL}>
+                      Mostrando las primeras · faltan {faltanPorPintar} por pintar
+                    </Text>
+                  </Flex>
+                )}
                 <Paginacion page={pageSegura} pageSize={pageSize} total={filtered.length}
                   onPage={irAPagina} onPageSize={cambiarPageSize} />
                 </>

@@ -196,6 +196,13 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
         onBlur={handleBlur}
         data-row-id={dataRowId}
         data-field="desc"
+        /* Estas dos marcas le avisan a la tabla que la lista de sugerencias
+           está abierta y si hay una opción resaltada. La tabla escucha las
+           teclas ANTES que este campo (captura), así que sin esta señal se
+           quedaba con Enter y la sugerencia nunca se aceptaba, aunque el
+           pie de la lista prometiera que sí. */
+        data-sug-abierta={open && sugerencias.length > 0 ? "1" : undefined}
+        data-sug-sel={open && highlighted >= 0 ? "1" : undefined}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}

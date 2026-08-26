@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+/* html2canvas y jsPDF pesan ~320 KB juntos y solo hacen falta cuando alguien
+   descarga un PDF. Se cargan en ese momento, no al abrir la aplicación: así
+   el listado y el cotizador arrancan con bastante menos que descargar. */
 
 /**
  * usePDF — FerreExpress
@@ -14,6 +15,18 @@ import jsPDF from "jspdf";
  *
  * Usa JPEG (calidad 0.82) en lugar de PNG para reducir el peso del archivo.
  */
+let _libs = null;
+const cargarLibs = async () => {
+  if (!_libs) {
+    const [h2c, jspdf] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
+    _libs = { html2canvas: h2c.default || h2c, jsPDF: jspdf.jsPDF || jspdf.default };
+  }
+  return _libs;
+};
+
 export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
@@ -29,6 +42,7 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
     setError(null);
 
     try {
+      const { html2canvas, jsPDF } = await cargarLibs();
       const canvas = await html2canvas(el, {
         scale:           1.8,        // era 2.5 — menos px = menos peso
         useCORS:         true,

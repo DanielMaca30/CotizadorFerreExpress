@@ -24,7 +24,7 @@ import {
   useColorModeValue, usePrefersReducedMotion, useToast, useDisclosure,
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
-  Kbd, Progress, Collapse,
+  Kbd, Progress, Collapse, useMediaQuery,
 } from '@chakra-ui/react';
 import {
   FiPlus, FiTrash2, FiSave, FiDownload, FiEye,
@@ -346,6 +346,7 @@ const PanelCotizacion = memo(function PanelCotizacion({
 }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const esObra = cotConfig.tipo === 'obra';
+
   const numBg = useColorModeValue('gray.100', 'gray.700');
   const numBc = useColorModeValue('gray.200', 'gray.600');
   const numColor = useColorModeValue('gray.400', 'gray.500');
@@ -885,6 +886,10 @@ export default function CotizadorPage() {
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
   const [showConvertir, setShowConvertir] = useState(false);
   const [showFaltantes, setShowFaltantes] = useState(false);
+  /* Qué pestaña del panel izquierdo está abierta (0 Empresa · 1 Cliente · 2 Config).
+     Hacía falta poder moverla desde fuera: el aviso "Faltan datos de entrega"
+     ofrecía "Completar datos" y en computador no llevaba a ninguna parte. */
+  const [panelTab, setPanelTab] = useState(0);
   /* Tablet: modo rápido (por defecto) o tabla clásica. Se recuerda. */
   const [modoTabla, setModoTablaState] = useState(() => {
     try { return localStorage.getItem('ferreexpress_modo_tabla') === '1'; } catch { return false; }
@@ -898,6 +903,17 @@ export default function CotizadorPage() {
   const { isOpen: isExitOpen, onOpen: onExitOpen, onClose: onExitClose } = useDisclosure();
 
   const esObra = cotConfig.tipo === 'obra';
+
+  /* ── UNA SOLA DISPOSICIÓN A LA VEZ ──
+     Antes las tres versiones (computador, tablet y celular) se dibujaban
+     siempre y se escondían con CSS: el navegador mantenía tres copias de
+     la tabla de productos y React repintaba las tres con cada tecla.
+     Ahora se monta solo la que corresponde. Además de ir más rápido,
+     esto elimina de raíz los errores por campos duplicados (el cursor
+     saltaba a una casilla invisible). */
+  const [esEscritorio] = useMediaQuery('(min-width: 80em)', { ssr: false });
+  const [esCelular]    = useMediaQuery('(max-width: 47.99em)', { ssr: false });
+  const esTablet = !esEscritorio && !esCelular;
 
   const setEmpresa = useCallback(updater => {
     setEmpresaState(prev => {
@@ -1202,6 +1218,18 @@ export default function CotizadorPage() {
 
     const ORDER = ['desc', 'qty', 'unit', 'price', 'disc'];
     const fIdx = ORDER.indexOf(field);
+
+    /* ── La lista de sugerencias manda mientras esté abierta ──
+       Esta tabla escucha las teclas en fase de captura, o sea antes que el
+       campo. Sin esta salida se quedaba con Enter y con Tab, y la sugerencia
+       resaltada nunca se aceptaba — aunque el pie de la lista dijera
+       "Enter/Tab aceptar". Aquí se le devuelven las teclas que le tocan. */
+    const sugAbierta = el.dataset?.sugAbierta === '1';
+    const haySeleccion = el.dataset?.sugSel === '1';
+    if (sugAbierta) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape') return;
+      if ((e.key === 'Enter' || e.key === 'Tab') && haySeleccion) return;
+    }
 
     /* Escape — quitar foco */
     if (e.key === 'Escape') {
@@ -1757,7 +1785,11 @@ export default function CotizadorPage() {
             </AlertDialogBody>
             <AlertDialogFooter gap={2}>
               <Button ref={cancelRef} size="sm" rounded="md"
-                onClick={() => { setShowFaltantes(false); setMobileStep(1); }}>
+                onClick={() => {
+                  setShowFaltantes(false);
+                  setMobileStep(1);   // celular: paso "Cliente"
+                  setPanelTab(1);     // computador y tablet: pestaña "CLIENTE"
+                }}>
                 Completar datos
               </Button>
               <Button size="sm" rounded="md" variant="ghost" color="gray.500"
@@ -1874,8 +1906,9 @@ export default function CotizadorPage() {
 
       <Box maxW="1600px" mx="auto" px={{ base: 3, md: 5 }} py={4}>
 
-        {/* ═══ DESKTOP (xl+) ═══ */}
-        <Box display={{ base: 'none', xl: 'grid' }}
+        {/* ═══ COMPUTADOR (xl+) ═══ */}
+        {esEscritorio && (
+        <Box display="grid"
           gridTemplateColumns="272px 1fr 276px" gap={4}
           h="calc(100vh - 80px)" overflow="hidden">
 
@@ -1884,6 +1917,7 @@ export default function CotizadorPage() {
             {/* isLazy: solo se dibuja la pestaña visible. Antes se renderizaban
                 los tres paneles en cada tecla, aunque solo vieras uno. */}
             <Tabs variant="unstyled" size="sm" isLazy
+              index={panelTab} onChange={setPanelTab}
               display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
                 {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
@@ -1935,11 +1969,13 @@ export default function CotizadorPage() {
             aiuConfig={aiuConfig} cliente={cliente} safeNavigate={safeNavigate}
             handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges} />
         </Box>
+        )}
 
         {/* ═══ TABLET (md–xl) ═══ */}
-        <Box display={{ base: 'none', md: 'flex', xl: 'none' }} flexDirection="column" gap={4}>
+        {esTablet && (
+        <Box display="flex" flexDirection="column" gap={4}>
           <GlassCard rounded="xl" overflow="hidden">
-            <Tabs variant="unstyled" size="sm">
+            <Tabs variant="unstyled" size="sm" isLazy index={panelTab} onChange={setPanelTab}>
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
                 {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
@@ -2002,9 +2038,11 @@ export default function CotizadorPage() {
             </Button>
           </Flex>
         </Box>
+        )}
 
-        {/* ═══ MOBILE (<md) — STEPPER + TARJETAS ═══ */}
-        <Box display={{ base: 'flex', md: 'none' }} flexDirection="column" pb="96px">
+        {/* ═══ CELULAR (<md) — PASOS + LISTA RÁPIDA ═══ */}
+        {esCelular && (
+        <Box display="flex" flexDirection="column" pb="96px">
 
           {/* Tab bar mobile */}
           <Flex bg={barBg} border="1px solid" borderColor={border}
@@ -2121,10 +2159,12 @@ export default function CotizadorPage() {
             )}
           </Flex>
         </Box>
+        )}
       </Box>
 
-      {/* ═══ BOTTOM BAR MOBILE ═══ */}
-      <Box display={{ base: 'flex', md: 'none' }} position="fixed" bottom={0} left={0} right={0}
+      {/* ═══ BARRA FIJA DE ABAJO (celular) ═══ */}
+      {esCelular && (
+      <Box display="flex" position="fixed" bottom={0} left={0} right={0}
         bg={barBg} borderTop="1px solid" borderColor={border}
         px={4} py={3} gap={2} zIndex={200} boxShadow="0 -4px 16px rgba(0,0,0,0.08)">
         <Box flex={1}>
@@ -2146,6 +2186,7 @@ export default function CotizadorPage() {
           {editingId ? 'Actualizar' : 'Guardar'}
         </Button>
       </Box>
+      )}
 
       {/* Dialogo recuperar borrador */}
       <AlertDialog isOpen={!!draftFound} leastDestructiveRef={cancelRef} onClose={descartarBorrador}>
