@@ -16,19 +16,22 @@ import {
   Box, Flex, HStack, Stack, Text, Input, IconButton, Button,
   Badge, Icon, useColorModeValue, Wrap, WrapItem,
 } from "@chakra-ui/react";
-import { FiSend, FiMessageCircle, FiAlertTriangle, FiCornerDownRight } from "react-icons/fi";
+import { FiSend, FiMessageCircle, FiAlertTriangle, FiCornerDownRight, FiTarget } from "react-icons/fi";
 import { buscarTemas, PREGUNTAS_SUGERIDAS, DIFICULTAD } from "../ayuda/guia";
+import { getRecorrido } from "../ayuda/recorridos";
+import { iniciarRecorrido } from "./RecorridoGuiado";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
 
 const SALUDO = {
   de: "app",
-  texto: "Escríbeme con tus palabras qué necesitas hacer y te doy el paso a paso. Por ejemplo: «cómo cobro el domicilio» o «qué es el AIU».",
+  texto: "Escríbeme con tus palabras qué necesitas hacer y te doy el paso a paso. Y cuando se pueda, te lo muestro sobre la pantalla real con el botón «Hazlo conmigo en la pantalla». Por ejemplo: «cómo hago una cotización» o «qué es el AIU».",
 };
 
 /* ─── Tarjeta con la respuesta de un tema ─── */
-function RespuestaTema({ tema, onAbrirTema }) {
+function RespuestaTema({ tema, onAbrirTema, onAntesDeGuiar }) {
+  const rec = tema.recorrido ? getRecorrido(tema.recorrido) : null;
   const cardBg = useColorModeValue("white", "gray.800");
   const borde = useColorModeValue("gray.200", "whiteAlpha.200");
   const suave = useColorModeValue("gray.50", "whiteAlpha.100");
@@ -72,6 +75,17 @@ function RespuestaTema({ tema, onAbrirTema }) {
         </Box>
       )}
 
+      {/* Lo que pidió el mostrador: además de leerlo, poder HACERLO.
+          Si el tema tiene un recorrido, este botón lo lleva por la pantalla
+          real, señalando cada botón y esperando a que lo toque. */}
+      {rec && (
+        <Button size="sm" w="full" mt={3} bg={FY} color={DARK} rounded="lg" fontWeight="700"
+          leftIcon={<FiTarget />} _hover={{ bg: "#e0b010" }}
+          onClick={() => { onAntesDeGuiar?.(); iniciarRecorrido(rec.id); }}>
+          Hazlo conmigo en la pantalla
+        </Button>
+      )}
+
       {onAbrirTema && (
         <Button size="xs" variant="ghost" mt={2} rightIcon={<FiCornerDownRight />}
           onClick={() => onAbrirTema(tema.id)}>
@@ -82,7 +96,7 @@ function RespuestaTema({ tema, onAbrirTema }) {
   );
 }
 
-export default function AsistenteAyuda({ onAbrirTema, alto = "380px", autoFocus = false }) {
+export default function AsistenteAyuda({ onAbrirTema, onAntesDeGuiar, alto = "380px", autoFocus = false }) {
   const [mensajes, setMensajes] = useState([SALUDO]);
   const [texto, setTexto] = useState("");
   const finRef = useRef(null);
@@ -143,7 +157,7 @@ export default function AsistenteAyuda({ onAbrirTema, alto = "380px", autoFocus 
                   </Text>
                 )}
                 {m.temas.map((t) => (
-                  <RespuestaTema key={t.id} tema={t} onAbrirTema={onAbrirTema} />
+                  <RespuestaTema key={t.id} tema={t} onAbrirTema={onAbrirTema} onAntesDeGuiar={onAntesDeGuiar} />
                 ))}
               </Stack>
             ) : (

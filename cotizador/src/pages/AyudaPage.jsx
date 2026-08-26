@@ -21,13 +21,13 @@ import {
   FiAlertTriangle, FiHelpCircle, FiLock, FiPlus, FiUser, FiPackage, FiTruck,
   FiPercent, FiSave, FiDownload, FiTool, FiRefreshCw, FiCheckCircle,
   FiMoreVertical, FiUsers, FiLayers, FiUpload, FiRotateCcw, FiCommand,
-  FiSmartphone, FiZap,
+  FiSmartphone, FiZap, FiTarget,
 } from "react-icons/fi";
 import { TEMAS, GRUPOS, DIFICULTAD, buscarTemas } from "../ayuda/guia";
 import AsistenteAyuda from "../components/AsistenteAyuda";
 import { TABS_BAR_H } from "../components/TabsBar";
 import { useCotizaciones } from "../hooks/useCotizaciones";
-import { reiniciarTour } from "../components/TourGuiado";
+import { iniciarRecorrido } from "../components/RecorridoGuiado";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -40,7 +40,7 @@ const ICONOS = {
 };
 
 /* ══════════════ Un tema desplegable ══════════════ */
-function Tema({ tema, abierto, onToggle, refTema }) {
+function Tema({ tema, abierto, onToggle, refTema, onGuiar }) {
   const cardBg = useColorModeValue("white", "gray.800");
   const borde = useColorModeValue("gray.200", "whiteAlpha.200");
   const suave = useColorModeValue("gray.50", "whiteAlpha.100");
@@ -111,6 +111,15 @@ function Tema({ tema, abierto, onToggle, refTema }) {
                 </Text>
               )}
             </Box>
+          )}
+
+          {/* Hacerlo en la pantalla, no solo leerlo */}
+          {tema.recorrido && (
+            <Button w="full" mb={4} bg={FY} color={DARK} rounded="lg" fontWeight="700"
+              leftIcon={<FiTarget />} _hover={{ bg: "#e0b010" }}
+              onClick={() => onGuiar?.(tema.recorrido)}>
+              Hazlo conmigo en la pantalla
+            </Button>
           )}
 
           {/* Advertencias */}
@@ -188,6 +197,12 @@ export default function AyudaPage() {
       return n;
     });
 
+  /* Sale de la guía y arranca el recorrido sobre la pantalla real */
+  const guiar = (idRecorrido) => {
+    navigate("/historial");
+    setTimeout(() => iniciarRecorrido(idRecorrido), 120);
+  };
+
   const abrirTema = (id) => {
     setQ("");
     setParams({ tema: id });
@@ -219,7 +234,7 @@ export default function AyudaPage() {
           <HStack spacing={2}>
             <Tooltip label="Repetir el recorrido guiado por la pantalla" hasArrow>
               <Button size="sm" variant="outline" rounded="md" leftIcon={<FiPlay />}
-                onClick={() => { reiniciarTour(); navigate("/historial"); }}>
+                onClick={() => iniciarRecorrido("inicio")}>
                 Ver el tour
               </Button>
             </Tooltip>
@@ -260,7 +275,7 @@ export default function AyudaPage() {
           <Text fontSize="12px" color={muted} mb={3.5}>
             Escribe con tus propias palabras y te muestro los pasos. Funciona sin internet.
           </Text>
-          <AsistenteAyuda onAbrirTema={abrirTema} alto="400px" />
+          <AsistenteAyuda onAbrirTema={abrirTema} alto="400px" onAntesDeGuiar={() => navigate("/historial")} />
         </Box>
 
         {/* Buscador del índice */}
@@ -321,6 +336,7 @@ export default function AyudaPage() {
                     <Tema key={t.id} tema={t}
                       abierto={abiertos.has(t.id)}
                       onToggle={() => toggle(t.id)}
+                      onGuiar={guiar}
                       refTema={(el) => { refs.current[t.id] = el; }} />
                   ))}
                 </Stack>
@@ -340,7 +356,7 @@ export default function AyudaPage() {
           </Text>
           <SimpleGrid columns={{ base: 1, sm: 3 }} spacing={2.5} mt={4}>
             <Button size="sm" variant="outline" rounded="md" leftIcon={<FiPlay />}
-              onClick={() => { reiniciarTour(); navigate("/historial"); }}>
+              onClick={() => iniciarRecorrido("inicio")}>
               Ver el tour
             </Button>
             <Button size="sm" variant="outline" rounded="md" leftIcon={<FiPlus />}

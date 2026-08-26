@@ -21,7 +21,7 @@ import {
   FiTool, FiBookOpen, FiPlay, FiMessageCircle,
 } from "react-icons/fi";
 import AsistenteAyuda from "./AsistenteAyuda";
-import { reiniciarTour } from "./TourGuiado";
+import { iniciarRecorrido } from "./RecorridoGuiado";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -171,7 +171,7 @@ export default function AyudaApp() {
                     </Button>
                     <HStack spacing={2}>
                       <Button flex={1} size="sm" variant="outline" rounded="lg" leftIcon={<FiPlay />}
-                        onClick={() => { onClose(); reiniciarTour(); navigate("/historial"); }}>
+                        onClick={() => { onClose(); iniciarRecorrido("inicio"); }}>
                         Ver el tour
                       </Button>
                       <Button flex={1} size="sm" variant="outline" rounded="lg" leftIcon={<FiFileText />}
@@ -194,6 +194,7 @@ export default function AyudaApp() {
                     alto="360px"
                     autoFocus
                     onAbrirTema={(id) => { onClose(); navigate(`/ayuda?tema=${id}`); }}
+                    onAntesDeGuiar={onClose}
                   />
                   <Button w="full" mt={3} size="sm" variant="outline" rounded="lg"
                     leftIcon={<FiBookOpen />} onClick={() => irA("/ayuda")}>

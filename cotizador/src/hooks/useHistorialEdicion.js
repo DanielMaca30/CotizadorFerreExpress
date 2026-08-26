@@ -16,7 +16,7 @@
  *   hist.marcar('Fila eliminada');   // antes de una acción estructural
  *   hist.deshacer(); hist.rehacer();
  */
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 
 const LIMITE     = 60;    // versiones guardadas
 const AGRUPAR_MS = 500;   // escritura seguida = un solo paso
@@ -95,5 +95,14 @@ export function useHistorialEdicion(items, setItems) {
     refrescar();
   }, [refrescar]);
 
-  return { deshacer, rehacer, marcar, reiniciar, ...estado };
+  /* El objeto que se devuelve tiene que ser ESTABLE.
+     Antes se creaba uno nuevo en cada repintado, y como las funciones del
+     cotizador (agregar, borrar, duplicar) lo llevaban en sus dependencias,
+     también se recreaban ellas. Resultado: la memoización de las filas no
+     servía de nada y una sola tecla repintaba TODAS las filas de la
+     cotización. Con 45 productos eso eran 90 repintados por letra. */
+  return useMemo(
+    () => ({ deshacer, rehacer, marcar, reiniciar, ...estado }),
+    [deshacer, rehacer, marcar, reiniciar, estado]
+  );
 }

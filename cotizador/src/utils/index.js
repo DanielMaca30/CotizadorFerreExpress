@@ -370,3 +370,13 @@ export const loadEmpresaLocal = () => {
     return DEFAULT_EMPRESA;
   }
 };
+
+/* ── Dónde salen los avisos ──────────────────────────────────
+   Arriba a la derecha NO: ahí están los botones de PDF y Guardar, y el
+   aviso los tapaba justo cuando la persona iba a tocarlos. Abajo a la
+   izquierda queda libre en las tres disposiciones, y el margen inferior
+   lo levanta por encima de la barra fija del celular. */
+export const AVISO_LATERAL = {
+  position: "bottom-left",
+  containerStyle: { marginBottom: "92px", marginLeft: "10px" },
+};

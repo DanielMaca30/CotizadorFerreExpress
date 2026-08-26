@@ -31,6 +31,7 @@ import {
 } from "react-icons/fi";
 import { MdDragIndicator } from "react-icons/md";
 import AutocompleteInput from "./AutocompleteInput";
+import SelectUnidad from "./SelectUnidad";
 import { money, calcRow, UNITS, formatPriceCO, parsePriceCO } from "../utils";
 
 const FY = "#F9BF20";
@@ -95,6 +96,8 @@ const FilaRapida = memo(function FilaRapida({
   startRowDrag, dragId,
 }) {
   const arrastrando = dragId === r.id;
+  const siguienteDeEsta = useCallback(() => onSiguienteFila(r.id), [onSiguienteFila, r.id]);
+  const cambiarPrecio = useCallback((val) => upItem(r.id, "price", val), [upItem, r.id]);
   const conDatos = !!(r.desc || r.price);
   const total = calcRow(r);
   const cardBg = useColorModeValue("white", "gray.800");
@@ -111,6 +114,9 @@ const FilaRapida = memo(function FilaRapida({
       px={2.5} py={2.5} mb={2}
       style={{ position: "relative", zIndex: arrastrando ? 3 : "auto" }}
       boxShadow={arrastrando ? "0 8px 22px rgba(0,0,0,0.18)" : "0 1px 3px rgba(0,0,0,0.05)"}
+      /* Los renglones que no están a la vista no se maquetan ni se pintan:
+         con un pedido largo eso es la mayor parte del trabajo del navegador. */
+      sx={{ contentVisibility: "auto", containIntrinsicSize: "0 118px" }}
     >
       {/* Línea 1 — qué es */}
       <Flex align="center" gap={2}>
@@ -217,21 +223,19 @@ const FilaRapida = memo(function FilaRapida({
           border="1px solid" borderColor={border} focusBorderColor={FY}
           textAlign="center" fontSize="15px" fontWeight="700" px={1}
         />
-        <Select
+        <SelectUnidad
           value={r.unit}
           onChange={(e) => upItem(r.id, "unit", e.target.value)}
           w="82px" flexShrink={0} h="44px" rounded="lg" bg={inputBg}
           border="1px solid" borderColor={border} focusBorderColor={FY}
           fontSize="13px"
-        >
-          {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-        </Select>
+        />
 
         <PrecioRapido
           rowId={r.id}
           value={r.price}
-          onChange={(val) => upItem(r.id, "price", val)}
-          onSiguiente={() => onSiguienteFila(r.id)}
+          onChange={cambiarPrecio}
+          onSiguiente={siguienteDeEsta}
           inputBg={inputBg}
           border={border}
           sinIva={r.sinIva}
@@ -281,15 +285,22 @@ export default function ListaRapidaProductos({
   /* Enter en el precio: pasa al producto siguiente y, si era el
      último, crea uno nuevo y salta a él. Es el gesto que encadena
      todo el pedido sin levantar la mano del teclado. */
+  /* La lista viva se lee de una referencia, NO de la dependencia.
+     Si esta función dependiera de `items` se recrearía con cada tecla, y
+     como va a parar a cada renglón, rompería su memoización: escribir una
+     letra repintaría los 45 productos en vez de uno. */
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const onSiguienteFila = useCallback((rowId) => {
-    const idx = items.findIndex((r) => r.id === rowId);
-    const siguiente = items[idx + 1];
+    const lista = itemsRef.current;
+    const idx = lista.findIndex((r) => r.id === rowId);
+    const siguiente = lista[idx + 1];
     if (siguiente) {
       enfocar(siguiente.id, "desc");
     } else {
       addItem();   // addItem ya deja el cursor en la descripción de la fila nueva
     }
-  }, [items, addItem]);
+  }, [addItem]);
 
   /* Renglón nuevo automático: si el último ya tiene datos, se agrega
      otro sin que nadie lo pida. Así no hay que buscar el botón "+"
@@ -340,6 +351,7 @@ export default function ListaRapidaProductos({
         </Button>
         {!esObra && (
           <Button flex={1} size="md" h="44px" variant="outline" rounded="xl"
+            data-tour="btn-transporte"
             colorScheme="blue" leftIcon={<FiTruck />} onClick={addTransporte}
             fontWeight="700" fontSize="14px">
             Domicilio

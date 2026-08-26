@@ -37,6 +37,7 @@ export const TEMAS = [
   },
   {
     id: "listado",
+    recorrido: "inicio",
     grupo: "Arranque",
     icono: "FiFileText",
     titulo: "La pantalla principal: el listado de cotizaciones",
@@ -60,6 +61,7 @@ export const TEMAS = [
   /* ═══════════════ HACER UNA COTIZACIÓN ═══════════════ */
   {
     id: "nueva",
+    recorrido: "cotizacion",
     grupo: "Hacer una cotización",
     icono: "FiPlus",
     titulo: "Crear una cotización nueva",
@@ -81,6 +83,7 @@ export const TEMAS = [
   },
   {
     id: "cliente",
+    recorrido: "cotizacion",
     grupo: "Hacer una cotización",
     icono: "FiUser",
     titulo: "Llenar los datos del cliente",
@@ -103,6 +106,7 @@ export const TEMAS = [
   },
   {
     id: "productos",
+    recorrido: "cotizacion",
     grupo: "Hacer una cotización",
     icono: "FiPackage",
     titulo: "Agregar productos a la cotización",
@@ -128,6 +132,7 @@ export const TEMAS = [
   },
   {
     id: "vitrina",
+    recorrido: "cotizacion",
     grupo: "Hacer una cotización",
     icono: "FiZap",
     titulo: "Tomar un pedido rápido en el celular o la tablet",
@@ -154,6 +159,7 @@ export const TEMAS = [
   },
   {
     id: "transporte",
+    recorrido: "domicilio",
     grupo: "Hacer una cotización",
     icono: "FiTruck",
     titulo: "Cobrar el domicilio o el transporte (sin IVA)",
@@ -193,6 +199,7 @@ export const TEMAS = [
   },
   {
     id: "guardar",
+    recorrido: "cotizacion",
     grupo: "Hacer una cotización",
     icono: "FiSave",
     titulo: "Guardar la cotización",
@@ -214,6 +221,7 @@ export const TEMAS = [
   },
   {
     id: "pdf",
+    recorrido: "pdf",
     grupo: "Hacer una cotización",
     icono: "FiDownload",
     titulo: "Ver el documento y descargar el PDF",
@@ -273,6 +281,7 @@ export const TEMAS = [
   },
   {
     id: "convertir",
+    recorrido: "convertir",
     grupo: "Obra y AIU",
     icono: "FiRefreshCw",
     titulo: "Convertir de Comercial a Obra (o al revés)",
@@ -298,6 +307,7 @@ export const TEMAS = [
   /* ═══════════════ EL LISTADO ═══════════════ */
   {
     id: "buscar",
+    recorrido: "inicio",
     grupo: "Manejar el listado",
     icono: "FiSearch",
     titulo: "Buscar y filtrar cotizaciones",
@@ -320,6 +330,7 @@ export const TEMAS = [
   },
   {
     id: "estado",
+    recorrido: "estado",
     grupo: "Manejar el listado",
     icono: "FiCheckCircle",
     titulo: "Cambiar el estado (Borrador, Enviada, Aceptada, Rechazada)",
@@ -341,6 +352,7 @@ export const TEMAS = [
   },
   {
     id: "acciones",
+    recorrido: "inicio",
     grupo: "Manejar el listado",
     icono: "FiMoreVertical",
     titulo: "Editar, duplicar, descargar y eliminar",
@@ -362,6 +374,7 @@ export const TEMAS = [
   },
   {
     id: "ficha-cliente",
+    recorrido: "cliente",
     grupo: "Manejar el listado",
     icono: "FiUsers",
     titulo: "Ver todo lo de un cliente (y cuánto le has vendido)",
@@ -592,6 +605,7 @@ export function buscarTemas(consulta, limite = 4) {
 
 /** Preguntas de ejemplo que se ofrecen en el asistente */
 export const PREGUNTAS_SUGERIDAS = [
+  "¿Cómo hago una cotización desde cero?",
   "¿Cuál es la clave para entrar?",
   "¿Cómo hago una cotización nueva?",
   "¿Cómo cobro el domicilio sin IVA?",

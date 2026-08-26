@@ -38,6 +38,7 @@ import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
 import { usePDF } from '../hooks/usePDF';
+import { useListaProgresiva } from '../hooks/useListaProgresiva';
 import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
 import { useClientesFrecuentes, aprenderCliente } from '../hooks/useClientesFrecuentes';
@@ -56,6 +57,7 @@ import {
   UNITS, FORMAS_PAGO, FORMAS_PAGO_OBRA, IVA_OPTS, MONEDAS,
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
+  AVISO_LATERAL,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
 
@@ -71,6 +73,30 @@ const DRAFT_KEY = 'ferreexpress_borrador_v1';
 const saveDraft = (d) => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* lleno o bloqueado */ } };
 const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; } };
 const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ } };
+
+/* Las 17 opciones de unidad se crean UNA sola vez. Antes se recreaban en
+   cada repintado de cada fila: con 45 productos, cientos de elementos
+   nuevos por tecla. */
+const OPCIONES_UNIDAD = UNITS.map(u => <option key={u} value={u}>{u}</option>);
+
+/* Y no se meten en la página hasta que hagan falta: hasta que alguien toca
+   la lista, la fila solo carga con la unidad que tiene puesta. En una
+   cotización de 45 productos eso son 720 elementos menos que construir. */
+const SelectUnidadSimple = memo(function SelectUnidadSimple({ value, onChange, rowId }) {
+  const [abierta, setAbierta] = useState(false);
+  const abrir = () => { if (!abierta) setAbierta(true); };
+  return (
+    <select value={value} onChange={onChange}
+      data-row-id={rowId} data-field="unit" tabIndex={-1}
+      onMouseDown={abrir} onTouchStart={abrir} onFocus={abrir} onKeyDown={abrir}
+      style={{
+        background: 'transparent', border: 'none', fontSize: 11, color: '#777',
+        width: 50, cursor: 'pointer', outline: 'none', padding: '4px 1px'
+      }}>
+      {abierta ? OPCIONES_UNIDAD : <option value={value}>{value}</option>}
+    </select>
+  );
+});
 
 /* ── Colores de marca ── */
 const FY = '#F9BF20';
@@ -202,7 +228,7 @@ function ModalTipo({ isOpen, onSelect, onCancel, onIrHistorial, onAyuda }) {
                 sub: 'Construcción / contrato. AIU + IVA del 19% sobre la utilidad.'
               },
             ].map(({ tipo, icon, color, textColor, title, sub }) => (
-              <Box key={tipo}
+              <Box key={tipo} data-tour={`tipo-${tipo}`}
                 as="button" w="full" textAlign="left" p={4} rounded="xl"
                 border="2px solid" borderColor="gray.200"
                 _hover={{ borderColor: color, bg: cardHover }}
@@ -302,10 +328,13 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
   const faltan = ['nombre', 'direccion', 'tel'].filter(k => !String(cliente[k] ?? '').trim());
   return (
     <Stack spacing={3} p={4}>
-      {/* Los tres datos con los que se entrega un domicilio */}
+      {/* Los tres datos con los que se entrega un domicilio.
+          El envoltorio lleva marca para que el recorrido guiado pueda
+          señalarlos como bloque. */}
+      <Box data-tour="cliente-obligatorios">
       <Box>
         <FL required>Nombre / Razón social</FL>
-        <ClienteAutocomplete {...ip} placeholder="Juan García"
+        <ClienteAutocomplete {...ip} data-tour="cliente-nombre" placeholder="Juan García"
           value={cliente.nombre}
           onChange={v => setCliente(p => ({ ...p, nombre: v }))}
           onAccept={onUsarCliente}
@@ -321,6 +350,7 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
           {faltan.map(k => ({ nombre: 'nombre', direccion: 'dirección', tel: 'celular' }[k])).join(', ')}
         </Text>
       )}
+      </Box>
 
       <Divider />
       <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
@@ -479,7 +509,7 @@ const PanelCotizacion = memo(function PanelCotizacion({
 ════════════════════════════════════════════════════════════ */
 const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, esObra, cotConfig, upItem, removeItem, toggleSinIva,
-  handleAcceptSugerencia, getSugerencias, itemsLen, duplicateItem, tableRef,
+  handleAcceptSugerencia, getSugerencias, puedeBorrar, duplicateItem, tableRef,
   startRowDrag, dragId }) {
   const hoverBg = useColorModeValue('yellow.50', 'whiteAlpha.50');
   const dragBg = useColorModeValue('yellow.100', 'whiteAlpha.200');
@@ -498,7 +528,12 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
     <Tr
       data-drag-row={r.id}
       bg={rowBg} _hover={{ bg: hoverBg }}
-      style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}>
+      style={{ position: 'relative', zIndex: isDragging ? 3 : 'auto' }}
+      /* El navegador se salta el cálculo de estilo y el dibujo de las filas
+         que no están a la vista. En una cotización larga, la mitad del
+         tiempo de abrir se iba en maquetar filas que nadie estaba viendo.
+         La altura declarada evita que la barra de desplazamiento salte. */
+      sx={{ contentVisibility: 'auto', containIntrinsicSize: '0 34px' }}>
       <Td borderColor={border} color={mutedL} fontSize="11px" pl={2} pr={0} w="40px">
         <HStack spacing={0.5}>
           <Box as="span" onPointerDown={e => startRowDrag(e, r.id)}
@@ -539,14 +574,10 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
       <Td borderColor={border} p={1} w="52px">
-        <select value={r.unit} onChange={e => upItem(r.id, 'unit', e.target.value)}
-          data-row-id={r.id} data-field="unit" tabIndex={-1}
-          style={{
-            background: 'transparent', border: 'none', fontSize: 11, color: '#777',
-            width: 50, cursor: 'pointer', outline: 'none', padding: '4px 1px'
-          }}>
-          {UNITS.map(u => <option key={u}>{u}</option>)}
-        </select>
+        {/* Solo la unidad elegida hasta que alguien toque la lista: las 17
+            unidades por fila eran la cuarta parte de toda la página. */}
+        <SelectUnidadSimple value={r.unit} onChange={e => upItem(r.id, 'unit', e.target.value)}
+          rowId={r.id} />
       </Td>
       {!esObra && (
         <>
@@ -576,20 +607,21 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
       </Td>
       <Td borderColor={border} p={1} w="76px">
         <HStack spacing={0}>
+          {/* Aviso nativo del navegador en vez de Tooltip de Chakra: con 45
+              productos había casi 200 tooltips vivos y cada uno monta su
+              propio posicionador. Se notaba al agregar o borrar una fila. */}
           {!esObra && (
-            <Tooltip label={r.sinIva ? 'Transporte SIN IVA · clic para cobrar IVA' : 'Marcar como transporte (sin IVA)'} hasArrow>
-              <IconButton size="xs" variant={r.sinIva ? 'solid' : 'ghost'}
-                colorScheme={r.sinIva ? 'blue' : 'gray'} rounded="md" aria-label="Sin IVA"
-                icon={<FiTruck size={11} />} onClick={() => toggleSinIva(r.id)} tabIndex={-1} />
-            </Tooltip>
+            <IconButton size="xs" variant={r.sinIva ? 'solid' : 'ghost'}
+              colorScheme={r.sinIva ? 'blue' : 'gray'} rounded="md" aria-label="Sin IVA"
+              title={r.sinIva ? 'Transporte SIN IVA · clic para cobrar IVA' : 'Marcar como transporte (sin IVA)'}
+              icon={<FiTruck size={11} />} onClick={() => toggleSinIva(r.id)} tabIndex={-1} />
           )}
-          <Tooltip label="Duplicar (Ctrl+D)" hasArrow>
-            <IconButton size="xs" variant="ghost" rounded="md" aria-label="Duplicar"
-              icon={<FiCopy size={11} />} onClick={() => duplicateItem(r.id)} tabIndex={-1} />
-          </Tooltip>
+          <IconButton size="xs" variant="ghost" rounded="md" aria-label="Duplicar"
+            title="Duplicar (Ctrl+D)"
+            icon={<FiCopy size={11} />} onClick={() => duplicateItem(r.id)} tabIndex={-1} />
           <IconButton size="xs" variant="ghost" colorScheme="red" rounded="md"
-            aria-label="Eliminar" icon={<FiTrash2 size={11} />}
-            onClick={() => removeItem(r.id)} isDisabled={itemsLen === 1} tabIndex={-1} />
+            aria-label="Eliminar" icon={<FiTrash2 size={11} />} title="Eliminar"
+            onClick={() => removeItem(r.id)} isDisabled={!puedeBorrar} tabIndex={-1} />
         </HStack>
       </Td>
     </Tr>
@@ -603,6 +635,18 @@ const TablaProductos = memo(function TablaProductos({
   handleAcceptSugerencia, getSugerencias, addItem, addTransporte, duplicateItem,
   startRowDrag, dragId,
 }) {
+  /* Con cotizaciones de 40+ productos, montar todas las filas de un golpe
+     dejaba la pantalla pegada varios segundos al abrir. Se pintan las
+     primeras y el resto entra en tandas: se puede empezar a escribir
+     mientras terminan de aparecer. */
+  /* La clave incluye solo el tipo de cotización: al cambiar de cotización
+     entera cambia también, y así se empieza de nuevo por arriba. Lo que NO
+     puede pasar es reiniciarse al escribir — por eso no depende de items. */
+  const { visibles: aPintar, faltan: faltanPorPintar } = useListaProgresiva(items, {
+    primeros: 12, paso: 20, clave: `${esObra}|${items[0]?.id || ''}`,
+  });
+  const puedeBorrar = items.length > 1;
+
   const addBtnHover = useColorModeValue('yellow.50', 'whiteAlpha.100');
   const theadBg = '#3A3A38';
   const mutedText = useColorModeValue('gray.400', 'gray.500');
@@ -635,7 +679,7 @@ const TablaProductos = memo(function TablaProductos({
           </Tr>
         </Thead>
         <Tbody>
-          {items.map((r, i) => (
+          {aPintar.map((r, i) => (
             <ItemRow key={r.id} r={r} i={i}
               border={border} mutedL={mutedL} inputBg={inputBg}
               tableBg={tableBg} stripeBg={stripeBg}
@@ -644,10 +688,19 @@ const TablaProductos = memo(function TablaProductos({
               toggleSinIva={toggleSinIva}
               handleAcceptSugerencia={handleAcceptSugerencia}
               getSugerencias={getSugerencias}
-              itemsLen={items.length}
+              puedeBorrar={puedeBorrar}
               tableRef={tableRef}
               startRowDrag={startRowDrag} dragId={dragId} />
           ))}
+          {faltanPorPintar > 0 && (
+            <Tr>
+              <Td colSpan={cols.length} borderColor={border} py={2} textAlign="center">
+                <Text fontSize="10px" color={mutedL}>
+                  Mostrando {aPintar.length} de {items.length} · terminando de pintar el resto…
+                </Text>
+              </Td>
+            </Tr>
+          )}
           <Tr>
             <Td colSpan={cols.length} borderColor={border} px={3} py={2}>
               <Flex align="center" gap={3}>
@@ -657,7 +710,7 @@ const TablaProductos = memo(function TablaProductos({
                   + Agregar fila
                 </Button>
                 {!esObra && (
-                  <Button size="xs" variant="ghost" leftIcon={<FiTruck size={12} />} onClick={addTransporte}
+                  <Button data-tour="btn-transporte" size="xs" variant="ghost" leftIcon={<FiTruck size={12} />} onClick={addTransporte}
                     fontWeight="700" color="blue.400" tabIndex={-1}
                     _hover={{ bg: addBtnHover }}>
                     + Transporte
@@ -772,7 +825,12 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
 const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
   cliente, safeNavigate, handleSave, isSaving, hasChanges }) {
   const esObra = cotConfig.tipo === 'obra';
-  const visibles = items.filter(r => r.desc || r.price);
+  /* El resumen es un vistazo, no la lista completa. Con 45 productos,
+     repintarlos todos aquí en cada tecla costaba tanto como la tabla. */
+  const TOPE_RESUMEN = 15;
+  const conDatos = items.filter(r => r.desc || r.price);
+  const visibles = conDatos.slice(0, TOPE_RESUMEN);
+  const ocultos = conDatos.length - visibles.length;
   return (
     <Box bg={DARK} rounded="xl" overflow="hidden" display="flex" flexDirection="column"
       border="1px solid" borderColor="whiteAlpha.100" h="full">
@@ -817,6 +875,11 @@ const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, 
             </Flex>
           ))
         }
+        {ocultos > 0 && (
+          <Text fontSize="11px" color="whiteAlpha.400" fontStyle="italic" py={2}>
+            y {ocultos} producto{ocultos === 1 ? '' : 's'} más — el total de abajo los incluye todos
+          </Text>
+        )}
       </Box>
       <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
       <Box px={5} py={4}>
@@ -991,12 +1054,12 @@ export default function CotizadorPage() {
         e.preventDefault();
         if (!histRef.current?.deshacer()) return;
         toast.closeAll();
-        toast({ title: 'Deshecho', status: 'info', duration: 1200, position: 'bottom-right' });
+        toast({ title: 'Deshecho', status: 'info', duration: 1200, ...AVISO_LATERAL });
       } else if ((k === 'z' && e.shiftKey) || k === 'y') {
         e.preventDefault();
         if (!histRef.current?.rehacer()) return;
         toast.closeAll();
-        toast({ title: 'Rehecho', status: 'info', duration: 1200, position: 'bottom-right' });
+        toast({ title: 'Rehecho', status: 'info', duration: 1200, ...AVISO_LATERAL });
       }
     };
     window.addEventListener('keydown', h);
@@ -1070,17 +1133,21 @@ export default function CotizadorPage() {
      Se expone por ref porque el efecto que carga una cotización está
      declarado más arriba y necesita reiniciar el historial. */
   const hist = useHistorialEdicion(items, setItems);
+  /* Se toma la función suelta, no el objeto: `marcar` es estable y así
+     las acciones de la tabla (agregar, borrar, duplicar) no se recrean
+     en cada repintado — que es lo que rompía la memoización de las filas. */
+  const { marcar: marcarHist } = hist;
   useEffect(() => { histRef.current = hist; }, [hist]);
 
   /* ── Operaciones de ítems ── */
   const addItem = useCallback(() => {
-    hist.marcar('Fila agregada');
+    marcarHist('Fila agregada');
     const row = blankRow();
     setItems(p => [...p, row]);
     requestAnimationFrame(() => requestAnimationFrame(() =>
       focusInput(tableRef.current, row.id, 'desc')
     ));
-  }, [hist]);
+  }, [marcarHist]);
 
   /* Igual que addItem pero SIN mover el cursor: lo usa la lista rápida
      de celular/tablet para dejar siempre un renglón vacío esperando
@@ -1098,7 +1165,7 @@ export default function CotizadorPage() {
      clásica de estas tablas, y el producto ya digitado se pierde entero. */
   const removeItem = useCallback(rid => {
     let borrada = null;
-    hist.marcar('Fila eliminada');
+    marcarHist('Fila eliminada');
     setItems(p => {
       if (p.length <= 1) return p;
       borrada = p.find(r => r.id === rid);
@@ -1108,13 +1175,13 @@ export default function CotizadorPage() {
       toast({
         title: `"${borrada.desc}" eliminado`,
         description: 'Ctrl+Z para deshacer',
-        status: 'info', duration: 4000, position: 'bottom-right',
+        status: 'info', duration: 4000, ...AVISO_LATERAL,
       });
     }
-  }, [hist, toast]);
+  }, [marcarHist, toast]);
 
   const duplicateItem = useCallback(rid => {
-    hist.marcar('Fila duplicada');
+    marcarHist('Fila duplicada');
     setItems(p => {
       const idx = p.findIndex(r => r.id === rid);
       if (idx < 0) return p;
@@ -1123,7 +1190,7 @@ export default function CotizadorPage() {
       next.splice(idx + 1, 0, copy);
       return next;
     });
-  }, [hist]);
+  }, [marcarHist]);
   const upItem = useCallback((rid, k, v) => {
     if ((k === 'price' || k === 'disc') && parseFloat(v) < 0) v = '0';
     if (k === 'disc' && parseFloat(v) > 100) v = '100';
@@ -1493,10 +1560,10 @@ export default function CotizadorPage() {
         navigate(`/cotizador/${saved.id}`, { replace: true });
         toast({
           title: 'Cotización creada ✓', description: saved?.numero ? `Número: ${saved.numero}` : '',
-          status: 'success', duration: 4000, position: 'top-right'
+          status: 'success', duration: 4000, ...AVISO_LATERAL
         });
       } else {
-        toast({ title: 'Guardado ✓', status: 'success', duration: 2000, position: 'top-right' });
+        toast({ title: 'Guardado ✓', status: 'success', duration: 2000, ...AVISO_LATERAL });
       }
       setHasChanges(false);
       return saved;
@@ -1512,7 +1579,7 @@ export default function CotizadorPage() {
   const handleDelete = useCallback(() => {
     if (!editingId) return;
     deleteCotizacion(editingId);
-    toast({ title: 'Cotización eliminada', status: 'info', duration: 2500, position: 'top-right' });
+    toast({ title: 'Cotización eliminada', status: 'info', duration: 2500, ...AVISO_LATERAL });
     navigate('/historial');
   }, [editingId, deleteCotizacion, navigate, toast]);
 
@@ -1520,7 +1587,7 @@ export default function CotizadorPage() {
     if (!editingId) return;
     const copia = await duplicarCotizacion(editingId);
     if (!copia) return;
-    toast({ title: 'Cotización duplicada ✓', status: 'success', duration: 2000, position: 'top-right' });
+    toast({ title: 'Cotización duplicada ✓', status: 'success', duration: 2000, ...AVISO_LATERAL });
     navigate(`/cotizador/${copia.id}`);
   }, [editingId, duplicarCotizacion, navigate, toast]);
 
@@ -1583,7 +1650,7 @@ export default function CotizadorPage() {
     const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024F\u00f1\u00d1\s]/g, '').trim().replace(/\s+/g, '_');
     const ok = await downloadPDF(`${cn}_${numero || 'SinNumero'}`);
     setPdfReady(false);
-    if (ok) toast({ title: 'PDF descargado \u2713', status: 'success', duration: 2500, position: 'top-right' });
+    if (ok) toast({ title: 'PDF descargado \u2713', status: 'success', duration: 2500, ...AVISO_LATERAL });
     else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
   }, [editingId, hasChanges, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
 
@@ -1625,7 +1692,7 @@ export default function CotizadorPage() {
     toast({
       title: `Cliente cargado: ${c.nombre}`,
       description: c.direccion || undefined,
-      status: 'success', duration: 2200, position: 'top-right',
+      status: 'success', duration: 2200, ...AVISO_LATERAL,
     });
   }, [toast]);
 
@@ -1640,7 +1707,7 @@ export default function CotizadorPage() {
       description: conv.notasPreservadas
         ? 'Tus notas personalizadas se conservaron.'
         : 'Recuerda guardar para aplicar el cambio.',
-      status: 'success', duration: 3500, position: 'top-right',
+      status: 'success', duration: 3500, ...AVISO_LATERAL,
     });
   }, [toast]);
 
@@ -1655,7 +1722,7 @@ export default function CotizadorPage() {
     setHasChanges(true);
     toast({
       title: `${imp.filter(i => i.desc).length} productos importados ✓`,
-      status: 'success', duration: 3000, position: 'top-right'
+      status: 'success', duration: 3000, ...AVISO_LATERAL
     });
   }, [cotConfig.numero, toast]);
 
@@ -1884,17 +1951,17 @@ export default function CotizadorPage() {
                   aria-label="Eliminar" icon={<FiTrash2 />} onClick={onDelOpen} />
               </Tooltip>
             )}
-            <Button size="sm" variant="outline" rounded="md" leftIcon={<FiEye />}
+            <Button data-tour="vista-previa" size="sm" variant="outline" rounded="md" leftIcon={<FiEye />}
               onClick={() => safeNavigate('preview')}>
               <Text display={{ base: 'none', md: 'block' }}>Vista previa</Text>
               <Text display={{ base: 'block', md: 'none' }}>Ver</Text>
             </Button>
-            <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
+            <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
               isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
               PDF
             </Button>
             <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
-              <Button size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
+              <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
                 rounded="md" fontWeight="700" leftIcon={<FiSave />} isLoading={isSaving}
                 _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
                 {editingId ? 'Actualizar' : 'Guardar'}
@@ -1921,7 +1988,7 @@ export default function CotizadorPage() {
               display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
                 {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
-                  <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
+                  <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
                     <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
@@ -1978,7 +2045,7 @@ export default function CotizadorPage() {
             <Tabs variant="unstyled" size="sm" isLazy index={panelTab} onChange={setPanelTab}>
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
                 {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
-                  <Tab key={l} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
+                  <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
                     <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
@@ -2048,7 +2115,7 @@ export default function CotizadorPage() {
           <Flex bg={barBg} border="1px solid" borderColor={border}
             rounded="2xl" mb={4} overflow="hidden">
             {STEPS.map((label, idx) => (
-              <Box key={label} flex={1} as="button" py={2.5}
+              <Box key={label} data-tour={`paso-${label.toLowerCase()}`} flex={1} as="button" py={2.5}
                 bg={mobileStep === idx ? FY : 'transparent'}
                 onClick={() => setMobileStep(idx)}
                 transition="all 0.15s">

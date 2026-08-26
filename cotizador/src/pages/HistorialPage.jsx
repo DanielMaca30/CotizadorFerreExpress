@@ -38,7 +38,7 @@ import Paginacion, { TODAS } from "../components/Paginacion";
 import { useListaProgresiva } from "../hooks/useListaProgresiva";
 import { TABS_BAR_H }        from "../components/TabsBar";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
-import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU } from "../utils";
+import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU, AVISO_LATERAL } from "../utils";
 
 /* ─── Preferencias de vista (se recuerdan entre sesiones) ─── */
 const PREFS_KEY = "ferreexpress_historial_prefs";
@@ -280,6 +280,8 @@ const FilaCotizacion = memo(function FilaCotizacion({
   return (
     <Tr bg={par ? tableBg : stripeBg}
       _hover={{ bg: hoverBg, cursor: "pointer" }}
+      /* Las filas fuera de la pantalla no se maquetan */
+      sx={{ contentVisibility: "auto", containIntrinsicSize: "0 56px" }}
       onClick={() => navigate(`/cotizador/${cot.id}`)}>
       <Td borderColor={border} fontWeight="700" fontSize="13px">
         <Text title={`Actualizado: ${fmtDateShort(cot.updatedAt?.slice(0, 10))}`}>{getNumero(cot)}</Text>
@@ -500,7 +502,12 @@ export default function HistorialPage() {
   /* Pintado progresivo: las primeras filas salen ya, el resto se va
      agregando entre repintados. Sin esto, elegir "Todas" con cientos de
      cotizaciones dejaba la pantalla pegada varios segundos. */
-  const { visibles: aPintar, faltan: faltanPorPintar } = useListaProgresiva(paged, { primeros: 25, paso: 40 });
+  const { visibles: aPintar, faltan: faltanPorPintar } = useListaProgresiva(paged, {
+    primeros: 25, paso: 40,
+    /* Se vuelve a empezar por las primeras cuando cambia lo que se está
+       mirando: otro filtro, otra búsqueda, otra página. */
+    clave: `${debSearch}|${estado}|${tipo}|${rangoDesde}|${sortBy}|${sortDir}|${pageSegura}|${pageSize}|${viewMode}`,
+  });
 
   /* Cifras de LO QUE SE ESTÁ VIENDO.
      Antes estos cuatro recuadros mostraban siempre el total de todo, así que
@@ -557,7 +564,7 @@ export default function HistorialPage() {
   const handleDelete = useCallback(() => {
     if (!toDelete) return;
     deleteCotizacion(toDelete.id);
-    toast({ title: "Cotización eliminada", status: "info", duration: 2500, position: "top-right" });
+    toast({ title: "Cotización eliminada", status: "info", duration: 2500, ...AVISO_LATERAL });
     setToDelete(null);
     onClose();
   }, [toDelete, deleteCotizacion, toast, onClose]);
@@ -565,14 +572,14 @@ export default function HistorialPage() {
   const handleDuplicate = useCallback(async (id) => {
     const copia = await duplicarCotizacion(id);
     if (!copia) return;
-    toast({ title: "Cotización duplicada ✓", status: "success", duration: 2500, position: "top-right" });
+    toast({ title: "Cotización duplicada ✓", status: "success", duration: 2500, ...AVISO_LATERAL });
     navigate(`/cotizador/${copia.id}`);
   }, [duplicarCotizacion, navigate, toast]);
 
   const handleCambiarEstado = useCallback((id, nuevoEstado) => {
     cambiarEstado(id, nuevoEstado);
     const meta = ESTADO_META[nuevoEstado];
-    toast({ title: `Estado: ${meta?.label}`, status: "success", duration: 1800, position: "top-right" });
+    toast({ title: `Estado: ${meta?.label}`, status: "success", duration: 1800, ...AVISO_LATERAL });
   }, [cambiarEstado, toast]);
 
   /* Abrir en pestaña */
@@ -592,7 +599,7 @@ export default function HistorialPage() {
     toast({
       title: `Convertida a ${destino === "obra" ? "Obra" : "Comercial"} ✓`,
       description: conv.notasPreservadas ? "Tus notas personalizadas se conservaron." : undefined,
-      status: "success", duration: 3000, position: "top-right",
+      status: "success", duration: 3000, ...AVISO_LATERAL,
     });
     setToConvert(null);
   }, [toConvert, convertirCotizacion, toast]);
@@ -605,7 +612,7 @@ export default function HistorialPage() {
     const cn = ((cot.cliente?.nombre || 'Cliente')).replace(/[^a-zA-Z0-9À-ɏ\s]/g,'').trim().replace(/\s+/g,'_');
     const numero = getNumero(cot) || 'SinNumero';
     const ok = await downloadPDF(`${cn}_${numero}`);
-    if (ok) toast({ title: "PDF descargado ✓", status: "success", duration: 2500, position: "top-right" });
+    if (ok) toast({ title: "PDF descargado ✓", status: "success", duration: 2500, ...AVISO_LATERAL });
     else    toast({ title: "Error generando PDF", status: "error", duration: 3000 });
     setPdfCot(null);
   }, [downloadPDF, toast]);

@@ -27,3 +27,6 @@ dist_final
 *.sw?
 .env
 .env.*
+# Carpetas de trabajo que no van al repositorio
+_git_creado_por_error/
+src/_reemplazados/

@@ -11,7 +11,7 @@ import AvisoGuardado from "./components/AvisoGuardado";
 import PuertaAcceso from "./components/PuertaAcceso";
 import AyudaApp from "./components/AyudaApp";
 const AyudaPage = lazy(() => import("./pages/AyudaPage"));
-import TourGuiado from "./components/TourGuiado";
+import RecorridoGuiado from "./components/RecorridoGuiado";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
 /* ── Tema FerreExpress ──────────────────────────────────── */
@@ -80,9 +80,10 @@ function Layout() {
         <Outlet />
       </Suspense>
       <AyudaApp />
-      {/* El recorrido de primera vez solo tiene sentido en el listado:
-          es donde están los botones que señala. */}
-      <TourGuiado activo={pathname === "/historial"} />
+      {/* Las guías que se hacen sobre la pantalla. Vive aquí, fuera de las
+          rutas, para que un recorrido pueda pasar del listado al cotizador
+          sin perder el hilo. La de bienvenida arranca sola en el listado. */}
+      <RecorridoGuiado autoIniciar={pathname === "/historial"} />
     </Box>
   );
 }
