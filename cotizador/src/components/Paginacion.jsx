@@ -9,7 +9,7 @@ import { memo } from "react";
 import {
   Flex, HStack, Text, Button, IconButton, Select, useColorModeValue,
 } from "@chakra-ui/react";
-import { FiChevronLeft, FiChevronRight, FiChevronsLeft, FiChevronsRight } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiChevronsLeft, FiChevronsRight, FiChevronDown } from "react-icons/fi";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -31,7 +31,7 @@ function rango(page, totalPages) {
 }
 
 export default memo(function Paginacion({
-  page, pageSize, total, onPage, onPageSize, size = "sm",
+  page, pageSize, total, onPage, onPageSize, size = "sm", movil = false,
 }) {
   const muted  = useColorModeValue("gray.600", "gray.400");
   const border = useColorModeValue("gray.200", "whiteAlpha.200");
@@ -43,6 +43,31 @@ export default memo(function Paginacion({
   const hasta = sinPaginar ? total : Math.min(total, page * pageSize);
 
   const ir = (p) => onPage(Math.min(totalPages, Math.max(1, p)));
+
+  /* ── EN CELULAR NO HAY NÚMEROS DE PÁGINA ──
+     Con 300 cotizaciones de a 5 salían 60 páginas: una fila de botones de
+     30px imposible de acertar con el dedo, y encima obligaba a pensar en
+     qué página estaba uno. En el teléfono se hace lo que se hace en
+     cualquier lista de teléfono: se sigue bajando. "Ver más" agranda la
+     tanda en vez de cambiar de página, así que lo ya visto no se pierde. */
+  if (movil) {
+    const faltan = total - hasta;
+    return (
+      <Flex direction="column" gap={2} align="stretch" px={3} py={3}
+        borderTop="1px solid" borderColor={border}>
+        <Text fontSize="12px" color={muted} textAlign="center">
+          {total === 0 ? "Sin resultados" : `${hasta} de ${total}`}
+        </Text>
+        {faltan > 0 && (
+          <Button size="md" h="46px" w="100%" variant="outline" colorScheme="gray" rounded="xl"
+            rightIcon={<FiChevronDown />}
+            onClick={() => onPageSize((pageSize || 5) + (faltan >= 10 ? 10 : faltan))}>
+            Ver {faltan >= 10 ? 10 : faltan} más
+          </Button>
+        )}
+      </Flex>
+    );
+  }
 
   return (
     <Flex px={{ base: 3, md: 4 }} py={3} gap={3} align="center" justify="space-between"

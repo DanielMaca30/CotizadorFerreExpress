@@ -13,7 +13,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Flex, HStack, Stack, Text, Icon, IconButton, Tooltip,
   Modal, ModalOverlay, ModalContent, ModalBody, ModalCloseButton,
-  Button, useDisclosure, useColorModeValue, Tabs, TabList, TabPanels,
+  Button, useDisclosure, useColorModeValue, useMediaQuery, Tabs, TabList, TabPanels,
   Tab, TabPanel, Badge,
 } from "@chakra-ui/react";
 import {
@@ -44,6 +44,7 @@ function Paso({ icon, titulo, children }) {
 
 export default function AyudaApp() {
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
   const [tab, setTab] = useState(0);
   /* En el celular, mientras alguien escribe, el botón flotante estorba:
      se le monta encima a los botones de la lista de productos. Se quita
@@ -100,16 +101,24 @@ export default function AyudaApp() {
         />
       </Tooltip>
 
-      <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg" scrollBehavior="inside">
+      {/* En el celular la ventana llega casi de arriba abajo: antes iba
+          centrada, con márgenes y encabezado grande, y al chat le
+          quedaban 280px — la respuesta salía cortada por la mitad y
+          había que rodar dentro de una caja pequeña metida en otra. */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered={!esCelular}
+        size={esCelular ? "full" : "lg"} scrollBehavior="inside">
         <ModalOverlay backdropFilter="blur(3px)" />
-        <ModalContent rounded="2xl" overflow="hidden" mx={4}>
-          <Box bg={DARK} px={6} py={5}>
+        <ModalContent rounded={{ base: 0, md: "2xl" }} overflow="hidden"
+          mx={{ base: 0, md: 4 }} my={{ base: 0, md: undefined }}
+          h={{ base: "100dvh", md: "auto" }} maxH={{ base: "100dvh", md: "85vh" }}
+          display="flex" flexDirection="column">
+          <Box bg={DARK} px={{ base: 4, md: 6 }} py={{ base: 3, md: 5 }} flexShrink={0}>
             <Flex align="center" gap={3}>
               <Box bg={FY} rounded="lg" px={3} py={2}>
                 <Text fontWeight="900" color={DARK} fontSize="lg" lineHeight="1">FE</Text>
               </Box>
               <Box>
-                <Text fontWeight="900" fontSize="18px" color="white">¿Cómo uso esto?</Text>
+                <Text fontWeight="900" fontSize={{ base: "16px", md: "18px" }} color="white">¿Cómo uso esto?</Text>
                 <Text fontSize="12px" color="whiteAlpha.700">
                   Lo esencial, o pregúntame lo que necesites
                 </Text>
@@ -118,9 +127,10 @@ export default function AyudaApp() {
           </Box>
           <ModalCloseButton color="white" top={4} />
 
-          <ModalBody bg={cardBg} p={0}>
-            <Tabs index={tab} onChange={setTab} variant="line" colorScheme="yellow" isLazy>
-              <TabList px={5} pt={2}>
+          <ModalBody bg={cardBg} p={0} flex="1" minH={0} display="flex" flexDirection="column">
+            <Tabs index={tab} onChange={setTab} variant="line" colorScheme="yellow" isLazy
+              display="flex" flexDirection="column" flex="1" minH={0}>
+              <TabList px={5} pt={2} flexShrink={0}>
                 <Tab fontSize="13px" fontWeight="700">Lo esencial</Tab>
                 <Tab fontSize="13px" fontWeight="700">
                   <HStack spacing={1.5}>
@@ -130,9 +140,9 @@ export default function AyudaApp() {
                 </Tab>
               </TabList>
 
-              <TabPanels>
+              <TabPanels flex="1" minH={0} overflowY="auto">
                 {/* ── Lo esencial ── */}
-                <TabPanel px={5} py={4}>
+                <TabPanel px={{ base: 4, md: 5 }} py={4}>
                   <Stack spacing={2.5}>
                     <Paso icon={FiLock} titulo="Entrar a la app">
                       Cuando pida una clave, escribe siempre: <b>ferreexpress</b>. Solo se pide
@@ -170,11 +180,13 @@ export default function AyudaApp() {
                       Ver la guía completa paso a paso
                     </Button>
                     <HStack spacing={2}>
-                      <Button flex={1} size="sm" variant="outline" rounded="lg" leftIcon={<FiPlay />}
+                      <Button flex={1} size="sm" variant="outline" colorScheme="gray" rounded="lg"
+                        h="42px" leftIcon={<FiPlay />}
                         onClick={() => { onClose(); iniciarRecorrido("inicio"); }}>
                         Ver el tour
                       </Button>
-                      <Button flex={1} size="sm" variant="outline" rounded="lg" leftIcon={<FiFileText />}
+                      <Button flex={1} size="sm" variant="outline" colorScheme="gray" rounded="lg"
+                        h="42px" leftIcon={<FiFileText />}
                         onClick={() => irA("/historial")}>
                         Ir al listado
                       </Button>
@@ -183,20 +195,22 @@ export default function AyudaApp() {
                 </TabPanel>
 
                 {/* ── Preguntar ── */}
-                <TabPanel px={5} py={4}>
-                  <HStack spacing={2} mb={2}>
+                <TabPanel px={{ base: 3, md: 5 }} py={{ base: 3, md: 4 }}
+                  h="full" display="flex" flexDirection="column">
+                  <HStack spacing={2} mb={2} flexShrink={0}>
                     <Text fontSize="12px" color={muted}>
                       Escribe con tus palabras qué necesitas hacer.
                     </Text>
                     <Badge colorScheme="green" rounded="full" fontSize="9px">SIN INTERNET</Badge>
                   </HStack>
                   <AsistenteAyuda
-                    alto="360px"
+                    alto={esCelular ? "calc(100dvh - 230px)" : "360px"}
                     autoFocus
                     onAbrirTema={(id) => { onClose(); navigate(`/ayuda?tema=${id}`); }}
                     onAntesDeGuiar={onClose}
                   />
-                  <Button w="full" mt={3} size="sm" variant="outline" rounded="lg"
+                  <Button w="full" mt={3} size="sm" variant="outline" colorScheme="gray"
+                    rounded="lg" h="42px" flexShrink={0}
                     leftIcon={<FiBookOpen />} onClick={() => irA("/ayuda")}>
                     Abrir la guía completa
                   </Button>

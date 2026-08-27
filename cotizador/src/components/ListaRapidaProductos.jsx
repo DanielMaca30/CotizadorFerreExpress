@@ -90,7 +90,7 @@ const PrecioRapido = memo(function PrecioRapido({ rowId, value, onChange, onSigu
 
 /* ═══════════════ Un renglón ═══════════════ */
 const FilaRapida = memo(function FilaRapida({
-  r, index, esObra, cotConfig, inputBg, border,
+  r, index, esObra, cotConfig, inputBg, border, puedeBorrar,
   upItem, removeItem, duplicateItem, toggleSinIva,
   getSugerencias, onAceptarSugerencia, onSiguienteFila,
   startRowDrag, dragId,
@@ -169,10 +169,26 @@ const FilaRapida = memo(function FilaRapida({
           />
         </Box>
 
+        {/* BORRAR, A UN SOLO TOQUE.
+            Estaba escondido dentro del menú: abrir el menú, buscar
+            "Eliminar", tocarlo. Dos toques y una espera para lo que en el
+            mostrador se hace todo el tiempo (el cliente cambia de opinión).
+            Ahora está en el renglón, y el aviso que sale trae "Deshacer"
+            por si el dedo se fue donde no era. */}
+        <IconButton variant="ghost" rounded="lg" flexShrink={0}
+          h="44px" minW="40px" w="40px" color="red.400"
+          _hover={{ bg: "red.50", color: "red.500" }}
+          _active={{ bg: "red.100" }}
+          aria-label={r.desc ? `Eliminar ${r.desc}` : "Eliminar este renglón"}
+          title="Eliminar este renglón"
+          isDisabled={!puedeBorrar}
+          icon={<FiTrash2 size={17} />}
+          onClick={() => removeItem(r.id)} />
+
         {/* Menú de lo que se usa poco */}
         <Menu isLazy placement="bottom-end">
           <MenuButton as={IconButton} variant="ghost" rounded="lg" flexShrink={0}
-            h="44px" minW="44px"
+            h="44px" minW="40px" w="40px"
             aria-label="Más opciones del producto" icon={<FiMoreVertical />} />
           <MenuList fontSize="14px" minW="220px" zIndex={400}>
             <Box px={3} py={2}>
@@ -199,10 +215,6 @@ const FilaRapida = memo(function FilaRapida({
             )}
             <MenuItem icon={<FiCopy />} onClick={() => duplicateItem(r.id)}>
               Duplicar este producto
-            </MenuItem>
-            <MenuDivider />
-            <MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => removeItem(r.id)}>
-              Eliminar
             </MenuItem>
           </MenuList>
         </Menu>
@@ -327,6 +339,7 @@ export default function ListaRapidaProductos({
             cotConfig={cotConfig}
             inputBg={inputBg}
             border={border}
+            puedeBorrar={items.length > 1}
             upItem={upItem}
             removeItem={removeItem}
             duplicateItem={duplicateItem}

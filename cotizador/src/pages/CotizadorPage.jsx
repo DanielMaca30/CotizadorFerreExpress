@@ -13,7 +13,7 @@
 import {
   useEffect, useState, useCallback, useMemo, useRef, memo,
 } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Flex, HStack, VStack, Stack, Text, Divider,
   Icon, Badge, Tag, Button, IconButton, Tooltip,
@@ -60,6 +60,7 @@ import {
   AVISO_LATERAL,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
+import AppLogo from '../components/AppLogo';
 
 /* Firma del contenido: sirve para saber si algo cambió DE VERDAD y no
    reguardar (ni reordenar el historial) al saltar entre pestañas. */
@@ -134,24 +135,6 @@ function FL({ children, required, title }) {
 }
 
 /* Logo con fallback */
-function AppLogo({ src, h = '32px' }) {
-  const [phase, setPhase] = useState(() => (src ? 0 : 1));
-  const [prevSrc, setPrevSrc] = useState(src);
-  if (prevSrc !== src) {
-    setPrevSrc(src);
-    setPhase(src ? 0 : 1);
-  }
-  if (phase === 0 && src)
-    return <Box as="img" src={src} h={h} objectFit="contain" onError={() => setPhase(1)} />;
-  if (phase === 1)
-    return <Box as="img" src="/logo.jpg" h={h} objectFit="contain" onError={() => setPhase(2)} />;
-  return (
-    <Box bg={FY} rounded="md" px={2} py="3px">
-      <Text fontWeight="900" color={DARK} fontSize="sm" lineHeight="1.4">FE</Text>
-    </Box>
-  );
-}
-
 /* ════════════════════════════════════════════════════════════
    PRICE INPUT — formato 1.500.000 mientras se escribe
 ════════════════════════════════════════════════════════════ */
@@ -882,7 +865,9 @@ const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, 
         )}
       </Box>
       <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
-      <Box px={5} py={4}>
+      {/* Aire abajo: el botón redondo de ayuda flota en esta esquina y le
+          caía justo encima a "Guardar". */}
+      <Box px={5} pt={4} pb={{ base: 4, xl: "76px" }}>
         <Button w="full" bg={FY} color={DARK} rounded="lg" fontWeight="700" mb={2}
           onClick={() => safeNavigate('preview')} _hover={{ bg: '#e0b010' }}>
           Ver cotización →
@@ -900,7 +885,10 @@ const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, 
 /* ════════════════════════════════════════════════════════════
    STEPPER MOBILE
 ════════════════════════════════════════════════════════════ */
-const STEPS = ['Empresa', 'Cliente', 'Productos', 'Config'];
+/* Los datos de la empresa salieron de aquí y se fueron a Mi perfil: son
+   siempre los mismos y estaban ocupando el primer paso de un formulario
+   donde lo urgente es el cliente. Un paso menos en cada cotización. */
+const STEPS = ['Cliente', 'Productos', 'Config'];
 
 /* ════════════════════════════════════════════════════════════
    PÁGINA PRINCIPAL
@@ -908,7 +896,12 @@ const STEPS = ['Empresa', 'Cliente', 'Productos', 'Config'];
 export default function CotizadorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  /* Datos que llegan desde el listado con "Nueva para este cliente":
+     una cotización en blanco pero con el cliente ya escrito. Se leen una
+     sola vez — si la persona luego borra un campo, no vuelven a aparecer. */
+  const [prellenado] = useState(() => location.state?.clientePrefill || null);
   const rm = usePrefersReducedMotion();
   const cancelRef = useRef();
   const tableRef = useRef(null);
@@ -930,8 +923,14 @@ export default function CotizadorPage() {
 
   /* ── Estado principal ── */
   const [empresa, setEmpresaState] = useState(() => loadEmpresaLocal());
-  const [cliente, setCliente] = useState(DEFAULT_CLIENTE);
-  const [cotConfig, setCotConfig] = useState({ ...DEFAULT_CONFIG });
+  const [cliente, setCliente] = useState(
+    () => (location.state?.clientePrefill
+      ? { ...DEFAULT_CLIENTE, ...location.state.clientePrefill }
+      : DEFAULT_CLIENTE)
+  );
+  const [cotConfig, setCotConfig] = useState(
+    () => ({ ...DEFAULT_CONFIG, ...(location.state?.tipoPrefill ? { tipo: location.state.tipoPrefill } : null) })
+  );
   const [aiuConfig, setAiuConfig] = useState({ ...DEFAULT_AIU });
   const [items, setItems] = useState([blankRow(), blankRow()]);
   const [notas, setNotas] = useState(DEFAULT_NOTAS);
@@ -943,7 +942,9 @@ export default function CotizadorPage() {
   const [descLocal, setDescLocal] = useState('0');
   const [pendingNav, setPendingNav] = useState(null);
   const [mobileStep, setMobileStep] = useState(0);
-  const [showTipoModal, setShowTipoModal] = useState(!id);
+  /* Si se entró con "Nueva para este cliente" ya sabemos el tipo: no tiene
+     sentido volver a preguntarlo. Se puede cambiar después en Configuración. */
+  const [showTipoModal, setShowTipoModal] = useState(!id && !location.state?.tipoPrefill);
   const [showImport, setShowImport] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
@@ -1011,7 +1012,7 @@ export default function CotizadorPage() {
 
   /* Cargar por ID */
   useEffect(() => {
-    if (!id) { setShowTipoModal(true); return; }
+    if (!id) { if (!prellenado) setShowTipoModal(true); return; }
     const cot = getCotizacion(id);
     if (!cot) {
       toast({ title: 'Cotización no encontrada', status: 'error', duration: 3000 });
@@ -1088,10 +1089,25 @@ export default function CotizadorPage() {
 
   /* Recuperar borrador al abrir el cotizador nuevo */
   useEffect(() => {
-    if (id) return;
+    /* Con "Nueva para este cliente" la persona pidió una hoja en blanco:
+       ofrecerle recuperar un borrador viejo sería justo lo contrario. */
+    if (id || prellenado) return;
     const d = loadDraft();
     if (d && Array.isArray(d.items) && d.items.some(r => r.desc?.trim())) setDraftFound(d);
-  }, [id]);
+  }, [id, prellenado]);
+
+  /* Aviso de que el cliente ya venía escrito, y salto directo a Productos:
+     los datos del cliente son justo el paso que acabamos de ahorrarle. */
+  useEffect(() => {
+    if (!prellenado) return;
+    setPanelTab(0);     // pestaña Cliente, para verificar de un vistazo
+    setMobileStep(1);   // celular: directo a Productos, que es lo que falta
+    toast({
+      title: `Cotización nueva para ${prellenado.nombre || 'el cliente'}`,
+      description: 'Los datos del cliente ya están puestos. Solo faltan los productos.',
+      status: 'success', duration: 4000, ...AVISO_LATERAL,
+    });
+  }, [prellenado, toast]);
 
   /* Traer datos de empresa desde la nube (mismo membrete en toda PC) */
   useEffect(() => {
@@ -1163,6 +1179,10 @@ export default function CotizadorPage() {
 
   /* Eliminar avisa con opción de deshacer: borrar sin red es la queja
      clásica de estas tablas, y el producto ya digitado se pierde entero. */
+  /* Borrar un producto.
+     EL AVISO LLEVA SU PROPIO "DESHACER": decía "Ctrl+Z para deshacer", que
+     en un celular no existe. Quien borra sin querer en el mostrador
+     necesita un botón que se pueda tocar, y ahí mismo. */
   const removeItem = useCallback(rid => {
     let borrada = null;
     marcarHist('Fila eliminada');
@@ -1171,13 +1191,26 @@ export default function CotizadorPage() {
       borrada = p.find(r => r.id === rid);
       return p.filter(r => r.id !== rid);
     });
-    if (borrada?.desc?.trim()) {
-      toast({
-        title: `"${borrada.desc}" eliminado`,
-        description: 'Ctrl+Z para deshacer',
-        status: 'info', duration: 4000, ...AVISO_LATERAL,
-      });
-    }
+    if (!borrada) return;
+    const nombre = borrada.desc?.trim();
+    toast.closeAll();
+    toast({
+      duration: 5000,
+      ...AVISO_LATERAL,
+      render: ({ onClose }) => (
+        <Flex align="center" gap={3} bg="gray.700" color="white"
+          rounded="lg" px={4} py={3} boxShadow="0 6px 20px rgba(0,0,0,.3)">
+          <Text fontSize="14px" fontWeight="600" noOfLines={1}>
+            {nombre ? `"${nombre}" eliminado` : 'Producto eliminado'}
+          </Text>
+          <Button size="sm" variant="solid" bg={FY} color={DARK} rounded="md"
+            _hover={{ bg: '#e0b010' }} minH="36px" px={4} flexShrink={0}
+            onClick={() => { histRef.current?.deshacer(); onClose(); }}>
+            Deshacer
+          </Button>
+        </Flex>
+      ),
+    });
   }, [marcarHist, toast]);
 
   const duplicateItem = useCallback(rid => {
@@ -1748,7 +1781,6 @@ export default function CotizadorPage() {
     handleAcceptSugerencia, getSugerencias, addItem, addTransporte,
     startRowDrag, dragId,
   };
-  const panelEmpresaProps = { empresa, setEmpresa, border, mutedL, inputBg, onLogoError: toast };
   const panelClienteProps = { cliente, setCliente, inputBg, getClientes, onUsarCliente: handleUsarCliente };
   const panelCotizProps = { cotConfig, setCotConfig, descLocal, setDescLocal, notas, setNotas, observaciones, setObservaciones, aiuConfig, setAiuConfig, inputBg, onChangeTipo: abrirConvertir };
   /* Captura rápida (celular y tablet): todos los renglones abiertos a la vez */
@@ -1854,8 +1886,8 @@ export default function CotizadorPage() {
               <Button ref={cancelRef} size="sm" rounded="md"
                 onClick={() => {
                   setShowFaltantes(false);
-                  setMobileStep(1);   // celular: paso "Cliente"
-                  setPanelTab(1);     // computador y tablet: pestaña "CLIENTE"
+                  setMobileStep(0);   // celular: paso "Cliente"
+                  setPanelTab(0);     // computador y tablet: pestaña "CLIENTE"
                 }}>
                 Completar datos
               </Button>
@@ -1888,7 +1920,15 @@ export default function CotizadorPage() {
           h={{ base: 'auto', md: '54px' }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
           <HStack spacing={2}>
-            <AppLogo src={empresa.logo} h="30px" />
+            {/* El logo es el atajo a Mi perfil: es justo lo que uno toca
+                cuando quiere cambiar el membrete. */}
+            <Tooltip label="Mi perfil — datos de la empresa" hasArrow>
+              <Box as="button" type="button" display="flex" alignItems="center"
+                onClick={() => safeNavigate('/perfil')} rounded="md"
+                _hover={{ opacity: 0.7 }} aria-label="Ir a Mi perfil">
+                <AppLogo src={empresa.logo} h="30px" />
+              </Box>
+            </Tooltip>
             {cotConfig.numero
               ? <Badge bg={FY} color={DARK} rounded="full" fontSize="10px" px={3} fontWeight="700">{cotConfig.numero}</Badge>
               : <Tag size="sm" colorScheme="gray" rounded="full">Nueva</Tag>}
@@ -1987,7 +2027,7 @@ export default function CotizadorPage() {
               index={panelTab} onChange={setPanelTab}
               display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
+                {[{ l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
@@ -1996,8 +2036,7 @@ export default function CotizadorPage() {
                 ))}
               </TabList>
               <TabPanels flex={1} overflow="hidden">
-                {[<PanelEmpresa {...panelEmpresaProps} />,
-                <PanelCliente {...panelClienteProps} />,
+                {[<PanelCliente {...panelClienteProps} />,
                 <PanelCotizacion {...panelCotizProps} />].map((panel, i) => (
                   <TabPanel key={i} h="full" overflowY="auto" p={0}
                     sx={{ '&::-webkit-scrollbar': { w: '4px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' } }}>
@@ -2044,7 +2083,7 @@ export default function CotizadorPage() {
           <GlassCard rounded="xl" overflow="hidden">
             <Tabs variant="unstyled" size="sm" isLazy index={panelTab} onChange={setPanelTab}>
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Empresa', i: FiHome }, { l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
+                {[{ l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
                   <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
@@ -2053,7 +2092,6 @@ export default function CotizadorPage() {
                 ))}
               </TabList>
               <TabPanels>
-                <TabPanel p={0}><PanelEmpresa {...panelEmpresaProps} /></TabPanel>
                 <TabPanel p={0}><PanelCliente {...panelClienteProps} /></TabPanel>
                 <TabPanel p={0}><PanelCotizacion {...panelCotizProps} /></TabPanel>
               </TabPanels>
@@ -2132,9 +2170,8 @@ export default function CotizadorPage() {
               <MotionBox key={mobileStep}
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }} transition={{ duration: rm ? 0 : 0.15 }}>
-                {mobileStep === 0 && <PanelEmpresa {...panelEmpresaProps} />}
-                {mobileStep === 1 && <PanelCliente {...panelClienteProps} />}
-                {mobileStep === 2 && (
+                {mobileStep === 0 && <PanelCliente {...panelClienteProps} />}
+                {mobileStep === 1 && (
                   <Box>
                     {/* Header productos mobile */}
                     <Flex px={4} py={3} align="center" justify="space-between"
@@ -2204,7 +2241,7 @@ export default function CotizadorPage() {
                     </Box>
                   </Box>
                 )}
-                {mobileStep === 3 && <PanelCotizacion {...panelCotizProps} />}
+                {mobileStep === 2 && <PanelCotizacion {...panelCotizProps} />}
               </MotionBox>
             </AnimatePresence>
           </GlassCard>

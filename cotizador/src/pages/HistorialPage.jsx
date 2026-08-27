@@ -17,7 +17,7 @@ import {
   Box, Flex, HStack, VStack, Stack, Text, Icon, Badge, Tag,
   Button, IconButton, Input, InputGroup, InputLeftElement,
   Select, Table, Thead, Tbody, Tr, Th, Td, TableContainer,
-  Tooltip, SimpleGrid, useColorModeValue,
+  Tooltip, SimpleGrid, useColorModeValue, useMediaQuery,
   useToast, useDisclosure,
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
@@ -28,6 +28,7 @@ import {
   FiFileText, FiRefreshCw, FiCheckCircle,
   FiSend, FiGrid, FiList, FiMoreVertical,
   FiDollarSign, FiUser, FiCloud, FiTool, FiShoppingCart,
+  FiFilter, FiX, FiFilePlus, FiPhone, FiChevronDown, FiSettings,
 } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
@@ -129,8 +130,55 @@ function KpiCard({ label, value, sub, icon, accent, onClick, active }) {
   );
 }
 
+/* ─── Cifras en celular ───
+   POR QUÉ ES DISTINTO: las cuatro tarjetas grandes ocupaban toda la
+   pantalla del teléfono. Había que bajar para ver la primera cotización.
+   Aquí las mismas cuatro cifras caben en una tira de 56px que además
+   filtra al tocarla: se ve el número y se llega a la lista de una. */
+function CifrasMovil({ cifras, estado, onEstado, total }) {
+  const muted = useColorModeValue("gray.500", "gray.400");
+  const bc    = useColorModeValue("gray.200", "whiteAlpha.200");
+  const bg    = useColorModeValue("white", "gray.800");
+
+  const chips = [
+    { k: "todos",    etq: "Todas",     val: cifras.total,     col: muted },
+    { k: "enviada",  etq: "Enviadas",  val: cifras.enviadas,  col: "blue.400" },
+    { k: "aceptada", etq: "Aceptadas", val: cifras.aceptadas, col: "green.400" },
+  ];
+
+  return (
+    <Box mb={3}>
+      <HStack spacing={2} align="stretch">
+        {chips.map((c) => {
+          const activo = estado === c.k;
+          return (
+            <Box key={c.k} as="button" type="button" flex="1"
+              onClick={() => onEstado(c.k)}
+              bg={bg} border="1px solid"
+              borderColor={activo ? FY : bc}
+              boxShadow={activo ? `0 0 0 1px ${FY}` : "none"}
+              rounded="lg" px={2} py={1.5} textAlign="left">
+              <Text fontSize="18px" fontWeight="900" lineHeight="1.1" color={c.col === muted ? undefined : c.col}>
+                {c.val}
+              </Text>
+              <Text fontSize="9px" fontWeight="700" letterSpacing="0.06em"
+                textTransform="uppercase" color={muted} noOfLines={1}>{c.etq}</Text>
+            </Box>
+          );
+        })}
+      </HStack>
+      <Flex mt={2} align="baseline" justify="space-between"
+        bg={bg} border="1px solid" borderColor={bc} rounded="lg" px={3} py={1.5}>
+        <Text fontSize="9px" fontWeight="700" letterSpacing="0.06em"
+          textTransform="uppercase" color={muted}>Valor {total ? "total" : "de lo filtrado"}</Text>
+        <Text fontSize="15px" fontWeight="900" color={FY}>{money(cifras.valor)}</Text>
+      </Flex>
+    </Box>
+  );
+}
+
 /* ─── Selector de estado inline ─── */
-function EstadoSelect({ cot, onCambiar }) {
+function EstadoSelect({ cot, onCambiar, grande }) {
   const estado = getEstado(cot);
   const meta   = ESTADO_META[estado] || ESTADO_META.borrador;
 
@@ -146,17 +194,23 @@ function EstadoSelect({ cot, onCambiar }) {
        Con 300 cotizaciones en pantalla, construirlos todos costaba más
        que dibujar la lista entera. */
     <Menu isLazy>
-      <MenuButton as={Button} size="xs" variant="ghost" px={1} title="Cambiar estado"
+      <MenuButton as={Button} size={grande ? "sm" : "xs"} variant="ghost"
+        colorScheme="gray" px={grande ? 2 : 1} h={grande ? "40px" : undefined}
+        title="Cambiar estado" aria-label={`Estado: ${meta.label}. Tocar para cambiar`}
         onClick={(e) => e.stopPropagation()}>
-        <Badge colorScheme={meta.color} rounded="full" variant="subtle" fontSize="9px" cursor="pointer">
+        <Badge colorScheme={meta.color} rounded="full" variant="subtle"
+          fontSize={grande ? "11px" : "9px"} px={grande ? 2.5 : undefined}
+          py={grande ? 1 : undefined} cursor="pointer">
           {meta.label} ▾
         </Badge>
       </MenuButton>
-      <MenuList fontSize="12px" minW="140px" onClick={(e) => e.stopPropagation()} zIndex={300}>
+      <MenuList fontSize={grande ? "15px" : "12px"} minW={grande ? "190px" : "140px"}
+        onClick={(e) => e.stopPropagation()} zIndex={300}>
         {ESTADOS.map((e) => {
           const m = ESTADO_META[e];
           return (
             <MenuItem key={e} onClick={() => onCambiar(cot.id, e)}
+              py={grande ? 2.5 : undefined}
               fontWeight={e === estado ? "700" : "400"}
               color={e === estado ? `${colorMap[e]}.500` : undefined}>
               <Badge colorScheme={m.color} variant="subtle" rounded="full" fontSize="9px" mr={2}>
@@ -172,12 +226,23 @@ function EstadoSelect({ cot, onCambiar }) {
 }
 
 /* ─── Menú de acciones (compartido por tabla y tarjetas) ─── */
-function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, pdfDisabled }) {
+function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, onNuevaMismoCliente, pdfDisabled }) {
   const esObra = getTipo(cot) === "obra";
+  const hayCliente = !!cot.cliente?.nombre?.trim();
   return (
     <MenuList fontSize="13px" onClick={(e) => e.stopPropagation()}>
       <MenuItem icon={<FiEdit2 size={13} />} onClick={() => onEdit(cot.id)}>Editar</MenuItem>
-      <MenuItem icon={<FiCopy size={13} />}  onClick={() => onDuplicate(cot.id)}>Duplicar</MenuItem>
+      {/* Duplicar copia TODO (productos incluidos). Esta otra deja la hoja
+          en blanco y solo conserva al cliente: es lo que se necesita cuando
+          el mismo cliente vuelve a pedir, pero cosas distintas. */}
+      {hayCliente && (
+        <MenuItem icon={<FiFilePlus size={13} />} onClick={() => onNuevaMismoCliente(cot)}
+          command="en blanco">
+          Nueva para este cliente
+        </MenuItem>
+      )}
+      <MenuItem icon={<FiCopy size={13} />}  onClick={() => onDuplicate(cot.id)}
+        command="con productos">Duplicar</MenuItem>
       <MenuItem icon={<FiDownload size={13} />} onClick={() => onPDF(cot)} isDisabled={pdfDisabled}>
         Descargar PDF
       </MenuItem>
@@ -198,7 +263,7 @@ function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, 
    Memoizada: cambiar el estado de una no repinta toda la rejilla. */
 const CotizacionCard = memo(function CotizacionCard({
   cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
-  onConvertir, onVerCliente,
+  onConvertir, onVerCliente, onNuevaMismoCliente,
 }) {
   const navigate = useNavigate();
   const estado   = getEstado(cot);
@@ -234,6 +299,7 @@ const CotizacionCard = memo(function CotizacionCard({
                 onClick={(e) => e.stopPropagation()} />
               <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
                 onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
+                onNuevaMismoCliente={onNuevaMismoCliente}
                 pdfDisabled={pdfLoading && pdfCotId === cot.id} />
             </Menu>
           </Flex>
@@ -269,11 +335,104 @@ const CotizacionCard = memo(function CotizacionCard({
   );
 });
 
+/* ─── Tarjeta de celular ───
+   POR QUÉ ES OTRA TARJETA Y NO LA MISMA ACHICADA: en el mostrador el
+   teléfono se usa con una mano y de pie. Lo que se hace ahí es abrir una
+   cotización, cambiarle el estado, mandarla por WhatsApp, llamar al
+   cliente o empezarle otra. Esas cinco cosas están a un toque, con
+   botones de 44px — la medida mínima para que el dedo no falle. Lo demás
+   (convertir, duplicar, eliminar) queda en el menú, que en el teléfono se
+   usa poco. La versión de computador guarda todo detrás del ⋮ porque allí
+   el ratón apunta fino y el menú no estorba. */
+/* El tema de la aplicación pinta de rojo cualquier botón sin color propio
+   (es el rojo de la marca). En el pie de la tarjeta eso hacía que
+   "descargar PDF" y "nueva cotización" se vieran como acciones peligrosas.
+   Aquí van en gris; el color se reserva para lo que lo merece: verde para
+   llamar, rojo solo para eliminar. */
+const ACCION_PIE = {
+  h: "44px", w: "44px", minW: "44px", variant: "ghost", rounded: "none",
+  colorScheme: "gray",
+};
+
+const TarjetaMovil = memo(function TarjetaMovil({
+  cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
+  onConvertir, onNuevaMismoCliente,
+}) {
+  const navigate = useNavigate();
+  const estado   = getEstado(cot);
+  const border   = useColorModeValue("gray.200", "whiteAlpha.200");
+  const muted    = useColorModeValue("gray.500", "gray.400");
+  const pieBg    = useColorModeValue("gray.50", "whiteAlpha.50");
+  const nItems   = cot.items?.filter((i) => i.desc || i.price).length || 0;
+  const tel      = (cot.cliente?.tel || "").replace(/[^\d+]/g, "");
+  const franja   = estado === "aceptada"  ? "green.400"
+                 : estado === "enviada"   ? "blue.400"
+                 : estado === "rechazada" ? "red.400" : "gray.300";
+
+  return (
+    <GlassCard rounded="xl" overflow="hidden">
+      {/* Zona de abrir: toda la parte de arriba, para no tener que apuntar */}
+      <Flex as="button" type="button" w="100%" textAlign="left"
+        onClick={() => navigate(`/cotizador/${cot.id}`)}>
+        <Box w="4px" bg={franja} flexShrink={0} />
+        <Box flex="1" px={3} py={2.5} minW={0}>
+          <Flex justify="space-between" align="center" gap={2}>
+            <HStack spacing={1.5} minW={0}>
+              <Text fontWeight="800" fontSize="15px" color={FY} lineHeight="1.2">{getNumero(cot)}</Text>
+              <TipoBadge cot={cot} />
+            </HStack>
+            <Text fontWeight="900" fontSize="16px" whiteSpace="nowrap">
+              {money(getTotal(cot), cot.config?.moneda || "COP")}
+            </Text>
+          </Flex>
+          <Text fontSize="15px" fontWeight="700" noOfLines={1} mt={1}>
+            {cot.cliente?.nombre || <Text as="span" color={muted} fontStyle="italic" fontWeight="400">Sin cliente</Text>}
+          </Text>
+          <Text fontSize="11px" color={muted} mt={0.5}>
+            {fmtRelativa(cot.updatedAt)} · {nItems} ítem{nItems !== 1 ? "s" : ""}
+          </Text>
+        </Box>
+      </Flex>
+
+      {/* Pie de acciones — 44px de alto, el mínimo para el dedo */}
+      <Flex borderTop="1px solid" borderColor={border} bg={pieBg} align="stretch">
+        <Box flex="1" px={1.5} py={0.5} display="flex" alignItems="center" minW={0}>
+          <EstadoSelect cot={cot} onCambiar={onCambiarEstado} grande />
+        </Box>
+        <IconButton {...ACCION_PIE} color={muted}
+          aria-label="Descargar PDF" icon={<FiDownload size={17} />}
+          isDisabled={pdfLoading && pdfCotId === cot.id}
+          onClick={() => onPDF(cot)} />
+        {tel && (
+          <IconButton {...ACCION_PIE}
+            as="a" href={`tel:${tel}`} color="green.500"
+            aria-label={`Llamar a ${cot.cliente?.nombre || "el cliente"}`}
+            icon={<FiPhone size={17} />} />
+        )}
+        {cot.cliente?.nombre && (
+          <IconButton {...ACCION_PIE} color={muted}
+            aria-label="Nueva cotización para este cliente" icon={<FiFilePlus size={17} />}
+            onClick={() => onNuevaMismoCliente(cot)} />
+        )}
+        <Menu isLazy placement="bottom-end">
+          <MenuButton as={IconButton} {...ACCION_PIE} color={muted}
+            aria-label="Más opciones" icon={<FiMoreVertical size={17} />} />
+          <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
+            onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
+            onNuevaMismoCliente={onNuevaMismoCliente}
+            pdfDisabled={pdfLoading && pdfCotId === cot.id} />
+        </Menu>
+      </Flex>
+    </GlassCard>
+  );
+});
+
 /* ─── Fila de la tabla ───
    Memoizada por el mismo motivo: con 50 filas en pantalla, cambiar el
    estado de una sola dejaba de repintar las otras 49. */
 const FilaCotizacion = memo(function FilaCotizacion({
   cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir, onVerCliente,
+  onNuevaMismoCliente,
   pdfLoading, pdfCotId, tableBg, stripeBg, hoverBg, border, muted, mutedL,
 }) {
   const navigate = useNavigate();
@@ -328,6 +487,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
               aria-label="Más opciones" icon={<FiMoreVertical size={13} />} />
             <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
               onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
+                onNuevaMismoCliente={onNuevaMismoCliente}
               pdfDisabled={pdfLoading && pdfCotId === cot.id} />
           </Menu>
         </HStack>
@@ -371,6 +531,23 @@ export default function HistorialPage() {
   const [toDelete, setToDelete] = useState(null);
   const [pdfCot,   setPdfCot]   = useState(null);
   const [viewMode, setViewMode] = useState(prefs0.viewMode || "tabla");
+  /* ── EL TELÉFONO NUNCA VE LA TABLA ──
+     La tabla mide 700px de ancho. En una pantalla de 390px, ESTADO, TOTAL
+     y ACCIONES quedaban fuera: se veía "la pantalla cortada". Y como la
+     preferencia de vista se guardaba, quien alguna vez había usado la
+     tabla en el computador se encontraba con eso en el celular. Ahora en
+     el teléfono siempre manda la vista de tarjetas, sin tocar lo que la
+     persona eligió para el computador. */
+  const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
+  const vistaEfectiva = esCelular ? "tarjetas" : viewMode;
+  /* Los filtros arrancan plegados en el teléfono: ocupaban media pantalla
+     antes de que apareciera la primera cotización. */
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  /* Cuántas cotizaciones lleva mostradas la lista del teléfono. Es aparte
+     de pageSize y NO se guarda: en el celular uno toca "Ver más" varias
+     veces sin pensarlo, y eso no puede dejar el computador arrancando con
+     cien filas de golpe la próxima vez. */
+  const [tandaMovil, setTandaMovil] = useState(8);
   const [toConvert, setToConvert] = useState(null);   // cotización a convertir
   /* Paginación — 5 por defecto para que la vista abra al instante */
   const [pageSize, setPageSize] = useState(
@@ -494,10 +671,11 @@ export default function HistorialPage() {
   const pageSegura = Math.min(page, totalPages);
 
   const paged = useMemo(() => {
+    if (esCelular) return filtered.slice(0, tandaMovil);
     if (pageSize === TODAS) return filtered;
     const ini = (pageSegura - 1) * pageSize;
     return filtered.slice(ini, ini + pageSize);
-  }, [filtered, pageSegura, pageSize]);
+  }, [filtered, pageSegura, pageSize, esCelular, tandaMovil]);
 
   /* Pintado progresivo: las primeras filas salen ya, el resto se va
      agregando entre repintados. Sin esto, elegir "Todas" con cientos de
@@ -506,7 +684,7 @@ export default function HistorialPage() {
     primeros: 25, paso: 40,
     /* Se vuelve a empezar por las primeras cuando cambia lo que se está
        mirando: otro filtro, otra búsqueda, otra página. */
-    clave: `${debSearch}|${estado}|${tipo}|${rangoDesde}|${sortBy}|${sortDir}|${pageSegura}|${pageSize}|${viewMode}`,
+    clave: `${debSearch}|${estado}|${tipo}|${rangoDesde}|${sortBy}|${sortDir}|${pageSegura}|${pageSize}|${viewMode}|${tandaMovil}`,
   });
 
   /* Cifras de LO QUE SE ESTÁ VIENDO.
@@ -537,6 +715,7 @@ export default function HistorialPage() {
   const cambiarTipo     = useCallback((v) => { setTipo(v);     setPage(1); }, []);
   const cambiarEstadoF  = useCallback((v) => { setEstado(v);   setPage(1); }, []);
   const cambiarPageSize = useCallback((v) => { setPageSize(v); setPage(1); }, []);
+  useEffect(() => { setTandaMovil(8); }, [debSearch, estado, tipo, rangoDesde, sortBy, sortDir]);
 
   /* Fecha: calcula el umbral en el manejador (fuera del render puro) */
   const onRango = useCallback((v) => {
@@ -585,6 +764,19 @@ export default function HistorialPage() {
   /* Abrir en pestaña */
   const handleEditar = useCallback((id) => { openTab(id); navigate(`/cotizador/${id}`); }, [openTab, navigate]);
   const handleNueva  = useCallback(() => { openTab(NEW_TAB_ID); navigate("/cotizador"); }, [openTab, navigate]);
+
+  /* Nueva cotización EN BLANCO para un cliente que ya cotizó.
+     Se lleva solo la ficha del cliente — ni un producto, ni el descuento,
+     ni las notas de la otra. Es la diferencia con "Duplicar". */
+  const handleNuevaMismoCliente = useCallback((cot) => {
+    openTab(NEW_TAB_ID);
+    navigate("/cotizador", {
+      state: {
+        clientePrefill: { ...(cot.cliente || {}) },
+        tipoPrefill: getTipo(cot),
+      },
+    });
+  }, [openTab, navigate]);
   /* Navegación normal (no replace): el atrás devuelve el listado con sus filtros */
   const handleVerCliente = useCallback((n) => navigate(`/cliente/${encodeURIComponent(n)}`), [navigate]);
 
@@ -669,7 +861,8 @@ export default function HistorialPage() {
             <Box bg={FY} rounded="md" px={2} py="3px">
               <Text fontWeight="900" color={DARK} fontSize="sm" lineHeight="1.4">FE</Text>
             </Box>
-            <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}>Cotizaciones</Text>
+            <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}
+              display={{ base: "none", sm: "block" }}>Cotizaciones</Text>
             <Tag size="sm" colorScheme="gray" rounded="full">{cotizaciones.length}</Tag>
             {nubeActiva && (
               <Tooltip label={syncing ? "Sincronizando con la nube…" : "Sincronizado en la nube · clic para actualizar"} hasArrow>
@@ -682,24 +875,43 @@ export default function HistorialPage() {
             )}
           </HStack>
           <HStack>
-            <Tooltip label={viewMode === "tabla" ? "Vista tarjetas" : "Vista tabla"} hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md"
-                icon={viewMode === "tabla" ? <FiGrid /> : <FiList />}
-                aria-label="Cambiar vista"
-                onClick={() => setViewMode((v) => v === "tabla" ? "tarjetas" : "tabla")} />
+            <Tooltip label="Mi perfil — datos de la empresa" hasArrow>
+              <IconButton size="sm" variant="outline" rounded="md" colorScheme="gray"
+                h={{ base: "38px", md: "32px" }} w={{ base: "38px", md: "32px" }} minW="unset"
+                icon={<FiSettings />} aria-label="Mi perfil"
+                onClick={() => navigate("/perfil")} />
             </Tooltip>
+            {!esCelular && (
+              <Tooltip label={viewMode === "tabla" ? "Vista tarjetas" : "Vista tabla"} hasArrow>
+                <IconButton size="sm" variant="outline" rounded="md"
+                  icon={viewMode === "tabla" ? <FiGrid /> : <FiList />}
+                  aria-label="Cambiar vista"
+                  onClick={() => setViewMode((v) => v === "tabla" ? "tarjetas" : "tabla")} />
+              </Tooltip>
+            )}
             <Button data-tour="nueva" size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700"
+              h={{ base: "38px", md: "32px" }} px={{ base: 3, md: 4 }}
               leftIcon={<FiPlus />} onClick={handleNueva}
               _hover={{ bg: "#e0b010" }}>
-              Nueva cotización
+              {esCelular ? "Nueva" : "Nueva cotización"}
             </Button>
           </HStack>
         </Flex>
       </Box>
 
-      <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }} py={6}>
+      {/* Abajo se reserva sitio: ahí flota el botón de ayuda y si no, le
+          tapa las acciones a la última cotización de la lista. */}
+      <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }}
+        pt={{ base: 4, md: 6 }} pb={{ base: "88px", md: 6 }}>
 
-        {/* KPIs — clic para filtrar por estado */}
+        {/* KPIs — clic para filtrar por estado.
+            En celular van en la tira compacta de arriba. */}
+        {esCelular ? (
+          <Box data-tour="kpis">
+            <CifrasMovil cifras={cifras} estado={estado} onEstado={cambiarEstadoF}
+              total={!hayFiltro} />
+          </Box>
+        ) : (
         <SimpleGrid data-tour="kpis" columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
           <KpiCard label={hayFiltro ? "En pantalla" : "Total"} value={cifras.total} icon={FiFileText} accent={mutedL}
             sub={hayFiltro ? `de ${cotizaciones.length} en total` : undefined}
@@ -712,11 +924,14 @@ export default function HistorialPage() {
             icon={FiDollarSign} accent={FY}
             sub={`${cifras.total} ${cifras.total === 1 ? "cotización" : "cotizaciones"}`} />
         </SimpleGrid>
+        )}
 
-        {/* Filtros */}
-        <GlassCard rounded="xl" px={{ base: 3, md: 5 }} py={4} mb={5}>
+        {/* Filtros — en celular: el buscador siempre visible, lo demás
+            plegado. Antes los cuatro desplegables ocupaban media pantalla
+            y empujaban la lista fuera de la vista. */}
+        <GlassCard rounded="xl" px={{ base: 2.5, md: 5 }} py={{ base: 2.5, md: 4 }} mb={{ base: 3, md: 5 }}>
           <Flex gap={2.5} align="center" flexWrap="wrap">
-            <InputGroup size="sm" flex={1} minW="200px">
+            <InputGroup size={esCelular ? "md" : "sm"} flex={1} minW={{ base: "0", md: "200px" }}>
               <InputLeftElement pointerEvents="none">
                 <Icon as={FiSearch} color={mutedL} boxSize={4} />
               </InputLeftElement>
@@ -726,6 +941,20 @@ export default function HistorialPage() {
                 onChange={(e) => cambiarBusqueda(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Escape") { cambiarBusqueda(""); e.currentTarget.blur(); } }} />
           </InputGroup>
+            {esCelular && (
+              <Button size="md" colorScheme="gray"
+                variant={filtrosActivos ? "solid" : "outline"} rounded="md"
+                bg={filtrosActivos ? FY : undefined} color={filtrosActivos ? DARK : undefined}
+                _hover={filtrosActivos ? { bg: "#e0b010" } : undefined}
+                px={3} flexShrink={0}
+                leftIcon={<FiFilter size={14} />}
+                rightIcon={<Box as={FiChevronDown} transform={filtrosAbiertos ? "rotate(180deg)" : undefined}
+                  transition="transform .15s" />}
+                onClick={() => setFiltrosAbiertos((v) => !v)}>
+                Filtros
+              </Button>
+            )}
+          {(!esCelular || filtrosAbiertos) && (<>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
               w={{ base: "48%", sm: "125px" }} value={tipo} onChange={(e) => cambiarTipo(e.target.value)}>
               <option value="todos">Todo tipo</option>
@@ -766,15 +995,53 @@ export default function HistorialPage() {
             <Text fontSize="11px" color={mutedL} ml="auto" whiteSpace="nowrap">
               {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
             </Text>
+          </>)}
           </Flex>
+          {/* Con los filtros plegados hay que poder ver qué está filtrando
+              y quitarlo sin desplegar nada. */}
+          {esCelular && !filtrosAbiertos && filtrosActivos && (
+            <Flex mt={2} gap={1.5} align="center" flexWrap="wrap">
+              {[
+                estado !== "todos" && ESTADO_META[estado]?.label,
+                tipo   !== "todos" && (tipo === "obra" ? "Obra" : "Comercial"),
+                rango  !== "todos" && ({ hoy: "Hoy", 7: "7 días", 30: "30 días", mes: "Este mes" }[rango]),
+              ].filter(Boolean).map((etq) => (
+                <Tag key={etq} size="sm" rounded="full" colorScheme="yellow">{etq}</Tag>
+              ))}
+              <Button size="xs" variant="ghost" rounded="full" leftIcon={<FiX size={11} />}
+                onClick={limpiarFiltros} ml="auto">Quitar</Button>
+              <Text fontSize="11px" color={mutedL}>
+                {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+              </Text>
+            </Flex>
+          )}
         </GlassCard>
 
         {/* ─── VISTA TARJETAS ─── */}
-        {viewMode === "tarjetas" && (
+        {vistaEfectiva === "tarjetas" && (
           filtered.length === 0
             ? <EmptyState cotizaciones={cotizaciones} navigate={navigate} />
             : (
               <Box ref={listTopRef}>
+                {esCelular ? (
+                  <VStack spacing={2.5} align="stretch">
+                    {aPintar.map((cot) => (
+                      <TarjetaMovil
+                        key={cot.id}
+                        cot={cot}
+                        onEdit={handleEditar}
+                        onDuplicate={handleDuplicate}
+                        onDelete={confirmDelete}
+                        onPDF={handlePDF}
+                        pdfLoading={pdfLoading}
+                        pdfCotId={pdfCot?.id}
+                        onCambiarEstado={handleCambiarEstado}
+                        onConvertir={handleConvertir}
+                        onNuevaMismoCliente={handleNuevaMismoCliente}
+                      />
+                    ))}
+                  </VStack>
+                ) : (
                 <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
                   {aPintar.map((cot) => (
                     <MotionBox key={cot.id}
@@ -791,20 +1058,27 @@ export default function HistorialPage() {
                         onCambiarEstado={handleCambiarEstado}
                         onConvertir={handleConvertir}
                         onVerCliente={handleVerCliente}
+                        onNuevaMismoCliente={handleNuevaMismoCliente}
                       />
                     </MotionBox>
                   ))}
                 </SimpleGrid>
-                <GlassCard rounded="xl" mt={4}>
-                  <Paginacion page={pageSegura} pageSize={pageSize} total={filtered.length}
-                    onPage={irAPagina} onPageSize={cambiarPageSize} />
+                )}
+                <GlassCard rounded="xl" mt={{ base: 2.5, md: 4 }}>
+                  <Paginacion
+                    page={esCelular ? 1 : pageSegura}
+                    pageSize={esCelular ? tandaMovil : pageSize}
+                    total={filtered.length}
+                    onPage={irAPagina}
+                    onPageSize={esCelular ? setTandaMovil : cambiarPageSize}
+                    movil={esCelular} />
                 </GlassCard>
               </Box>
             )
         )}
 
-        {/* ─── VISTA TABLA ─── */}
-        {viewMode === "tabla" && (
+        {/* ─── VISTA TABLA (nunca en celular) ─── */}
+        {vistaEfectiva === "tabla" && (
           <GlassCard rounded="xl" overflow="hidden">
             <Box ref={listTopRef} />
             {filtered.length === 0
@@ -863,6 +1137,7 @@ export default function HistorialPage() {
                           onCambiarEstado={handleCambiarEstado}
                           onConvertir={handleConvertir}
                           onVerCliente={handleVerCliente}
+                          onNuevaMismoCliente={handleNuevaMismoCliente}
                           pdfLoading={pdfLoading}
                           pdfCotId={pdfCot?.id}
                           tableBg={tableBg}

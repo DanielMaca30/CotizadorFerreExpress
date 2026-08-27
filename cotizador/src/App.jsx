@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "rea
 const CotizadorPage = lazy(() => import("./pages/CotizadorPage"));
 const HistorialPage = lazy(() => import("./pages/HistorialPage"));
 const ClientePage   = lazy(() => import("./pages/ClientePage"));
+const PerfilPage    = lazy(() => import("./pages/PerfilPage"));
 import TabsBar from "./components/TabsBar";
 import AvisoGuardado from "./components/AvisoGuardado";
 import PuertaAcceso from "./components/PuertaAcceso";
@@ -107,6 +108,7 @@ export default function App() {
                   <Route path="/historial"        element={<HistorialPage />} />
                   <Route path="/ayuda"            element={<AyudaPage />} />
                   <Route path="/cliente/:nombre"  element={<ClientePage />} />
+                  <Route path="/perfil"           element={<PerfilPage />} />
                   <Route path="*"                 element={<Navigate to="/historial" replace />} />
                 </Route>
               </Routes>
