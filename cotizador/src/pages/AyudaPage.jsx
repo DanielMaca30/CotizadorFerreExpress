@@ -25,7 +25,9 @@ import {
 } from "react-icons/fi";
 import { TEMAS, GRUPOS, DIFICULTAD, buscarTemas } from "../ayuda/guia";
 import AsistenteAyuda from "../components/AsistenteAyuda";
+import AppLogo from "../components/AppLogo";
 import { TABS_BAR_H } from "../components/TabsBar";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import { useCotizaciones } from "../hooks/useCotizaciones";
 import { iniciarRecorrido } from "../components/RecorridoGuiado";
 
@@ -149,7 +151,8 @@ export default function AyudaPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { tabs } = useCotizaciones();
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Debajo de la tira de pestañas Y de la navegación principal */
+  const topOffset = useOffsetSuperior(tabs.length > 0);
 
   const [q, setQ] = useState("");
   const [abiertos, setAbiertos] = useState(() => new Set(params.get("tema") ? [params.get("tema")] : []));
@@ -226,9 +229,7 @@ export default function AyudaPage() {
               <IconButton size="sm" variant="ghost" rounded="md" aria-label="Volver"
                 icon={<FiArrowLeft />} onClick={() => navigate(-1)} />
             </Tooltip>
-            <Box bg={FY} rounded="md" px={2} py="3px">
-              <Text fontWeight="900" color={DARK} fontSize="sm" lineHeight="1.4">FE</Text>
-            </Box>
+            <AppLogo variante="marca" h="28px" />
             <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}>Guía de uso</Text>
           </HStack>
           <HStack spacing={2}>
@@ -252,7 +253,8 @@ export default function AyudaPage() {
         </Flex>
       </Box>
 
-      <Box maxW="1000px" mx="auto" px={{ base: 3, md: 6 }} py={6}>
+      <Box maxW="1000px" mx="auto" px={{ base: 3, md: 6 }}
+        pt={6} pb={{ base: `calc(${NAV_MOVIL_H} + 24px)`, md: 6 }}>
         {/* Presentación */}
         <Box bg={DARK} rounded="2xl" p={{ base: 5, md: 7 }} mb={5}>
           <Text fontWeight="900" fontSize={{ base: "20px", md: "24px" }} color="white" lineHeight="1.2">

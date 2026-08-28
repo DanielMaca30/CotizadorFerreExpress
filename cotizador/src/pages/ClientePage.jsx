@@ -26,6 +26,7 @@ import {
 import { useCotizaciones } from "../hooks/useCotizaciones";
 import { useClientesFrecuentes } from "../hooks/useClientesFrecuentes";
 import { TABS_BAR_H } from "../components/TabsBar";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import { money, fmtDateShort, ESTADO_META } from "../utils";
 
 const FY   = "#F9BF20";
@@ -80,7 +81,8 @@ export default function ClientePage() {
   const theadBg  = DARK;
   const hoverBg  = useColorModeValue("yellow.50", "whiteAlpha.50");
   const stripeBg = useColorModeValue("gray.50", "gray.750");
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Debajo de la tira de pestañas Y de la navegación principal */
+  const topOffset = useOffsetSuperior(tabs.length > 0);
 
   /* Cotizaciones de este cliente */
   const suyas = useMemo(
@@ -157,7 +159,8 @@ export default function ClientePage() {
         </Flex>
       </Box>
 
-      <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }} py={6}>
+      <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }}
+        pt={6} pb={{ base: `calc(${NAV_MOVIL_H} + 24px)`, md: 6 }}>
 
         {suyas.length === 0 ? (
           <Flex direction="column" align="center" py={20} gap={3}>

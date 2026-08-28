@@ -21,6 +21,8 @@ import {
   FiTool, FiBookOpen, FiPlay, FiMessageCircle,
 } from "react-icons/fi";
 import AsistenteAyuda from "./AsistenteAyuda";
+import AppLogo from "./AppLogo";
+import { NAV_MOVIL_H } from "./NavegacionPrincipal";
 import { iniciarRecorrido } from "./RecorridoGuiado";
 
 const FY = "#F9BF20";
@@ -83,10 +85,11 @@ export default function AyudaApp() {
           icon={<FiHelpCircle size={22} />}
           onClick={onOpen}
           position="fixed"
-          /* En el celular el cotizador tiene una barra fija abajo (Total,
-             Ver, PDF, Guardar). Sin esto, el botón de ayuda se le monta
-             encima justo al botón de Guardar. */
-          bottom={{ base: enCotizador ? "104px" : 4, md: 6 }}
+          /* En el celular hay hasta dos barras fijas abajo: la de
+             navegación (siempre) y, dentro del cotizador, la del total
+             con Ver/PDF/Guardar. El botón se sube por encima de las dos;
+             sin esto se le monta justo al botón de Guardar. */
+          bottom={{ base: enCotizador ? `calc(${NAV_MOVIL_H} + 104px)` : `calc(${NAV_MOVIL_H} + 12px)`, md: 6 }}
           right={{ base: 4, md: 6 }}
           display={{ base: escribiendo && !isOpen ? "none" : "inline-flex", md: "inline-flex" }}
           zIndex={500}
@@ -114,9 +117,7 @@ export default function AyudaApp() {
           display="flex" flexDirection="column">
           <Box bg={DARK} px={{ base: 4, md: 6 }} py={{ base: 3, md: 5 }} flexShrink={0}>
             <Flex align="center" gap={3}>
-              <Box bg={FY} rounded="lg" px={3} py={2}>
-                <Text fontWeight="900" color={DARK} fontSize="lg" lineHeight="1">FE</Text>
-              </Box>
+              <AppLogo variante="marca" h="38px" />
               <Box>
                 <Text fontWeight="900" fontSize={{ base: "16px", md: "18px" }} color="white">¿Cómo uso esto?</Text>
                 <Text fontSize="12px" color="whiteAlpha.700">
@@ -166,10 +167,16 @@ export default function AyudaApp() {
 
                   <Box bg={useColorModeValue("orange.50", "whiteAlpha.100")} rounded="lg" p={3} mt={3}>
                     <Text fontSize="11.5px" color={muted} lineHeight="1.6">
-                      <b>Lo que más confunde:</b> la lista de productos dice “Enter aceptar”, pero
-                      en el computador hay que hacerle <b>clic</b> a la sugerencia. Y la etiqueta
-                      de color de cada cotización (Borrador, Enviada…) <b>es un menú</b>: se toca
-                      para cambiar el estado.
+                      {/* Este recuadro decía que había que hacerle clic a la
+                          sugerencia porque Enter no la aceptaba. Eso era cierto
+                          cuando se escribió, y ya no: se comprobó que con ↓ y
+                          Enter se acepta. Un consejo que describe un error
+                          arreglado hace perder más tiempo que no tener consejo. */}
+                      <b>Lo que más confunde:</b> al escribir un producto, <b>Enter a secas</b>{" "}
+                      respeta lo que escribiste y pasa a la cantidad. Para tomar la sugerencia
+                      hay que <b>bajar con ↓</b> y ahí sí Enter. Y la etiqueta de color de cada
+                      cotización (Borrador, Enviada…) <b>es un menú</b>: se toca para cambiar
+                      el estado.
                     </Text>
                   </Box>
 

@@ -27,6 +27,7 @@ import {
 } from "react-icons/fi";
 import AppLogo from "../components/AppLogo";
 import { TABS_BAR_H } from "../components/TabsBar";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import { useCotizaciones } from "../hooks/useCotizaciones";
 import {
   loadEmpresaLocal, saveEmpresaLocal, DEFAULT_EMPRESA, AVISO_LATERAL,
@@ -60,7 +61,8 @@ export default function PerfilPage() {
   const toast = useToast();
   const logoRef = useRef();
   const { tabs } = useCotizaciones();
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Debajo de la tira de pestañas Y de la navegación principal */
+  const topOffset = useOffsetSuperior(tabs.length > 0);
 
   const bg      = useColorModeValue("gray.50", "gray.900");
   const barBg   = useColorModeValue("white", "gray.800");
@@ -165,7 +167,8 @@ export default function PerfilPage() {
         </Flex>
       </Box>
 
-      <Box maxW="1000px" mx="auto" px={{ base: 3, md: 6 }} py={{ base: 4, md: 6 }}>
+      <Box maxW="1000px" mx="auto" px={{ base: 3, md: 6 }}
+        pt={{ base: 4, md: 6 }} pb={{ base: `calc(${NAV_MOVIL_H} + 24px)`, md: 6 }}>
         <Text fontSize="13px" color={muted} mb={4}>
           Estos datos salen en el encabezado de todas las cotizaciones. Se
           escriben una sola vez y se guardan solos.

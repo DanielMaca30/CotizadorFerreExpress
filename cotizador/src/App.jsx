@@ -7,12 +7,14 @@ const CotizadorPage = lazy(() => import("./pages/CotizadorPage"));
 const HistorialPage = lazy(() => import("./pages/HistorialPage"));
 const ClientePage   = lazy(() => import("./pages/ClientePage"));
 const PerfilPage    = lazy(() => import("./pages/PerfilPage"));
+const ClientesPage  = lazy(() => import("./pages/ClientesPage"));
 import TabsBar from "./components/TabsBar";
 import AvisoGuardado from "./components/AvisoGuardado";
 import PuertaAcceso from "./components/PuertaAcceso";
 import AyudaApp from "./components/AyudaApp";
 const AyudaPage = lazy(() => import("./pages/AyudaPage"));
 import RecorridoGuiado from "./components/RecorridoGuiado";
+import NavegacionPrincipal from "./components/NavegacionPrincipal";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
 /* ── Tema FerreExpress ──────────────────────────────────── */
@@ -77,6 +79,10 @@ function Layout() {
     <Box minH="100vh">
       <AvisoGuardado />
       <TabsBar />
+      {/* El mapa del sistema, en el mismo sitio en todas las pantallas.
+          Va aquí, fuera de las rutas, para que no parpadee al cambiar de
+          pantalla y para que sea imposible quedarse sin salida. */}
+      <NavegacionPrincipal />
       <Suspense fallback={<Cargando />}>
         <Outlet />
       </Suspense>
@@ -107,6 +113,7 @@ export default function App() {
                   <Route path="/cotizador/:id"    element={<CotizadorPage />} />
                   <Route path="/historial"        element={<HistorialPage />} />
                   <Route path="/ayuda"            element={<AyudaPage />} />
+                  <Route path="/clientes"         element={<ClientesPage />} />
                   <Route path="/cliente/:nombre"  element={<ClientePage />} />
                   <Route path="/perfil"           element={<PerfilPage />} />
                   <Route path="*"                 element={<Navigate to="/historial" replace />} />

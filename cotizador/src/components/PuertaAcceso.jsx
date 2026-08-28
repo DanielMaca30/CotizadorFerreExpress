@@ -21,6 +21,7 @@ import {
   InputRightElement, IconButton, useColorModeValue,
 } from "@chakra-ui/react";
 import { FiLock, FiEye, FiEyeOff } from "react-icons/fi";
+import AppLogo from "./AppLogo";
 
 const FY   = "#F9BF20";
 const DARK = "#3A3A38";
@@ -60,9 +61,7 @@ export default function PuertaAcceso({ children }) {
         boxShadow="0 8px 40px rgba(0,0,0,0.12)" border="1px solid" borderColor={borde}>
         <Stack spacing={5} as="form" onSubmit={entrar}>
           <Flex align="center" gap={3}>
-            <Box bg={FY} rounded="lg" px={3} py={2}>
-              <Text fontWeight="900" color={DARK} fontSize="lg" lineHeight="1">FE</Text>
-            </Box>
+            <AppLogo variante="marca" h="42px" />
             <Box>
               <Text fontWeight="900" fontSize="lg" lineHeight="1.2">FerreExpress</Text>
               <Text fontSize="11px" color={muted}>Cotizador interno</Text>

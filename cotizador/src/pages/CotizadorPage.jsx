@@ -25,6 +25,7 @@ import {
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
   Kbd, Progress, Collapse, useMediaQuery,
+  Menu, MenuButton, MenuList, MenuItem, MenuDivider,
 } from '@chakra-ui/react';
 import {
   FiPlus, FiTrash2, FiSave, FiDownload, FiEye,
@@ -33,6 +34,7 @@ import {
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
   FiEdit2, FiX, FiMaximize2, FiTruck,
   FiCornerUpLeft, FiCornerUpRight, FiHelpCircle,
+  FiArrowLeft, FiMoreVertical, FiCheckCircle,
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,6 +53,7 @@ import ImportModal from '../components/ImportModal';
 import ListaRapidaProductos from '../components/ListaRapidaProductos';
 import ModalConvertirTipo from '../components/ModalConvertirTipo';
 import { TABS_BAR_H } from '../components/TabsBar';
+import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import {
   blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
   precioBase, ivaUnidad, formatPriceCO, parsePriceCO, esTransporte,
@@ -272,7 +275,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
         onChange={e => {
           const file = e.target.files?.[0];
           if (!file) return;
-          if (file.size > 2 * 1024 * 1024) { onLogoError?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, position: 'top' }); return; }
+          if (file.size > 2 * 1024 * 1024) { onLogoError?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, ...AVISO_LATERAL }); return; }
           const reader = new FileReader();
           reader.onload = ev => setEmpresa(p => ({ ...p, logo: ev.target.result }));
           reader.readAsDataURL(file);
@@ -915,7 +918,8 @@ export default function CotizadorPage() {
   } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Debajo de la tira de pestañas Y de la navegación principal */
+  const topOffset = useOffsetSuperior(tabs.length > 0);
   const { downloadPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
   const { getSugerencias } = useProductosFrecuentes();
   const { getClientes } = useClientesFrecuentes();
@@ -1574,7 +1578,7 @@ export default function CotizadorPage() {
 
   const handleSave = useCallback(async () => {
     if (!items.some(r => r.desc?.trim())) {
-      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 4000, position: 'top' });
+      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 4000, ...AVISO_LATERAL });
       return null;
     }
     setIsSaving(true);
@@ -1701,7 +1705,7 @@ export default function CotizadorPage() {
 
   const handlePDF = useCallback(async () => {
     if (!items.some(r => r.desc?.trim())) {
-      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, position: 'top' });
+      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, ...AVISO_LATERAL });
       return;
     }
     if (faltantesCliente.length) { setShowFaltantes(true); return; }
@@ -1919,16 +1923,26 @@ export default function CotizadorPage() {
         <Flex maxW="1600px" mx="auto" px={{ base: 3, md: 5 }}
           h={{ base: 'auto', md: '54px' }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
-          <HStack spacing={2}>
-            {/* El logo es el atajo a Mi perfil: es justo lo que uno toca
-                cuando quiere cambiar el membrete. */}
-            <Tooltip label="Mi perfil — datos de la empresa" hasArrow>
-              <Box as="button" type="button" display="flex" alignItems="center"
-                onClick={() => safeNavigate('/perfil')} rounded="md"
-                _hover={{ opacity: 0.7 }} aria-label="Ir a Mi perfil">
-                <AppLogo src={empresa.logo} h="30px" />
-              </Box>
+          {/* ── IZQUIERDA: DÓNDE ESTOY Y CÓMO SALGO ──
+              Lo único que devolvía al listado era la «×» de la pestaña,
+              rotulada «Cerrar Nueva»: se lee como «botar lo que llevo»,
+              no como «volver». Quien entraba a una cotización se quedaba
+              ahí. Ahora la salida está de primera, escrita con todas sus
+              letras, y guarda antes de salir. */}
+          <HStack spacing={2} minW={0}>
+            {/* La marca va primero, como en las demás pantallas. En el
+                celular la barra de navegación está abajo y no la lleva,
+                así que sin esto el cotizador era la única pantalla sin
+                logo — justo donde más rato se pasa. */}
+            <AppLogo variante="marca" h="26px" />
+            <Tooltip label="Volver al listado de cotizaciones (se guarda lo que llevas)" hasArrow openDelay={500}>
+              <Button size="sm" variant="ghost" colorScheme="gray" rounded="md"
+                h={{ base: '38px', md: '32px' }} px={2}
+                leftIcon={<FiArrowLeft />} onClick={() => safeNavigate('/historial')}>
+                <Text fontSize="13px">Cotizaciones</Text>
+              </Button>
             </Tooltip>
+            <Box h="20px" w="1px" bg={border} display={{ base: 'none', sm: 'block' }} />
             {cotConfig.numero
               ? <Badge bg={FY} color={DARK} rounded="full" fontSize="10px" px={3} fontWeight="700">{cotConfig.numero}</Badge>
               : <Tag size="sm" colorScheme="gray" rounded="full">Nueva</Tag>}
@@ -1940,73 +1954,108 @@ export default function CotizadorPage() {
                 {esObra ? 'OBRA' : 'COMERCIAL'} ⇄
               </Badge>
             </Tooltip>
-            {hasChanges && (
-              <HStack spacing={1}>
+            {/* Estado de guardado, SIEMPRE visible — antes solo aparecía el
+                aviso naranja y nunca la confirmación de que ya estaba a
+                salvo, así que la duda quedaba sin resolver. */}
+            {hasChanges ? (
+              <HStack spacing={1} title="Hay cambios sin guardar">
                 <Icon as={FiAlertCircle} color="orange.400" boxSize={3} />
-                <Text fontSize="10px" color="orange.500" fontWeight="600" display={{ base: 'none', md: 'block' }}>Sin guardar</Text>
+                <Text fontSize="10px" color="orange.500" fontWeight="700">Sin guardar</Text>
               </HStack>
-            )}
+            ) : (editingId && (
+              <HStack spacing={1} title="Todo lo que hiciste está guardado">
+                <Icon as={FiCheckCircle} color="green.400" boxSize={3} />
+                <Text fontSize="10px" color="green.500" fontWeight="700">Guardado</Text>
+              </HStack>
+            ))}
           </HStack>
           <HStack spacing={1} flexWrap="wrap">
             <Text fontSize="12px" fontWeight="700" color={totalColor}
               display={{ base: 'none', lg: 'block' }} mr={1}>
               {money(totals.totalPagar, cotConfig.moneda)}
             </Text>
-            {/* Import */}
-            <Tooltip label="Importar desde PDF / imagen / CSV" hasArrow>
-              <Button size="sm" variant="outline" rounded="md" leftIcon={<FiUpload size={13} />}
-                onClick={() => setShowImport(true)}
-                display={{ base: 'none', sm: 'flex' }}>
-                Importar
-              </Button>
-            </Tooltip>
-            {/* Deshacer visible: el atajo solo lo conoce quien ya lo probó */}
-            <Tooltip label={<HStack><Text>Deshacer</Text><Kbd fontSize="10px">Ctrl+Z</Kbd></HStack>} hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md" aria-label="Deshacer"
-                icon={<FiCornerUpLeft />} isDisabled={!hist.puedeDeshacer}
-                onClick={() => hist.deshacer()} />
-            </Tooltip>
-            <Tooltip label={<HStack><Text>Rehacer</Text><Kbd fontSize="10px">Ctrl+Shift+Z</Kbd></HStack>} hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md" aria-label="Rehacer"
-                icon={<FiCornerUpRight />} isDisabled={!hist.puedeRehacer}
-                onClick={() => hist.rehacer()} display={{ base: 'none', md: 'inline-flex' }} />
-            </Tooltip>
-            <Tooltip label="Historial" hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md" aria-label="Historial"
-                icon={<FiList />} onClick={() => safeNavigate('/historial')} />
-            </Tooltip>
-            {editingId && (
-              <Tooltip label="Duplicar cotización" hasArrow>
-                <IconButton size="sm" variant="outline" rounded="md" aria-label="Duplicar"
-                  icon={<FiCopy />} onClick={handleDuplicate} />
+            {/* ── DESHACER / REHACER, JUNTOS Y PEGADOS ──
+                Son un par: se leen como una sola cosa cuando comparten
+                borde. Sueltos entre otros cinco botones grises iguales,
+                había que acertar cuál era cuál. */}
+            <HStack spacing={0} border="1px solid" borderColor={border} rounded="md" overflow="hidden">
+              <Tooltip label={<HStack><Text>Deshacer</Text><Kbd fontSize="10px">Ctrl+Z</Kbd></HStack>} hasArrow>
+                <IconButton size="sm" variant="ghost" colorScheme="gray" rounded="none"
+                  aria-label="Deshacer el último cambio"
+                  icon={<FiCornerUpLeft />} isDisabled={!hist.puedeDeshacer}
+                  onClick={() => hist.deshacer()} />
               </Tooltip>
-            )}
-            <Tooltip label="Nueva cotización" hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md" aria-label="Nueva"
-                icon={<FiRefreshCw />} onClick={handleClear} />
-            </Tooltip>
-            {editingId && (
-              <Tooltip label="Eliminar" hasArrow>
-                <IconButton size="sm" colorScheme="red" variant="ghost" rounded="md"
-                  aria-label="Eliminar" icon={<FiTrash2 />} onClick={onDelOpen} />
+              <Box w="1px" h="20px" bg={border} />
+              <Tooltip label={<HStack><Text>Rehacer</Text><Kbd fontSize="10px">Ctrl+Shift+Z</Kbd></HStack>} hasArrow>
+                <IconButton size="sm" variant="ghost" colorScheme="gray" rounded="none"
+                  aria-label="Rehacer el cambio deshecho"
+                  icon={<FiCornerUpRight />} isDisabled={!hist.puedeRehacer}
+                  onClick={() => hist.rehacer()} />
               </Tooltip>
-            )}
-            <Button data-tour="vista-previa" size="sm" variant="outline" rounded="md" leftIcon={<FiEye />}
-              onClick={() => safeNavigate('preview')}>
-              <Text display={{ base: 'none', md: 'block' }}>Vista previa</Text>
-              <Text display={{ base: 'block', md: 'none' }}>Ver</Text>
-            </Button>
-            <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
-              isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
-              PDF
-            </Button>
-            <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
-              <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
-                rounded="md" fontWeight="700" leftIcon={<FiSave />} isLoading={isSaving}
-                _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
-                {editingId ? 'Actualizar' : 'Guardar'}
+            </HStack>
+
+            {/* ── TODO LO DEMÁS, CON SU NOMBRE ESCRITO ──
+                Aquí había cinco botones grises idénticos sin una letra:
+                Importar, Historial, Duplicar, Nueva y Eliminar. Dos de
+                ellos hacían cosas irreversibles, y el del ícono de
+                recargar (↻) rotulado «Nueva» en realidad BORRABA lo que
+                estabas escribiendo. Ahora todos viven en un menú donde
+                cada uno dice lo que hace, y los que destruyen trabajo
+                están abajo, separados y en rojo. */}
+            <Menu isLazy placement="bottom-end">
+              <Tooltip label="Más acciones de esta cotización" hasArrow>
+                <MenuButton as={IconButton} size="sm" variant="outline" colorScheme="gray"
+                  rounded="md" aria-label="Más acciones de esta cotización"
+                  icon={<FiMoreVertical />} />
+              </Tooltip>
+              <MenuList fontSize="13px" zIndex={300}>
+                <MenuItem icon={<FiUpload size={13} />} onClick={() => setShowImport(true)}
+                  command="PDF · foto · Excel">
+                  Importar productos
+                </MenuItem>
+                <MenuItem icon={esObra ? <FiShoppingCart size={13} /> : <FiTool size={13} />}
+                  onClick={() => setShowConvertir(true)}>
+                  Convertir a {esObra ? 'Comercial' : 'Obra'}
+                </MenuItem>
+                {editingId && (
+                  <MenuItem icon={<FiCopy size={13} />} onClick={handleDuplicate}
+                    command="con productos">
+                    Duplicar esta cotización
+                  </MenuItem>
+                )}
+                <MenuDivider />
+                <MenuItem icon={<FiRefreshCw size={13} />} onClick={handleClear}>
+                  Vaciar y empezar otra en blanco
+                </MenuItem>
+                {editingId && (
+                  <MenuItem icon={<FiTrash2 size={13} />} color="red.500" onClick={onDelOpen}>
+                    Eliminar esta cotización
+                  </MenuItem>
+                )}
+              </MenuList>
+            </Menu>
+            {/* En el celular estos tres no van aquí: están abajo, en la
+                barra fija, donde llega el pulgar. Repetirlos arriba no
+                daba una opción más — le quitaba sitio al nombre de la
+                salida, que es lo que de verdad hacía falta ver. */}
+            {!esCelular && (<>
+              <Button data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray"
+                rounded="md" leftIcon={<FiEye />}
+                onClick={() => safeNavigate('preview')}>
+                Vista previa
               </Button>
-            </Tooltip>
+              <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
+                isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
+                PDF
+              </Button>
+              <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
+                <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
+                  rounded="md" fontWeight="700" leftIcon={<FiSave />} isLoading={isSaving}
+                  _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
+                  {editingId ? 'Actualizar' : 'Guardar'}
+                </Button>
+              </Tooltip>
+            </>)}
           </HStack>
         </Flex>
       </Box>
@@ -2017,7 +2066,11 @@ export default function CotizadorPage() {
         {esEscritorio && (
         <Box display="grid"
           gridTemplateColumns="272px 1fr 276px" gap={4}
-          h="calc(100vh - 80px)" overflow="hidden">
+          /* Se descuenta lo que ocupan las barras fijas de arriba: la de
+             navegación, la tira de pestañas (si hay) y la de la propia
+             cotización. Sin esto la columna del resumen se salía por
+             abajo y «Guardar» quedaba debajo del botón de ayuda. */
+          h={`calc(100vh - 80px - ${topOffset})`} overflow="hidden">
 
           {/* Col 1: Formularios */}
           <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column">
@@ -2147,7 +2200,9 @@ export default function CotizadorPage() {
 
         {/* ═══ CELULAR (<md) — PASOS + LISTA RÁPIDA ═══ */}
         {esCelular && (
-        <Box display="flex" flexDirection="column" pb="96px">
+        /* Sitio para las dos barras fijas de abajo: la del total con
+           Ver/PDF/Guardar y, debajo, la de navegación. */
+        <Box display="flex" flexDirection="column" pb={`calc(${NAV_MOVIL_H} + 96px)`}>
 
           {/* Tab bar mobile */}
           <Flex bg={barBg} border="1px solid" borderColor={border}
@@ -2266,24 +2321,27 @@ export default function CotizadorPage() {
         )}
       </Box>
 
-      {/* ═══ BARRA FIJA DE ABAJO (celular) ═══ */}
+      {/* ═══ BARRA FIJA DE ABAJO (celular) ═══
+          Se apoya SOBRE la barra de navegación, no encima de ella: son
+          dos cosas distintas y las dos tienen que poder tocarse. Esta es
+          para trabajar en la cotización; la de abajo, para irse a otra
+          parte. El «Importar» salió de aquí al menú de arriba: se usa una
+          vez cada tanto y le estaba quitando ancho a Guardar. */}
       {esCelular && (
-      <Box display="flex" position="fixed" bottom={0} left={0} right={0}
+      <Box display="flex" position="fixed" bottom={NAV_MOVIL_H} left={0} right={0}
         bg={barBg} borderTop="1px solid" borderColor={border}
-        px={4} py={3} gap={2} zIndex={200} boxShadow="0 -4px 16px rgba(0,0,0,0.08)">
-        <Box flex={1}>
+        px={3} py={2.5} gap={2} zIndex={200} boxShadow="0 -4px 16px rgba(0,0,0,0.08)">
+        <Box flex={1} minW={0}>
           <Text fontSize="9px" color={mutedL} textTransform="uppercase" letterSpacing="wider">Total</Text>
-          <Text fontSize="16px" fontWeight="900" color={FY} lineHeight="1.2">
+          <Text fontSize="16px" fontWeight="900" color={FY} lineHeight="1.2" noOfLines={1}>
             {money(totals.totalPagar, cotConfig.moneda)}
           </Text>
         </Box>
-        <IconButton size="sm" variant="outline" rounded="lg" aria-label="Importar"
-          icon={<FiUpload size={14} />} onClick={() => setShowImport(true)} />
-        <Button size="sm" variant="outline" rounded="lg" leftIcon={<FiEye size={14} />}
+        <Button data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg" leftIcon={<FiEye size={14} />}
           onClick={() => safeNavigate('preview')}>Ver</Button>
-        <Button size="sm" bg={DARK} color={FY} rounded="lg" leftIcon={<FiDownload size={14} />}
+        <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="lg" leftIcon={<FiDownload size={14} />}
           isLoading={pdfLoading} onClick={handlePDF} _hover={{ bg: '#2a2a28' }}>PDF</Button>
-        <Button size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
+        <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
           rounded="lg" fontWeight="700" leftIcon={<FiSave size={14} />}
           isLoading={isSaving} onClick={handleSave}
           _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }}>

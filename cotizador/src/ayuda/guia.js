@@ -56,7 +56,7 @@ export const TEMAS = [
     ojo: [
       'Los tres primeros recuadros (Total, Enviadas, Aceptadas) SON BOTONES aunque no lo parezcan: al tocarlos filtran la lista. El cuarto, "Valor total", no hace nada al tocarlo.',
       "Los cuatro números corresponden a lo que estás viendo: si filtras o buscas, cambian con la lista. Cuando hay un filtro puesto, el primer recuadro dice «En pantalla» y debajo aclara cuántas hay en total.",
-      "Para volver aquí desde cualquier parte: el ícono de hoja en la barra de pestañas de arriba, o el botón de ayuda → «Ir al listado».",
+      "Para volver aquí desde cualquier parte: toca «Cotizaciones» en la barra de navegación — abajo en el celular, arriba en el computador. Esa barra está en todas las pantallas.",
     ],
     claves: ["listado", "historial", "pantalla principal", "inicio", "menu principal", "donde estan las cotizaciones", "ver todas"],
   },
@@ -450,7 +450,7 @@ export const TEMAS = [
       "Para saltar de una a otra: haz clic en la pestaña. Lo que tenías sin guardar se guarda solo antes de cambiar.",
       'Para cerrar una: la "×" pequeña de la pestaña (o clic con la rueda del mouse encima).',
       'El "+" del extremo derecho abre una cotización nueva sin cerrar las que tienes.',
-      "El ícono de hoja, al lado, vuelve al listado sin cerrar nada.",
+      "Para salir sin cerrar nada: «← Cotizaciones», arriba a la izquierda del editor. Guarda lo que lleves antes de irse.",
       'El menú ⋮ del final trae "Cerrar las demás" y "Cerrar todas".',
     ],
     ojo: [
@@ -470,10 +470,10 @@ export const TEMAS = [
     titulo: "Importar desde un PDF, una foto o un Excel",
     dificultad: 3,
     resumen: "Lee una cotización que ya existe y llena la tabla sola. Hay que revisarla siempre antes de confirmar.",
-    directa: "Botón **«Importar»** en el cotizador: acepta PDF, foto de una lista y Excel/CSV.",
+    directa: "Botón **«Importar»** encima de la lista de productos, o el menú **⋮** de la barra de arriba → «Importar productos». Acepta PDF, foto de una lista y Excel/CSV.",
     ir: "/cotizador",
     pasos: [
-      'En el editor, toca el botón "Importar" (barra de arriba o encima de la tabla).',
+      'En el editor hay dos sitios: el botón "Importar" que está encima de la lista de productos, o el menú "⋮" de la barra de arriba → "Importar productos".',
       "Arrastra el archivo al recuadro punteado, o haz clic para buscarlo en el computador.",
       "Espera mientras lo procesa. Con una foto puede tardar entre 15 y 30 segundos.",
       "Aparece la pantalla de revisión: los datos del cliente arriba y los productos abajo, todo editable.",
@@ -624,10 +624,10 @@ export const TEMAS = [
     titulo: "Cambiar los datos de la ferretería (Mi perfil)",
     dificultad: 1,
     resumen: "El nombre, el NIT, la dirección, el teléfono y el logo que salen en el encabezado de todas las cotizaciones.",
-    directa: "Están en **Mi perfil**: el botón del engranaje arriba en el listado, o tocando el logo dentro del cotizador. Se guardan solos.",
+    directa: "Están en **Mi perfil**, en la barra de navegación: abajo del todo en el celular, y arriba a la derecha en el computador. Se guardan solos.",
     ir: "/perfil",
     pasos: [
-      "En el listado, toca el botón del engranaje que está arriba a la derecha (al lado de «Nueva cotización»).",
+      "Toca «Perfil» en la barra de navegación: en el celular es el último de la fila de abajo; en el computador está arriba a la derecha, con el engranaje.",
       "Ahí están todos los datos de la ferretería: nombre, NIT, ciudad, dirección, teléfono y correo.",
       "Cámbialos y ya: se guardan solos con cada letra, no hay botón de guardar.",
       'Para el logo: "Cargar logo" y eliges la imagen del computador o del celular.',

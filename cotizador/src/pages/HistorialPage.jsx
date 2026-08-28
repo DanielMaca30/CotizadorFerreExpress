@@ -38,7 +38,9 @@ import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
 import { useListaProgresiva } from "../hooks/useListaProgresiva";
 import { TABS_BAR_H }        from "../components/TabsBar";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
+import AppLogo              from "../components/AppLogo";
 import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU, AVISO_LATERAL } from "../utils";
 
 /* ─── Preferencias de vista (se recuerdan entre sesiones) ─── */
@@ -509,7 +511,8 @@ export default function HistorialPage() {
     convertirCotizacion, openTab, tabs, nubeActiva, syncing, sync } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Debajo de la tira de pestañas Y de la navegación principal */
+  const topOffset = useOffsetSuperior(tabs.length > 0);
   const { downloadPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
 
   const [prefs0] = useState(loadPrefs);   // preferencias guardadas, leídas una sola vez
@@ -858,9 +861,7 @@ export default function HistorialPage() {
           h={{ base: "auto", md: "54px" }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
           <HStack spacing={2}>
-            <Box bg={FY} rounded="md" px={2} py="3px">
-              <Text fontWeight="900" color={DARK} fontSize="sm" lineHeight="1.4">FE</Text>
-            </Box>
+            <AppLogo variante="marca" h="28px" />
             <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}
               display={{ base: "none", sm: "block" }}>Cotizaciones</Text>
             <Tag size="sm" colorScheme="gray" rounded="full">{cotizaciones.length}</Tag>
@@ -875,12 +876,11 @@ export default function HistorialPage() {
             )}
           </HStack>
           <HStack>
-            <Tooltip label="Mi perfil — datos de la empresa" hasArrow>
-              <IconButton size="sm" variant="outline" rounded="md" colorScheme="gray"
-                h={{ base: "38px", md: "32px" }} w={{ base: "38px", md: "32px" }} minW="unset"
-                icon={<FiSettings />} aria-label="Mi perfil"
-                onClick={() => navigate("/perfil")} />
-            </Tooltip>
+            {/* Aquí había un engranaje suelto para Mi perfil. Se quitó:
+                ahora está en la barra de navegación, con su nombre
+                escrito y desde cualquier pantalla. Dos caminos al mismo
+                sitio, uno con letras y otro sin ellas, es la clase de
+                duda que hace dudar antes de tocar. */}
             {!esCelular && (
               <Tooltip label={viewMode === "tabla" ? "Vista tarjetas" : "Vista tabla"} hasArrow>
                 <IconButton size="sm" variant="outline" rounded="md"
@@ -899,10 +899,11 @@ export default function HistorialPage() {
         </Flex>
       </Box>
 
-      {/* Abajo se reserva sitio: ahí flota el botón de ayuda y si no, le
-          tapa las acciones a la última cotización de la lista. */}
+      {/* Abajo se reserva sitio para dos cosas fijas: la barra de
+          navegación del celular y el botón redondo de ayuda. Sin esto le
+          tapan las acciones a la última cotización de la lista. */}
       <Box maxW="1200px" mx="auto" px={{ base: 3, md: 6 }}
-        pt={{ base: 4, md: 6 }} pb={{ base: "88px", md: 6 }}>
+        pt={{ base: 4, md: 6 }} pb={{ base: `calc(${NAV_MOVIL_H} + 88px)`, md: 6 }}>
 
         {/* KPIs — clic para filtrar por estado.
             En celular van en la tira compacta de arriba. */}

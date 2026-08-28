@@ -192,12 +192,10 @@ export default function TabsBar() {
                 onClick={() => { openTab(NEW_TAB_ID); irA(NEW_TAB_ID); }} />
             </Tooltip>
           )}
-          <Tooltip label="Ir al historial" hasArrow>
-            <IconButton size="xs" variant="ghost" rounded="md"
-              color={location.pathname === "/historial" ? FY : muted}
-              aria-label="Historial" icon={<FiFileText size={13} />}
-              onClick={() => navigate("/historial")} />
-          </Tooltip>
+          {/* Aquí había un botón «Historial». Se quitó: la navegación
+              principal, justo debajo, ya tiene «Cotizaciones» con su
+              nombre escrito. Dos botones distintos llamados igual, uno
+              encima del otro, obligaban a probar cuál era cuál. */}
           <Menu isLazy placement="bottom-end">
             <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md" color={muted}
               aria-label="Opciones de pestañas" icon={<FiMoreVertical size={13} />} />
