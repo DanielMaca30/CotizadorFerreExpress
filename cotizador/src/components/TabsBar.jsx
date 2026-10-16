@@ -14,6 +14,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Flex, HStack, Text, Icon, Tooltip, CloseButton, IconButton,
   Menu, MenuList, MenuItem, MenuButton, MenuDivider, useColorModeValue,
+ useMediaQuery,
 } from "@chakra-ui/react";
 import { FiFileText, FiPlus, FiMoreVertical } from "react-icons/fi";
 import { useCotizaciones, NEW_TAB_ID } from "../context/cotizacionesContext";
@@ -85,6 +86,11 @@ export default function TabsBar() {
   } = useCotizaciones();
 
   const [navegando, setNavegando] = useState(false);
+  /* En el celular no se muestra: pestañas tipo navegador en una pantalla
+     de 390 px se leían como basura arriba ("Nueva · sin guardar ×") y le
+     quitaban espacio al trabajo. Allí se cambia de cotización desde el
+     listado. Las pestañas siguen funcionando por debajo (autoguardado). */
+  const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
   const scrollRef = useRef(null);
 
   const bg     = useColorModeValue("gray.100", "gray.900");
@@ -151,7 +157,7 @@ export default function TabsBar() {
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, tabs.length]);
 
-  if (!tabs.length) return null;
+  if (!tabs.length || esCelular) return null;
 
   return (
     <Box bg={bg} borderBottom="1px solid" borderColor={border}

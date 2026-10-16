@@ -8,7 +8,7 @@
  * El contenido sale de src/ayuda/guia.js — aquí no se escribe texto
  * de la guía, para que no queden dos versiones distintas.
  */
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Flex, HStack, Stack, Text, Icon, IconButton, Tooltip,
@@ -48,27 +48,13 @@ export default function AyudaApp() {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
   const [tab, setTab] = useState(0);
-  /* En el celular, mientras alguien escribe, el botón flotante estorba:
-     se le monta encima a los botones de la lista de productos. Se quita
-     solo mientras hay una casilla activa y vuelve al terminar. */
-  const [escribiendo, setEscribiendo] = useState(false);
-  useEffect(() => {
-    const esCampo = (el) => !!el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
-    const entra = (e) => { if (esCampo(e.target)) setEscribiendo(true); };
-    const sale = () => setTimeout(() => {
-      setEscribiendo(esCampo(document.activeElement));
-    }, 80);
-    document.addEventListener("focusin", entra);
-    document.addEventListener("focusout", sale);
-    return () => {
-      document.removeEventListener("focusin", entra);
-      document.removeEventListener("focusout", sale);
-    };
-  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const cardBg = useColorModeValue("white", "gray.800");
   const muted = useColorModeValue("gray.600", "gray.400");
+  /* Antes este color se pedía dentro del JSX, después del "return null"
+     de /ayuda: React se queja si un hook no se llama siempre igual. */
+  const avisoBg = useColorModeValue("orange.50", "whiteAlpha.100");
 
   // En la propia guía el botón sobra
   if (location.pathname === "/ayuda") return null;
@@ -91,7 +77,10 @@ export default function AyudaApp() {
              sin esto se le monta justo al botón de Guardar. */
           bottom={{ base: enCotizador ? `calc(${NAV_MOVIL_H} + 104px)` : `calc(${NAV_MOVIL_H} + 12px)`, md: 6 }}
           right={{ base: 4, md: 6 }}
-          display={{ base: escribiendo && !isOpen ? "none" : "inline-flex", md: "inline-flex" }}
+          /* En el celular no va: la barra de abajo ya tiene «Ayuda» y el
+             botón flotante tapaba precios, casillas y la última tarjeta
+             del listado en todas las pantallas. */
+          display={{ base: "none", md: "inline-flex" }}
           zIndex={500}
           /* En el celular va más pequeño: el grande tapaba precios y
              casillas al pasar la lista. Ayuda también está en la barra de abajo. */
@@ -167,7 +156,7 @@ export default function AyudaApp() {
                     </Paso>
                   </Stack>
 
-                  <Box bg={useColorModeValue("orange.50", "whiteAlpha.100")} rounded="lg" p={3} mt={3}>
+                  <Box bg={avisoBg} rounded="lg" p={3} mt={3}>
                     <Text fontSize="11.5px" color={muted} lineHeight="1.6">
                       {/* Este recuadro decía que había que hacerle clic a la
                           sugerencia porque Enter no la aceptaba. Eso era cierto

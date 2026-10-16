@@ -32,7 +32,8 @@ import {
 } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
-import { usePDF }           from "../hooks/usePDF";
+import { usePDF, compartirArchivo } from "../hooks/usePDF";
+import { FaWhatsapp }       from "react-icons/fa";
 import DocContent          from "../components/DocContent";
 import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
@@ -81,6 +82,16 @@ const fmtRelativa = (iso) => {
 
 const getTotal   = (cot) => cot.totals?.totalPagar ?? cot.totals?.total ?? 0;
 const getNumero  = (cot) => cot.numero || cot.config?.numero || "—";
+/* Si la búsqueda encontró la cotización por un PRODUCTO (y no por número
+   o cliente), se muestra cuál: sin esto, buscar «cemento» traía una
+   cotización de tejas y no se entendía por qué (era «fibrocemento»). */
+const coincidencia = (cot, term) => {
+  const t = normStr(String(term || "").trim());
+  if (t.length < 2) return "";
+  const cab = normStr([getNumero(cot), cot.cliente?.nombre, cot.cliente?.empresa, cot.cliente?.nit].join(" "));
+  if (cab.includes(t)) return "";
+  return (cot.items || []).find((i) => normStr(i.desc).includes(t))?.desc || "";
+};
 const getEstado  = (cot) => cot.config?.estado || cot.estado || "borrador";
 const getTipo    = (cot) => cot.config?.tipo || "comercial";
 const normStr    = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -172,7 +183,7 @@ function CifrasMovil({ cifras, estado, onEstado, total }) {
       <Flex mt={2} align="baseline" justify="space-between"
         bg={bg} border="1px solid" borderColor={bc} rounded="lg" px={3} py={1.5}>
         <Text fontSize="9px" fontWeight="700" letterSpacing="0.06em"
-          textTransform="uppercase" color={muted}>Valor {total ? "total" : "de lo filtrado"}</Text>
+          textTransform="uppercase" color={muted}>{total ? "Valor cotizado · sin rechazadas" : "Valor de lo filtrado"}</Text>
         <Text fontSize="15px" fontWeight="900" color={FY}>{money(cifras.valor)}</Text>
       </Flex>
     </Box>
@@ -245,6 +256,9 @@ function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, 
       )}
       <MenuItem icon={<FiCopy size={13} />}  onClick={() => onDuplicate(cot.id)}
         command="con productos">Duplicar</MenuItem>
+      <MenuItem icon={<FaWhatsapp size={13} />} onClick={() => onPDF(cot, "enviar")} isDisabled={pdfDisabled}>
+        Enviar por WhatsApp
+      </MenuItem>
       <MenuItem icon={<FiDownload size={13} />} onClick={() => onPDF(cot)} isDisabled={pdfDisabled}>
         Descargar PDF
       </MenuItem>
@@ -358,8 +372,9 @@ const ACCION_PIE = {
 
 const TarjetaMovil = memo(function TarjetaMovil({
   cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
-  onConvertir, onNuevaMismoCliente,
+  onConvertir, onNuevaMismoCliente, busqueda,
 }) {
+  const encontrado = coincidencia(cot, busqueda);
   const navigate = useNavigate();
   const estado   = getEstado(cot);
   const border   = useColorModeValue("gray.200", "whiteAlpha.200");
@@ -390,6 +405,11 @@ const TarjetaMovil = memo(function TarjetaMovil({
           <Text fontSize="15px" fontWeight="700" noOfLines={1} mt={1}>
             {cot.cliente?.nombre || <Text as="span" color={muted} fontStyle="italic" fontWeight="400">Sin cliente</Text>}
           </Text>
+          {encontrado && (
+            <Text fontSize="12px" color="#8a6d00" noOfLines={1} mt={0.5}>
+              <Icon as={FiSearch} boxSize={3} mr={1} mb="-1px" />{encontrado}
+            </Text>
+          )}
           <Text fontSize="11px" color={muted} mt={0.5}>
             {fmtRelativa(cot.updatedAt)} · {nItems} ítem{nItems !== 1 ? "s" : ""}
           </Text>
@@ -401,10 +421,13 @@ const TarjetaMovil = memo(function TarjetaMovil({
         <Box flex="1" px={1.5} py={0.5} display="flex" alignItems="center" minW={0}>
           <EstadoSelect cot={cot} onCambiar={onCambiarEstado} grande />
         </Box>
-        <IconButton {...ACCION_PIE} color={muted}
-          aria-label="Descargar PDF" icon={<FiDownload size={17} />}
+        {/* Mandarla por WhatsApp es lo que más se hace desde aquí; antes
+            este botón solo descargaba y había que adjuntar a mano.
+            «Descargar PDF» sigue en el menú ⋮. */}
+        <IconButton {...ACCION_PIE} color="#25D366"
+          aria-label="Enviar por WhatsApp" title="Enviar por WhatsApp" icon={<FaWhatsapp size={19} />}
           isDisabled={pdfLoading && pdfCotId === cot.id}
-          onClick={() => onPDF(cot)} />
+          onClick={() => onPDF(cot, "enviar")} />
         {tel && (
           <IconButton {...ACCION_PIE}
             as="a" href={`tel:${tel}`} color="green.500"
@@ -434,10 +457,11 @@ const TarjetaMovil = memo(function TarjetaMovil({
    estado de una sola dejaba de repintar las otras 49. */
 const FilaCotizacion = memo(function FilaCotizacion({
   cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir, onVerCliente,
-  onNuevaMismoCliente,
+  onNuevaMismoCliente, busqueda,
   pdfLoading, pdfCotId, tableBg, stripeBg, hoverBg, border, muted, mutedL,
 }) {
   const navigate = useNavigate();
+  const encontrado = coincidencia(cot, busqueda);
   return (
     <Tr bg={par ? tableBg : stripeBg}
       _hover={{ bg: hoverBg, cursor: "pointer" }}
@@ -463,6 +487,11 @@ const FilaCotizacion = memo(function FilaCotizacion({
         {cot.cliente?.empresa && (
           <Text fontSize="10px" color={muted} noOfLines={1}>{cot.cliente.empresa}</Text>
         )}
+        {encontrado && (
+          <Text fontSize="10.5px" color="#8a6d00" noOfLines={1} mt={0.5}>
+            <Icon as={FiSearch} boxSize={2.5} mr={1} />{encontrado}
+          </Text>
+        )}
       </Td>
       <Td borderColor={border} fontSize="12px" color={muted}>
         <Text title={fmtDateShort(cot.updatedAt?.slice(0, 10))}>{fmtRelativa(cot.updatedAt)}</Text>
@@ -484,6 +513,10 @@ const FilaCotizacion = memo(function FilaCotizacion({
             icon={<FiDownload size={13} />}
             isLoading={pdfLoading && pdfCotId === cot.id}
             onClick={() => onPDF(cot)} />
+          <IconButton size="xs" variant="ghost" rounded="md" aria-label="Enviar por WhatsApp"
+            title="Enviar por WhatsApp" color="#25D366" icon={<FaWhatsapp size={14} />}
+            isDisabled={pdfLoading && pdfCotId === cot.id}
+            onClick={() => onPDF(cot, "enviar")} />
           <Menu isLazy>
             <MenuButton as={IconButton} size="xs" variant="ghost" rounded="md"
               aria-label="Más opciones" icon={<FiMoreVertical size={13} />} />
@@ -513,7 +546,7 @@ export default function HistorialPage() {
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
   /* Debajo de la tira de pestañas Y de la navegación principal */
   const topOffset = useOffsetSuperior(tabs.length > 0);
-  const { downloadPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
+  const { downloadPDF, archivoPDF, loading: pdfLoading } = usePDF("pdf-historial-hidden");
 
   const [prefs0] = useState(loadPrefs);   // preferencias guardadas, leídas una sola vez
 
@@ -554,7 +587,7 @@ export default function HistorialPage() {
   const [toConvert, setToConvert] = useState(null);   // cotización a convertir
   /* Paginación — 5 por defecto para que la vista abra al instante */
   const [pageSize, setPageSize] = useState(
-    Number.isFinite(prefs0.pageSize) ? prefs0.pageSize : 5
+    Number.isFinite(prefs0.pageSize) ? prefs0.pageSize : 10
   );
   const [page,     setPage]     = useState(Number(p0.pag) > 0 ? Number(p0.pag) : 1);
   const searchRef = useRef();
@@ -700,10 +733,12 @@ export default function HistorialPage() {
       const e = getEstado(c);
       if (e === "enviada") enviadas++;
       else if (e === "aceptada") aceptadas++;
-      valor += getTotal(c);
+      /* Las rechazadas no son plata posible: sumarlas inflaba la cifra.
+         Si la persona filtra justamente las rechazadas, sí se suman. */
+      if (e !== "rechazada" || estado === "rechazada") valor += getTotal(c);
     }
     return { total: filtered.length, enviadas, aceptadas, valor };
-  }, [filtered]);
+  }, [filtered, estado]);
 
   const hayFiltro = !!debSearch.trim() || estado !== "todos" || tipo !== "todos" || !!rangoDesde;
 
@@ -799,18 +834,50 @@ export default function HistorialPage() {
     setToConvert(null);
   }, [toConvert, convertirCotizacion, toast]);
 
-  const handlePDF = useCallback(async (cot) => {
+  /* modo "enviar": en vez de descargar, abre el menú de compartir con el
+     PDF adjunto (WhatsApp). Si estaba en borrador, pasa a «Enviada». */
+  const handlePDF = useCallback(async (cot, modo) => {
     setPdfCot(cot);
     // Esperar dos frames para que React renderice el DocContent oculto
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     await new Promise(r => setTimeout(r, 80));
     const cn = ((cot.cliente?.nombre || 'Cliente')).replace(/[^a-zA-Z0-9À-ɏ\s]/g,'').trim().replace(/\s+/g,'_');
     const numero = getNumero(cot) || 'SinNumero';
+    if (modo === "enviar") {
+      const file = await archivoPDF(`${cn}_${numero}`);
+      setPdfCot(null);
+      if (!file) { toast({ title: "Error generando PDF", status: "error", duration: 3000 }); return; }
+      const nombre1 = String(cot.cliente?.nombre || "").trim().split(/\s+/)[0];
+      const texto = `Hola${nombre1 ? " " + nombre1 : ""}, te comparto la cotización ${numero} de ${cot.empresa?.nombre || "FerreExpress"} por ${money(getTotal(cot), cot.config?.moneda || "COP")}. Quedamos atentos.`;
+      const r = await compartirArchivo(file, { texto, tel: cot.cliente?.tel });
+      if (r === "sin-gesto") {
+        toast({
+          duration: 20000, ...AVISO_LATERAL,
+          render: ({ onClose }) => (
+            <Flex bg="#3A3A38" color="white" rounded="lg" p={3} gap={3} align="center" boxShadow="lg">
+              <Text fontSize="13px" flex={1}>El PDF de {numero} está listo.</Text>
+              <Button size="sm" bg="#25D366" color="white" leftIcon={<FaWhatsapp />} _hover={{ bg: "#1ebe5b" }}
+                onClick={() => { onClose(); compartirArchivo(file, { texto, tel: cot.cliente?.tel }); }}>
+                Enviar ahora
+              </Button>
+            </Flex>
+          ),
+        });
+        return;
+      }
+      if (r === "descargado") {
+        toast({ title: "PDF descargado", description: "Se abrió WhatsApp con el mensaje: adjunta el PDF desde Descargas.", status: "info", duration: 6000, ...AVISO_LATERAL });
+      }
+      if ((r === "compartido" || r === "descargado") && getEstado(cot) === "borrador") {
+        cambiarEstado(cot.id, "enviada");
+      }
+      return;
+    }
     const ok = await downloadPDF(`${cn}_${numero}`);
     if (ok) toast({ title: "PDF descargado ✓", status: "success", duration: 2500, ...AVISO_LATERAL });
     else    toast({ title: "Error generando PDF", status: "error", duration: 3000 });
     setPdfCot(null);
-  }, [downloadPDF, toast]);
+  }, [downloadPDF, archivoPDF, cambiarEstado, toast]);
 
   /* Empresa para el PDF: prioriza la guardada en la cotización, fallback a localStorage */
   const empresaParaPDF = useMemo(() => {
@@ -921,9 +988,9 @@ export default function HistorialPage() {
             onClick={() => cambiarEstadoF("enviada")} active={estado === "enviada"} />
           <KpiCard label="Aceptadas" value={cifras.aceptadas} icon={FiCheckCircle} accent="green.400"
             onClick={() => cambiarEstadoF("aceptada")} active={estado === "aceptada"} />
-          <KpiCard label={hayFiltro ? "Valor de lo filtrado" : "Valor total"} value={money(cifras.valor)}
+          <KpiCard label={hayFiltro ? "Valor de lo filtrado" : "Valor cotizado"} value={money(cifras.valor)}
             icon={FiDollarSign} accent={FY}
-            sub={`${cifras.total} ${cifras.total === 1 ? "cotización" : "cotizaciones"}`} />
+            sub={estado === "rechazada" ? `${cifras.total} rechazadas` : "sin contar rechazadas"} />
         </SimpleGrid>
         )}
 
@@ -956,6 +1023,9 @@ export default function HistorialPage() {
               </Button>
             )}
           {(!esCelular || filtrosAbiertos) && (<>
+            {/* En el celular los filtros bajan a su propia fila: antes se
+                acomodaban al lado del buscador y lo dejaban de 40 px. */}
+            {esCelular && <Box flexBasis="100%" h={0} />}
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
               w={{ base: "48%", sm: "125px" }} value={tipo} onChange={(e) => cambiarTipo(e.target.value)}>
               <option value="todos">Todo tipo</option>
@@ -1039,6 +1109,7 @@ export default function HistorialPage() {
                         onCambiarEstado={handleCambiarEstado}
                         onConvertir={handleConvertir}
                         onNuevaMismoCliente={handleNuevaMismoCliente}
+                        busqueda={debSearch}
                       />
                     ))}
                   </VStack>
@@ -1139,6 +1210,7 @@ export default function HistorialPage() {
                           onConvertir={handleConvertir}
                           onVerCliente={handleVerCliente}
                           onNuevaMismoCliente={handleNuevaMismoCliente}
+                          busqueda={debSearch}
                           pdfLoading={pdfLoading}
                           pdfCotId={pdfCot?.id}
                           tableBg={tableBg}

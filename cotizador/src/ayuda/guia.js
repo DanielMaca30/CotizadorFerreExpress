@@ -100,19 +100,19 @@ export const TEMAS = [
     icono: "FiUser",
     titulo: "Llenar los datos del cliente",
     dificultad: 1,
-    resumen: "Nombre, dirección y celular son obligatorios. Si ya le cotizaste antes, el nombre se autocompleta con todo.",
-    directa: "Nombre, dirección de entrega y celular son los tres obligatorios (llevan asterisco rojo). El resto es opcional.",
+    resumen: "Solo el nombre es obligatorio. Celular y dirección, si hay domicilio o se la vas a mandar. Si ya le cotizaste antes, el nombre se autocompleta con todo.",
+    directa: "Solo el **nombre** es obligatorio. El **celular** sirve para mandarle la cotización por WhatsApp y la **dirección** solo hace falta si hay domicilio.",
     ir: "/cotizador",
     pasos: [
       'En el panel de la izquierda, toca la pestaña "CLIENTE".',
       'Empieza a escribir el nombre en "Nombre del cliente". Con una sola letra aparece una lista con los clientes que ya has atendido.',
       "Si tu cliente está en la lista, HAZ CLIC sobre él: se llenan de un golpe dirección, celular, razón social, documento, contacto, correo y ciudad.",
-      'Si es cliente nuevo, escribe a mano la "Dirección de entrega" y el "Celular".',
+      'Si es cliente nuevo, escribe su "Celular" (para mandarle la cotización) y, si hay domicilio, la "Dirección de entrega".',
       'Si el cliente pide factura, llena el recuadro amarillo "Datos para factura": razón social (si es empresa), el documento (toca C.C., NIT o C.E.) y el correo para la factura electrónica. En el documento salen destacados. Si no pide factura, déjalo vacío y sale solo el nombre.',
       'Ciudad y Atención/contacto son opcionales: solo se imprimen si los llenas.',
     ],
     ojo: [
-      "Los tres campos con asterisco rojo (nombre, dirección, celular) son los que hacen falta para el PDF: el documento sirve también de remisión al entregar a domicilio.",
+      "Si la cotización lleva Domicilio (transporte), la app te pide dirección y celular antes del PDF: ahí el documento sirve de remisión. En una venta de mostrador no pregunta nada.",
       "El directorio de clientes SOLO aprende cuando guardas con el botón Guardar (o Ctrl+S). Si sales sin guardar, ese cliente no queda registrado.",
       "Escribe el nombre siempre igual. «Ferretería Central» y «Ferreteria Central S.A.S.» quedan como dos clientes distintos, y luego su historial sale partido en dos.",
       "Si esta vez dejas un campo vacío, no se borra lo que ya estaba guardado de ese cliente: se conserva lo anterior.",
@@ -210,7 +210,7 @@ export const TEMAS = [
     ir: "/cotizador",
     pasos: [
       'Para rebajar UN producto: escribe el porcentaje en la columna "Desc.%" de esa fila.',
-      'Para rebajar TODA la cotización: pestaña "CONFIG" del panel izquierdo, campo "Desc. global (%)".',
+      'Para rebajar TODA la cotización: pestaña "CONDICIONES" del panel izquierdo (en el celular: paso ENVIAR → "Condiciones del documento"), campo "Desc. global (%)".',
       "Los dos aceptan de 0 a 100. Si escribes más, se recorta solo a 100.",
     ],
     ojo: [
@@ -231,7 +231,7 @@ export const TEMAS = [
     directa: "**Ctrl+S**, o el botón «Guardar» del resumen. Además se guarda un borrador solo cada pocos segundos.",
     ir: "/cotizador",
     pasos: [
-      'Toca el botón amarillo "Guardar" arriba a la derecha (dice "Actualizar" si la cotización ya existía).',
+      'Toca el botón amarillo "Guardar" arriba a la derecha (cuando todo está guardado se pone gris y dice "Guardado").',
       'Sale el aviso "Cotización creada ✓" con el número asignado, por ejemplo "Número: COT-032".',
       "Desde ese momento la cotización aparece en el listado y ya se puede buscar.",
     ],
@@ -262,7 +262,7 @@ export const TEMAS = [
     ],
     ojo: [
       "Descargar el PDF GUARDA la cotización primero. O sea que al pedir el PDF ya estás creando la cotización con su número definitivo.",
-      'Si falta el nombre, la dirección o el celular del cliente, sale la ventana "Faltan datos de entrega" con dos botones: "Completar datos" y "Descargar así".',
+      'Si falta el nombre del cliente (o la dirección y el celular cuando hay domicilio), sale la ventana "Faltan datos de entrega" con dos botones: "Completar datos" y "Descargar así".',
       'El botón "Completar datos" te lleva directo a los datos del cliente en cualquier pantalla: en computador y tablet abre la pestaña CLIENTE, y en el celular salta al paso del cliente.',
       "El PDF sale como una imagen de la cotización: se ve idéntico e imprime bien, pero el texto no se puede seleccionar ni copiar desde el PDF.",
       "Si sale «Error generando PDF», vuelve a intentarlo sin cambiar de pestaña del navegador mientras se genera.",
@@ -270,6 +270,29 @@ export const TEMAS = [
     claves: ["pdf", "imprimir", "descargar", "vista previa", "documento", "enviar al cliente", "whatsapp",
       "mandar", "mandarla", "enviar", "compartir", "mandar la cotizacion", "enviar la cotizacion",
       "pasarle la cotizacion", "mandar al cliente", "como se la mando"],
+  },
+
+  {
+    id: "whatsapp",
+    grupo: "Hacer una cotización",
+    icono: "FiSmartphone",
+    titulo: "Mandar la cotización por WhatsApp",
+    dificultad: 1,
+    resumen: "El botón verde «Enviar» guarda, arma el PDF y lo deja listo para mandarlo por WhatsApp.",
+    directa: "Toca el botón verde **«Enviar»** (abajo en el celular, arriba en el computador). Se abre el menú de compartir con el PDF ya adjunto: elige WhatsApp y el chat del cliente.",
+    ir: "/cotizador",
+    pasos: [
+      'En el celular: toca el botón verde "Enviar" de la barra de abajo, o ve al paso ENVIAR y toca "Enviar por WhatsApp".',
+      "Espera un momento mientras se arma el PDF.",
+      "Se abre el menú de compartir del teléfono con el PDF adjunto y un mensaje escrito. Elige WhatsApp y el chat del cliente.",
+      'Desde el listado también se puede: el ícono verde de WhatsApp en cada cotización, o el menú ⋮ → "Enviar por WhatsApp".',
+    ],
+    ojo: [
+      "Si la cotización estaba en Borrador, queda marcada como «Enviada» sola.",
+      "Si el navegador no sabe compartir archivos (algunos computadores), el PDF se descarga y se abre WhatsApp con el chat del cliente y el mensaje escrito: solo falta adjuntar el PDF desde Descargas. Para que abra el chat correcto, el celular del cliente tiene que estar escrito.",
+      'Si sale el aviso «El PDF está listo», toca "Enviar ahora": el teléfono pide un toque nuevo cuando armar el PDF tarda.',
+    ],
+    claves: ["whatsapp", "wasap", "guasap", "enviar", "mandar", "compartir", "mandarla", "mandarsela", "pasarsela", "enviar al cliente"],
   },
 
   /* ═══════════════ OBRA Y AIU ═══════════════ */
@@ -285,7 +308,7 @@ export const TEMAS = [
     pasos: [
       'Crea la cotización eligiendo "Cotización de Obra".',
       "Escribe las actividades y materiales como en cualquier cotización: descripción, cantidad, unidad y valor unitario.",
-      'Ve a la pestaña "CONFIG" del panel izquierdo. Verás el recuadro azul "AIU — Indirectos de Obra".',
+      'Ve a la pestaña "CONDICIONES" del panel izquierdo (en el celular: paso ENVIAR → "Condiciones del documento"). Verás el recuadro azul "AIU — Indirectos de Obra".',
       'Escribe los porcentajes que aplique el trabajo: "Administración (%)", "Imprevistos (%)" y "Utilidad (%)".',
       '"Anticipo (%)" es solo informativo: dice cuánto se pide por adelantado y NO cambia el total.',
       "Mira el resumen: verás Costo Directo, la administración, los imprevistos, la utilidad y el IVA del 19% sobre la utilidad.",
@@ -331,7 +354,7 @@ export const TEMAS = [
     ],
     ojo: [
       "Ni un solo precio se modifica. Lo único que cambia es la máquina que calcula el total.",
-      "La forma de pago cambia sola y sin avisar si la que tenías no existe en el otro tipo (por ejemplo Efectivo pasa a «Anticipo + Actas»). Revísala después en CONFIG.",
+      "La forma de pago cambia sola y sin avisar si la que tenías no existe en el otro tipo (por ejemplo Efectivo pasa a «Anticipo + Actas»). Revísala después en CONDICIONES.",
       "Las notas y condiciones que hayas escrito a mano se respetan. Solo se cambian si seguían siendo las de fábrica.",
       "Se puede devolver convirtiendo otra vez al revés, pero la forma de pago y las notas estándar no se restauran solas.",
       "Después de convertir desde el editor, acuérdate de GUARDAR para que quede aplicado.",
@@ -576,14 +599,14 @@ export const TEMAS = [
     directa: "En celular la lista sale en tarjetas, con los botones grandes: PDF, llamar al cliente, nueva para ese cliente y el menú ⋮.",
     ir: "/historial",
     pasos: [
-      "Arriba verás cuatro pasos: EMPRESA · CLIENTE · PRODUCTOS · CONFIG. Toca el que necesites o usa los botones de avanzar y retroceder.",
+      "Arriba verás tres pasos: CLIENTE · PRODUCTOS · ENVIAR. En ENVIAR está el botón verde «Enviar por WhatsApp», el PDF y, plegadas, las condiciones del documento (fecha, forma de pago, IVA, notas).",
       "En PRODUCTOS no hay tabla: cada producto es una tarjeta. Tócala para abrirla y llenarla.",
       "Abajo, siempre visible, está la barra con el Total, y los botones Ver, PDF y Guardar.",
     ],
     ojo: [
       'Para marcar el domicilio sin IVA, dentro de la tarjeta hay un interruptor que dice "Transporte (sin IVA)".',
       "El botón de Rehacer no aparece en el celular; el de Deshacer sí.",
-      'Para cambiar entre Comercial y Obra en el celular hay que ir al paso CONFIG y tocar la ficha "Comercial ✎" / "Obra ✎".',
+      'Para cambiar entre Comercial y Obra en el celular hay que ir al paso ENVIAR, abrir «Condiciones del documento» y tocar la ficha "Comercial ✎" / "Obra ✎".',
       "Para reordenar productos se arrastra desde los seis puntitos de la tarjeta.",
     ],
     claves: ["celular pantalla", "movil pantalla", "telefono pantalla", "pantalla pequeña"],

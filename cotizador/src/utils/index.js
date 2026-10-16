@@ -428,7 +428,19 @@ export const loadEmpresaLocal = () => {
    aviso los tapaba justo cuando la persona iba a tocarlos. Abajo a la
    izquierda queda libre en las tres disposiciones, y el margen inferior
    lo levanta por encima de la barra fija del celular. */
+/* Dónde salen los avisos ("Guardado ✓", "PDF descargado"…).
+   En el celular abajo están la barra de Total/Ver/PDF/Guardar y la de
+   navegación: el aviso se montaba encima de los botones justo cuando la
+   persona iba a tocarlos. Ahí salen arriba. Se decide en el momento de
+   mostrar el aviso (getters), así sirve aunque giren el teléfono. */
+const esPantallaCelular = () => {
+  try { return window.matchMedia("(max-width: 47.99em)").matches; } catch { return false; }
+};
 export const AVISO_LATERAL = {
-  position: "bottom-left",
-  containerStyle: { marginBottom: "92px", marginLeft: "10px" },
+  get position() { return esPantallaCelular() ? "top" : "bottom-left"; },
+  get containerStyle() {
+    return esPantallaCelular()
+      ? { marginTop: "10px", maxWidth: "calc(100vw - 24px)" }
+      : { marginBottom: "92px", marginLeft: "10px" };
+  },
 };

@@ -21,9 +21,9 @@ import {
 } from "@chakra-ui/react";
 import {
   FiArrowLeft, FiSearch, FiMapPin, FiPhone, FiMail, FiFileText,
-  FiDollarSign, FiPackage, FiEdit2, FiCalendar, FiUser, FiExternalLink,
+  FiDollarSign, FiPackage, FiEdit2, FiCalendar, FiUser, FiExternalLink, FiPlus,
 } from "react-icons/fi";
-import { useCotizaciones } from "../hooks/useCotizaciones";
+import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { useClientesFrecuentes } from "../hooks/useClientesFrecuentes";
 import { TABS_BAR_H } from "../components/TabsBar";
 import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
@@ -50,7 +50,8 @@ function Kpi({ label, value, sub, icon, accent }) {
         <Box minW={0}>
           <Text fontSize="9px" fontWeight="700" letterSpacing="0.12em"
             textTransform="uppercase" color={muted} mb={1}>{label}</Text>
-          <Text fontSize="xl" fontWeight="900" lineHeight="1.1" noOfLines={1}>{value}</Text>
+          {/* Sin cortar con "…": las fechas («26 de sept de 2026») bajan de línea */}
+          <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="900" lineHeight="1.15">{value}</Text>
           {sub && <Text fontSize="10px" color={muted} mt={1} noOfLines={1}>{sub}</Text>}
         </Box>
         <Box bg={iconBg} rounded="lg" p={2} flex="0 0 auto">
@@ -152,9 +153,17 @@ export default function ClientePage() {
             {ficha.nombre || clienteNombre}
           </Text>
           <Tag size="sm" colorScheme="gray" rounded="full">{suyas.length}</Tag>
-          <Button size="sm" variant="outline" rounded="md" ml="auto"
-            as={RouterLink} to="/historial" leftIcon={<FiFileText />}>
-            Historial
+          {/* Lo que se viene a hacer aquí: cotizarle otra vez. Antes el único
+              botón decía «Historial» y llevaba al listado general. */}
+          <Button size="sm" rounded="md" ml="auto" bg={FY} color="#3A3A38" fontWeight="700"
+            _hover={{ bg: "#e0b010" }} leftIcon={<FiPlus />}
+            onClick={() => {
+              openTab(NEW_TAB_ID);
+              navigate("/cotizador", {
+                state: { clientePrefill: { ...ficha }, tipoPrefill: suyas[0]?.config?.tipo || "comercial" },
+              });
+            }}>
+            Nueva cotización
           </Button>
         </Flex>
       </Box>

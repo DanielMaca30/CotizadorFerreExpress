@@ -23,6 +23,7 @@ import {
   FiFileText, FiUser, FiCheckCircle, FiSmartphone, FiGrid, FiStar,
   FiZap, FiPrinter, FiSearch, FiShield,
 } from "react-icons/fi";
+import { FaWhatsapp } from "react-icons/fa";
 import {
   NOVEDADES, pendientes, marcarVisto, EVENTO_NOVEDADES,
 } from "../ayuda/novedades";
@@ -35,7 +36,7 @@ const VISTO_TOUR_KEY = "ferreexpress_tour_visto_v1";
 const ICONOS = {
   factura: FiFileText, cliente: FiUser, guardado: FiCheckCircle,
   celular: FiSmartphone, tabla: FiGrid, nuevo: FiStar, rapido: FiZap,
-  imprimir: FiPrinter, buscar: FiSearch, seguridad: FiShield,
+  imprimir: FiPrinter, buscar: FiSearch, seguridad: FiShield, whatsapp: FaWhatsapp,
 };
 
 const tourVisto = () => {
@@ -160,7 +161,7 @@ export default function PanelNovedades() {
 
         <ModalFooter bg={footBg} borderTop="1px solid" borderColor={borde} px={4} py={3}
           pb={esCelular ? "calc(12px + env(safe-area-inset-bottom))" : 3} flexDirection="column" gap={1.5}>
-          <Button ref={botonRef} w="full" size="lg" bg={FY} color={DARK} fontWeight="800" rounded="xl"
+          <Button ref={botonRef} w="full" size="lg" bg={FY} _focusVisible={{ boxShadow: "0 0 0 3px rgba(58,58,56,0.25)" }} color={DARK} fontWeight="800" rounded="xl"
             _hover={{ bg: "#e0b010" }} _active={{ bg: "#c99b0c" }} onClick={cerrar}>
             ¡Entendido!
           </Button>

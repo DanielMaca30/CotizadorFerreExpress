@@ -169,22 +169,6 @@ const FilaRapida = memo(function FilaRapida({
           />
         </Box>
 
-        {/* BORRAR, A UN SOLO TOQUE.
-            Estaba escondido dentro del menú: abrir el menú, buscar
-            "Eliminar", tocarlo. Dos toques y una espera para lo que en el
-            mostrador se hace todo el tiempo (el cliente cambia de opinión).
-            Ahora está en el renglón, y el aviso que sale trae "Deshacer"
-            por si el dedo se fue donde no era. */}
-        <IconButton variant="ghost" rounded="lg" flexShrink={0}
-          h="44px" minW="40px" w="40px" color="red.400"
-          _hover={{ bg: "red.50", color: "red.500" }}
-          _active={{ bg: "red.100" }}
-          aria-label={r.desc ? `Eliminar ${r.desc}` : "Eliminar este renglón"}
-          title="Eliminar este renglón"
-          isDisabled={!puedeBorrar}
-          icon={<FiTrash2 size={17} />}
-          onClick={() => removeItem(r.id)} />
-
         {/* Menú de lo que se usa poco */}
         <Menu isLazy placement="bottom-end">
           <MenuButton as={IconButton} variant="ghost" rounded="lg" flexShrink={0}
@@ -252,6 +236,24 @@ const FilaRapida = memo(function FilaRapida({
           border={border}
           sinIva={r.sinIva}
         />
+        {/* BORRAR, A UN SOLO TOQUE — al final de la segunda línea.
+            Antes iba junto al nombre y le quitaba 40 px: el nombre del
+            producto («Bulto cemento gris Argos 50 kg») salía cortado.
+            Estaba escondido dentro del menú: abrir el menú, buscar
+            "Eliminar", tocarlo. Dos toques y una espera para lo que en el
+            mostrador se hace todo el tiempo (el cliente cambia de opinión).
+            Ahora está en el renglón, y el aviso que sale trae "Deshacer"
+            por si el dedo se fue donde no era. */}
+        <IconButton variant="ghost" rounded="lg" flexShrink={0}
+          h="44px" minW="40px" w="40px" color="red.400"
+          _hover={{ bg: "red.50", color: "red.500" }}
+          _active={{ bg: "red.100" }}
+          aria-label={r.desc ? `Eliminar ${r.desc}` : "Eliminar este renglón"}
+          title="Eliminar este renglón"
+          isDisabled={!puedeBorrar}
+          icon={<FiTrash2 size={17} />}
+          onClick={() => removeItem(r.id)} />
+
       </Flex>
 
       {/* Línea 3 — el total de este renglón, solo cuando ya hay precio */}

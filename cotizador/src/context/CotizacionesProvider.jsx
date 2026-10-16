@@ -265,7 +265,15 @@ export function CotizacionesProvider({ children }) {
     if (nubeActiva()) n = await nextNumeroNube();
     if (n == null) {
       const cur = parseInt(localStorage.getItem(COUNTER_KEY) || INIT_COUNTER, 10);
-      n = cur + 1;
+      /* Sin nube, el contador vive en este equipo. Si se borró (otro
+         navegador, datos limpiados) volvía a empezar y repetía números que
+         ya existen en el listado. Se toma el mayor entre el contador y el
+         número más alto que ya haya. */
+      const mayor = listRef.current.reduce((m, c) => {
+        const k = parseInt(String(c.numero || c.config?.numero || "").replace(/\D/g, ""), 10);
+        return Number.isFinite(k) && k > m ? k : m;
+      }, 0);
+      n = Math.max(cur, mayor) + 1;
     }
     // Mantener el contador local al día (para fallback offline)
     const curLocal = parseInt(localStorage.getItem(COUNTER_KEY) || INIT_COUNTER, 10);

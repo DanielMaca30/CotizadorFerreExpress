@@ -39,7 +39,8 @@ import {
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
-import { usePDF } from '../hooks/usePDF';
+import { usePDF, compartirArchivo } from '../hooks/usePDF';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useListaProgresiva } from '../hooks/useListaProgresiva';
 import { useImport } from '../hooks/useImport';
 import { useProductosFrecuentes, aprenderProductos } from '../hooks/useProductosFrecuentes';
@@ -67,8 +68,12 @@ import AppLogo from '../components/AppLogo';
 
 /* Firma del contenido: sirve para saber si algo cambió DE VERDAD y no
    reguardar (ni reordenar el historial) al saltar entre pestañas. */
+/* Los renglones vacíos no cuentan: la lista rápida (celular y tablet)
+   agrega uno en blanco sola al final, y eso marcaba «Sin guardar» con
+   solo abrir la cotización. */
+const soloConDatos = (items = []) => items.filter(r => String(r.desc || '').trim() || String(r.price || '').trim());
 const firmaDe = (s) => JSON.stringify({
-  cliente: s.cliente, cotConfig: s.cotConfig, items: s.items,
+  cliente: s.cliente, cotConfig: s.cotConfig, items: soloConDatos(s.items),
   descG: s.descG, notas: s.notas, observaciones: s.observaciones, aiuConfig: s.aiuConfig,
 });
 
@@ -206,12 +211,12 @@ function ModalTipo({ isOpen, onSelect, onCancel, onIrHistorial, onAyuda }) {
               {
                 tipo: 'comercial', icon: FiShoppingCart, color: FY, textColor: DARK,
                 title: 'Cotización Comercial',
-                sub: 'Venta directa al cliente. IVA incluido por producto.'
+                sub: 'La de todos los días. El documento discrimina el IVA.'
               },
               {
                 tipo: 'obra', icon: FiTool, color: '#1a5276', textColor: 'white',
                 title: 'Cotización de Obra',
-                sub: 'Construcción / contrato. AIU + IVA del 19% sobre la utilidad.'
+                sub: 'Para contratistas y obras. Los mismos precios, sin discriminar IVA (AIU opcional).'
               },
             ].map(({ tipo, icon, color, textColor, title, sub }) => (
               <Box key={tipo} data-tour={`tipo-${tipo}`}
@@ -244,7 +249,7 @@ function ModalTipo({ isOpen, onSelect, onCancel, onIrHistorial, onAyuda }) {
                 {onIrHistorial && (
                   <Button variant="outline" size="sm" rounded="lg" leftIcon={<FiHome />}
                     onClick={onIrHistorial}>
-                    Ir al menú principal (listado de cotizaciones)
+                    Volver al listado
                   </Button>
                 )}
                 {onAyuda && (
@@ -343,7 +348,7 @@ const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, m
 const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, getClientes, onUsarCliente }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const C = k => ({ value: cliente[k] ?? '', onChange: e => setCliente(p => ({ ...p, [k]: e.target.value })) });
-  const faltan = ['nombre', 'direccion', 'tel'].filter(k => !String(cliente[k] ?? '').trim());
+  const sinNombre = !String(cliente.nombre ?? '').trim();
   const fact = datosFacturacion(cliente);
   const tipoActual = deducirTipoDoc(cliente);
   const factBg = useColorModeValue('yellow.50', 'whiteAlpha.100');
@@ -358,20 +363,21 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
       <Stack spacing={3} data-tour="cliente-obligatorios">
         <Box>
           <FL required>Nombre del cliente</FL>
-          <ClienteAutocomplete {...ip} data-tour="cliente-nombre" placeholder="Juan García"
+          {/* Los ejemplos de antes eran datos de verdad (dirección y celular
+              de la ferretería): en gris claro parecían ya llenos. */}
+          <ClienteAutocomplete {...ip} data-tour="cliente-nombre" placeholder="Nombre y apellido, o empresa"
             value={cliente.nombre}
             onChange={v => setCliente(p => ({ ...p, nombre: v }))}
             onAccept={onUsarCliente}
             getClientes={getClientes} />
         </Box>
-        <Box><FL required>Dirección de entrega</FL>
-          <Input {...ip} placeholder="Cra 100 #11-60, Ciudad Jardín" {...C('direccion')} /></Box>
-        <Box><FL required>Celular</FL><Input {...ip} type="tel" inputMode="tel" placeholder="311 308 5083" {...C('tel')} /></Box>
+        <Box><FL>Celular</FL><Input {...ip} type="tel" inputMode="tel" placeholder="Para llamarlo o mandarle por WhatsApp" {...C('tel')} /></Box>
+        <Box><FL>Dirección de entrega <Text as="span" textTransform="none" letterSpacing="0" fontWeight="500">(si hay domicilio)</Text></FL>
+          <Input {...ip} placeholder="Calle, carrera, barrio…" {...C('direccion')} /></Box>
 
-        {faltan.length > 0 && (
-          <Text fontSize="10px" color="orange.500" fontWeight="600" mt={-1}>
-            Falta {faltan.length === 1 ? 'el' : 'llenar'}{' '}
-            {faltan.map(k => ({ nombre: 'nombre', direccion: 'dirección', tel: 'celular' }[k])).join(', ')}
+        {sinNombre && (
+          <Text fontSize="10.5px" color={muted} mt={-1}>
+            Solo el nombre es obligatorio. Celular y dirección, si hay domicilio o se lo vas a mandar.
           </Text>
         )}
       </Stack>
@@ -391,7 +397,7 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
         <Stack spacing={3}>
           <Box>
             <FL>Razón social <Text as="span" textTransform="none" letterSpacing="0" fontWeight="500">(si es empresa)</Text></FL>
-            <Input {...ip} placeholder="Constructora XYZ S.A.S." {...C('empresa')} />
+            <Input {...ip} placeholder="Nombre de la empresa" {...C('empresa')} />
           </Box>
           <Box>
             <FL>Documento</FL>
@@ -416,7 +422,7 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
           </Box>
           <Box>
             <FL>Correo para la factura electrónica</FL>
-            <Input {...ip} type="email" inputMode="email" placeholder="facturas@cliente.com" {...C('correo')} />
+            <Input {...ip} type="email" inputMode="email" placeholder="correo del cliente" {...C('correo')} />
           </Box>
         </Stack>
 
@@ -909,7 +915,7 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
 }
 
 const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
-  cliente, safeNavigate, handleSave, isSaving, hasChanges }) {
+  cliente, safeNavigate, handleSave, isSaving, hasChanges, onEnviar, enviando }) {
   const esObra = cotConfig.tipo === 'obra';
   /* El resumen es un vistazo, no la lista completa. Con 45 productos,
      repintarlos todos aquí en cada tecla costaba tanto como la tabla. */
@@ -971,15 +977,24 @@ const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, 
       {/* Aire abajo: el botón redondo de ayuda flota en esta esquina y le
           caía justo encima a "Guardar". */}
       <Box px={5} pt={4} pb={{ base: 4, xl: "76px" }}>
-        <Button w="full" bg={FY} color={DARK} rounded="lg" fontWeight="700" mb={2}
-          onClick={() => safeNavigate('preview')} _hover={{ bg: '#e0b010' }}>
-          Ver cotización →
+        {/* Lo que sigue después de cotizar: mandarla. Antes el botón grande
+            era «Ver cotización» y «Guardar» repetía el de arriba. */}
+        <Button w="full" bg="#25D366" color="white" rounded="lg" fontWeight="800" mb={2}
+          leftIcon={<FaWhatsapp size={18} />} isLoading={enviando} loadingText="Preparando…"
+          onClick={onEnviar} _hover={{ bg: '#1ebe5b' }}>
+          Enviar por WhatsApp
         </Button>
-        <Button w="full" bg={hasChanges ? 'whiteAlpha.200' : 'whiteAlpha.100'} color="white"
-          rounded="lg" leftIcon={<FiSave />} isLoading={isSaving} onClick={handleSave}
-          _hover={{ bg: 'whiteAlpha.300' }}>
-          Guardar
-        </Button>
+        <Flex gap={2}>
+          <Button flex={1} bg="whiteAlpha.200" color="white" rounded="lg" leftIcon={<FiEye />}
+            onClick={() => safeNavigate('preview')} _hover={{ bg: 'whiteAlpha.300' }}>
+            Ver
+          </Button>
+          <Button flex={1} bg={hasChanges ? FY : 'whiteAlpha.100'} color={hasChanges ? DARK : 'whiteAlpha.700'}
+            rounded="lg" leftIcon={<FiSave />} isLoading={isSaving} onClick={handleSave}
+            _hover={{ bg: hasChanges ? '#e0b010' : 'whiteAlpha.200' }}>
+            {hasChanges ? 'Guardar' : 'Guardado'}
+          </Button>
+        </Flex>
       </Box>
     </Box>
   );
@@ -991,7 +1006,11 @@ const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, 
 /* Los datos de la empresa salieron de aquí y se fueron a Mi perfil: son
    siempre los mismos y estaban ocupando el primer paso de un formulario
    donde lo urgente es el cliente. Un paso menos en cada cotización. */
-const STEPS = ['Cliente', 'Productos', 'Config'];
+/* Pasos del celular. El último se llamaba «Config» y era un formulario de
+   fechas, IVA y notas legales que casi nadie toca; al llegar ahí no había
+   botón para terminar. Ahora el último paso es «Enviar»: resumen, mandar
+   por WhatsApp, PDF, y las condiciones guardadas en un desplegable. */
+const STEPS = ['Cliente', 'Productos', 'Enviar'];
 
 /* ════════════════════════════════════════════════════════════
    PÁGINA PRINCIPAL
@@ -1020,7 +1039,7 @@ export default function CotizadorPage() {
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
   /* Debajo de la tira de pestañas Y de la navegación principal */
   const topOffset = useOffsetSuperior(tabs.length > 0);
-  const { downloadPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
+  const { downloadPDF, archivoPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
   const { getSugerencias } = useProductosFrecuentes();
   const { getClientes } = useClientesFrecuentes();
   const importHook = useImport();
@@ -1046,6 +1065,16 @@ export default function CotizadorPage() {
   const [descLocal, setDescLocal] = useState('0');
   const [pendingNav, setPendingNav] = useState(null);
   const [mobileStep, setMobileStep] = useState(0);
+  /* Al cambiar de paso se vuelve arriba. Antes se conservaba el scroll del
+     paso anterior: al tocar «Productos» al final del formulario del
+     cliente se aterrizaba en mitad de la lista, sin ver el comienzo. */
+  const primerPaso = useRef(true);
+  useEffect(() => {
+    if (primerPaso.current) { primerPaso.current = false; return; }
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [mobileStep]);
+  const [verCondiciones, setVerCondiciones] = useState(false);
+  const [enviando, setEnviando] = useState(false);
   /* Si se entró con "Nueva para este cliente" ya sabemos el tipo: no tiene
      sentido volver a preguntarlo. Se puede cambiar después en Configuración. */
   const [showTipoModal, setShowTipoModal] = useState(!id && !location.state?.tipoPrefill);
@@ -1695,7 +1724,10 @@ export default function CotizadorPage() {
     return () => registerAutoSave(null);
   }, [registerAutoSave, autoSave]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (extraCfg) => {
+    /* Puede llegar el evento del clic: solo se toma si es un objeto de config */
+    const extra = extraCfg && typeof extraCfg === 'object' && !('nativeEvent' in extraCfg) && !('target' in extraCfg)
+      ? extraCfg : null;
     if (!items.some(r => r.desc?.trim())) {
       toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 4000, ...AVISO_LATERAL });
       return null;
@@ -1703,8 +1735,10 @@ export default function CotizadorPage() {
     setIsSaving(true);
     const descG = parseFloat(descLocal) || 0;
     try {
-      const payload = { id: editingId, empresa, cliente, config: cotConfig, items, descG, notas, observaciones, totals, aiuConfig };
+      const cfgGuardar = extra ? { ...cotConfig, ...extra } : cotConfig;
+      const payload = { id: editingId, empresa, cliente, config: cfgGuardar, items, descG, notas, observaciones, totals, aiuConfig };
       const saved = await saveCotizacion(payload);
+      if (extra && editingId) setCotConfig(cfgGuardar);
       aprenderProductos(items);
       aprenderCliente(cliente);   // alimenta el directorio para la próxima vez
       clearDraft();
@@ -1713,7 +1747,7 @@ export default function CotizadorPage() {
          que el aviso no vuelva a "Sin guardar" justo después de crearla. */
       sigRef.current = firmaDe({
         ...stRef.current,
-        cotConfig: (!editingId && saved?.config) ? saved.config : stRef.current.cotConfig,
+        cotConfig: (saved?.config && (!editingId || extra)) ? saved.config : stRef.current.cotConfig,
       });
       if (!editingId) {
         if (saved?.config) setCotConfig(saved.config);
@@ -1820,13 +1854,18 @@ export default function CotizadorPage() {
      El documento sirve de remisi\u00f3n de domicilio: si sale sin direcci\u00f3n o sin
      celular, el mensajero se queda sin saber a d\u00f3nde va. Mejor avisar aqu\u00ed
      que imprimir guiones y descubrirlo en la calle. */
+  /* Solo el nombre es indispensable. Dirección y celular hacen falta
+     cuando hay domicilio (un renglón de transporte): ahí el documento
+     sirve de remisión. En una venta de mostrador no se pregunta nada —
+     antes salía este aviso cada vez que alguien sacaba un PDF. */
+  const hayDomicilio = useMemo(() => items.some(r => r.sinIva || esTransporte(r.desc)), [items]);
   const faltantesCliente = useMemo(() => {
     const f = [];
     if (!String(cliente.nombre ?? '').trim())    f.push('nombre');
-    if (!String(cliente.direccion ?? '').trim()) f.push('direcci\u00f3n');
-    if (!String(cliente.tel ?? '').trim())       f.push('celular');
+    if (hayDomicilio && !String(cliente.direccion ?? '').trim()) f.push('direcci\u00f3n');
+    if (hayDomicilio && !String(cliente.tel ?? '').trim())       f.push('celular');
     return f;
-  }, [cliente.nombre, cliente.direccion, cliente.tel]);
+  }, [cliente.nombre, cliente.direccion, cliente.tel, hayDomicilio]);
 
   const handlePDF = useCallback(async () => {
     if (!items.some(r => r.desc?.trim())) {
@@ -1836,6 +1875,60 @@ export default function CotizadorPage() {
     if (faltantesCliente.length) { setShowFaltantes(true); return; }
     await generarPDF();
   }, [items, faltantesCliente, generarPDF, toast]);
+
+  /* ── Enviar al cliente (WhatsApp / compartir) ──
+     Guarda, arma el PDF y abre el menú de compartir con el archivo ya
+     adjunto. Si estaba en borrador, queda como «enviada»: es lo que pasó. */
+  const enviarCliente = useCallback(async () => {
+    if (!items.some(r => r.desc?.trim())) {
+      toast({ title: 'Agrega al menos un producto', status: 'warning', duration: 3500, ...AVISO_LATERAL });
+      return;
+    }
+    if (faltantesCliente.length) { setShowFaltantes(true); return; }
+    setEnviando(true);
+    try {
+      let numero = cotConfig.numero;
+      const marcar = (cotConfig.estado || 'borrador') === 'borrador' ? { estado: 'enviada' } : null;
+      if (!editingId || hasChanges || marcar) {
+        const saved = await handleSave(marcar || undefined);
+        if (!saved) return;
+        numero = saved.numero || saved.config?.numero || numero;
+      }
+      setPdfReady(true);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await new Promise(r => setTimeout(r, 60));
+      const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024F\u00f1\u00d1\s]/g, '').trim().replace(/\s+/g, '_');
+      const file = await archivoPDF(`${cn}_${numero || 'SinNumero'}`);
+      setPdfReady(false);
+      if (!file) { toast({ title: 'No se pudo armar el PDF', status: 'error', duration: 4000 }); return; }
+      const nombre1 = String(cliente.nombre || '').trim().split(/\s+/)[0];
+      const texto = `Hola${nombre1 ? ' ' + nombre1 : ''}, te comparto la cotización ${numero || ''} de ${empresa?.nombre || 'FerreExpress'} por ${money(totals.totalPagar, cotConfig.moneda)}. Quedamos atentos.`;
+      const r = await compartirArchivo(file, { texto, tel: cliente.tel });
+      if (r === 'sin-gesto') {
+        /* Armar el PDF tardó y el teléfono ya no deja compartir sin otro toque */
+        toast({
+          duration: 20000, ...AVISO_LATERAL,
+          render: ({ onClose }) => (
+            <Flex bg={DARK} color="white" rounded="lg" p={3} gap={3} align="center" boxShadow="lg">
+              <Text fontSize="13px" flex={1}>El PDF está listo.</Text>
+              <Button size="sm" bg="#25D366" color="white" leftIcon={<FaWhatsapp />}
+                _hover={{ bg: '#1ebe5b' }}
+                onClick={() => { onClose(); compartirArchivo(file, { texto, tel: cliente.tel }); }}>
+                Enviar ahora
+              </Button>
+            </Flex>
+          ),
+        });
+      } else if (r === 'descargado') {
+        toast({ title: 'PDF descargado', description: 'Se abrió WhatsApp con el mensaje: adjunta el PDF desde Descargas.', status: 'info', duration: 6000, ...AVISO_LATERAL });
+      } else if (r === 'compartido' && marcar) {
+        toast({ title: 'Enviada ✓', description: 'La marqué como «Enviada» en el listado.', status: 'success', duration: 3000, ...AVISO_LATERAL });
+      }
+    } finally {
+      setEnviando(false);
+      setPdfReady(false);
+    }
+  }, [items, faltantesCliente, cotConfig, editingId, hasChanges, handleSave, archivoPDF, cliente.nombre, cliente.tel, empresa, totals.totalPagar, toast]);
 
   /* ── Convertir Comercial ⇄ Obra ──
      Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
@@ -1941,10 +2034,12 @@ export default function CotizadorPage() {
           </HStack>
           <HStack>
             <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
-              isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>PDF</Button>
+              isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>PDF</Button>
+            <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
+              isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>Enviar</Button>
             <Button size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700" leftIcon={<FiSave />}
               isLoading={isSaving} _hover={{ bg: '#e0b010' }} onClick={handleSave}>
-              {editingId ? 'Actualizar' : 'Guardar'}
+              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
             </Button>
           </HStack>
         </Flex>
@@ -2063,8 +2158,11 @@ export default function CotizadorPage() {
             <Tooltip label="Volver al listado de cotizaciones (se guarda lo que llevas)" hasArrow openDelay={500}>
               <Button size="sm" variant="ghost" colorScheme="gray" rounded="md"
                 h={{ base: '38px', md: '32px' }} px={2}
-                leftIcon={<FiArrowLeft />} onClick={() => safeNavigate('/historial')}>
-                <Text fontSize="13px">Cotizaciones</Text>
+                leftIcon={<FiArrowLeft />} onClick={() => safeNavigate('/historial')}
+                aria-label="Volver a cotizaciones">
+                {/* En el celular solo la flecha: con el texto, deshacer/rehacer
+                    se caían a una segunda fila y la barra medía el doble. */}
+                <Text fontSize="13px" display={{ base: 'none', sm: 'inline' }}>Cotizaciones</Text>
               </Button>
             </Tooltip>
             <Box h="20px" w="1px" bg={border} display={{ base: 'none', sm: 'block' }} />
@@ -2170,14 +2268,20 @@ export default function CotizadorPage() {
                 Vista previa
               </Button>
               <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
-                isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
+                isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
                 PDF
               </Button>
+              <Tooltip label="Guarda, arma el PDF y lo comparte (WhatsApp, correo…)" hasArrow openDelay={400}>
+                <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
+                  isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>
+                  Enviar
+                </Button>
+              </Tooltip>
               <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
                 <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
                   rounded="md" fontWeight="700" leftIcon={<FiSave />} isLoading={isSaving}
                   _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
-                  {editingId ? 'Actualizar' : 'Guardar'}
+                  {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
                 </Button>
               </Tooltip>
             </>)}
@@ -2205,8 +2309,8 @@ export default function CotizadorPage() {
               index={panelTab} onChange={setPanelTab}
               display="flex" flexDirection="column" h="full">
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
-                  <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
+                {[{ l: 'Cliente', i: FiUser, t: 'cliente' }, { l: 'Condiciones', i: FiFileText, t: 'config' }].map(({ l, i: Ic, t }) => (
+                  <Tab key={l} data-tour={`tab-${t}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
                     <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
@@ -2251,7 +2355,8 @@ export default function CotizadorPage() {
           <ResumenDesktop
             items={items} cotConfig={cotConfig} totals={totals} descGNum={descGNum}
             aiuConfig={aiuConfig} cliente={cliente} safeNavigate={safeNavigate}
-            handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges} />
+            handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges}
+            onEnviar={enviarCliente} enviando={enviando} />
         </Box>
         )}
 
@@ -2261,8 +2366,8 @@ export default function CotizadorPage() {
           <GlassCard rounded="xl" overflow="hidden">
             <Tabs variant="unstyled" size="sm" isLazy index={panelTab} onChange={setPanelTab}>
               <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Cliente', i: FiUser }, { l: 'Config', i: FiFileText }].map(({ l, i: Ic }) => (
-                  <Tab key={l} data-tour={`tab-${l.toLowerCase()}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
+                {[{ l: 'Cliente', i: FiUser, t: 'cliente' }, { l: 'Condiciones', i: FiFileText, t: 'config' }].map(({ l, i: Ic, t }) => (
+                  <Tab key={l} data-tour={`tab-${t}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
                     textTransform="uppercase" color={mutedL} pb={2.5}
                     _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
                     <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
@@ -2311,13 +2416,17 @@ export default function CotizadorPage() {
             <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="md" />
           </Box>
           <Flex gap={2} pb={4}>
-            <Button flex={1} bg={FY} color={DARK} rounded="lg" fontWeight="700"
-              onClick={() => safeNavigate('preview')} _hover={{ bg: '#e0b010' }}>
-              Ver cotización →
+            <Button flex={1} bg="#25D366" color="white" rounded="lg" fontWeight="700" leftIcon={<FaWhatsapp />}
+              isLoading={enviando} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>
+              Enviar
+            </Button>
+            <Button flex={1} variant="outline" rounded="lg" leftIcon={<FiEye />}
+              onClick={() => safeNavigate('preview')}>
+              Ver
             </Button>
             <Button flex={1} bg={DARK} color="white" rounded="lg" leftIcon={<FiSave />}
               isLoading={isSaving} onClick={handleSave} _hover={{ bg: '#2a2a28' }}>
-              {editingId ? 'Actualizar' : 'Guardar'}
+              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
             </Button>
           </Flex>
         </Box>
@@ -2421,7 +2530,82 @@ export default function CotizadorPage() {
                     </Box>
                   </Box>
                 )}
-                {mobileStep === 2 && <PanelCotizacion {...panelCotizProps} />}
+                {mobileStep === 2 && (
+                  <Box p={4}>
+                    {/* Resumen de lo que se va a mandar */}
+                    <Text fontSize="10px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={mutedL}>
+                      Para
+                    </Text>
+                    <Text fontSize="18px" fontWeight="800" lineHeight="1.2" mt={0.5}>
+                      {cliente.nombre?.trim() || <Text as="span" color="orange.500">Falta el nombre del cliente</Text>}
+                    </Text>
+                    {(cliente.empresa || cliente.nit) && (
+                      <Text fontSize="12px" color={mutedL} mt={0.5}>
+                        {[cliente.empresa, cliente.nit].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
+                    <Flex mt={3} p={3} rounded="lg" bg={DARK} justify="space-between" align="center">
+                      <Box>
+                        <Text fontSize="11px" color="whiteAlpha.700">
+                          {items.filter(r => r.desc?.trim()).length} producto{items.filter(r => r.desc?.trim()).length !== 1 ? 's' : ''}
+                          {' · '}{esObra ? 'Obra' : 'Comercial'}
+                        </Text>
+                        <Text fontSize="11px" color="whiteAlpha.600">
+                          {cotConfig.numero || 'Se numera al guardar'}
+                        </Text>
+                      </Box>
+                      <Text fontSize="22px" fontWeight="900" color={FY}>{money(totals.totalPagar, cotConfig.moneda)}</Text>
+                    </Flex>
+
+                    {!items.some(r => r.desc?.trim()) && (
+                      <Button mt={3} w="full" size="sm" variant="outline" onClick={() => setMobileStep(1)}>
+                        Todavía no hay productos — agregar
+                      </Button>
+                    )}
+
+                    {/* Las acciones, de la más usada a la menos */}
+                    <Stack spacing={2.5} mt={4}>
+                      <Button h="52px" bg="#25D366" color="white" rounded="xl" fontSize="16px" fontWeight="800"
+                        leftIcon={<FaWhatsapp size={22} />} _hover={{ bg: '#1ebe5b' }} _active={{ bg: '#18a84f' }}
+                        isLoading={enviando} loadingText="Preparando PDF…" onClick={enviarCliente}>
+                        Enviar por WhatsApp
+                      </Button>
+                      <Flex gap={2.5}>
+                        <Button flex={1} h="46px" bg={DARK} color={FY} rounded="xl" leftIcon={<FiDownload />}
+                          _hover={{ bg: '#2a2a28' }} isLoading={pdfLoading && !enviando} onClick={handlePDF}>
+                          Descargar PDF
+                        </Button>
+                        <Button flex={1} h="46px" variant="outline" rounded="xl" leftIcon={<FiEye />}
+                          onClick={() => safeNavigate('preview')}>
+                          Ver documento
+                        </Button>
+                      </Flex>
+                      <Text fontSize="11px" color={mutedL} textAlign="center">
+                        Al enviar o descargar se guarda sola.
+                      </Text>
+                    </Stack>
+
+                    {/* Lo que casi nunca se toca, plegado */}
+                    <Box mt={4} border="1px solid" borderColor={border} rounded="xl" overflow="hidden">
+                      <Flex as="button" type="button" w="full" px={4} py={3} align="center" justify="space-between"
+                        onClick={() => setVerCondiciones(v => !v)} aria-expanded={verCondiciones}>
+                        <Box textAlign="left">
+                          <Text fontSize="14px" fontWeight="700">Condiciones del documento</Text>
+                          <Text fontSize="11px" color={mutedL}>
+                            {cotConfig.formaPago} · {esObra ? 'sin discriminar IVA' : `IVA ${cotConfig.iva}%`}
+                            {descGNum > 0 ? ` · desc. ${descGNum}%` : ''} · vence {fmtDate(cotConfig.vigencia)}
+                          </Text>
+                        </Box>
+                        <Icon as={FiChevronRight} transform={verCondiciones ? 'rotate(90deg)' : 'none'} transition="transform .15s" color={mutedL} />
+                      </Flex>
+                      <Collapse in={verCondiciones} animateOpacity>
+                        <Box borderTop="1px solid" borderColor={border}>
+                          <PanelCotizacion {...panelCotizProps} />
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  </Box>
+                )}
               </MotionBox>
             </AnimatePresence>
           </GlassCard>
@@ -2438,7 +2622,7 @@ export default function CotizadorPage() {
               <Button flex={1} bg={FY} color={DARK} rounded="xl" fontWeight="700"
                 rightIcon={<FiChevronRight />}
                 onClick={() => setMobileStep(s => s + 1)}>
-                {STEPS[mobileStep + 1]}
+                {mobileStep === 1 ? 'Revisar y enviar' : STEPS[mobileStep + 1]}
               </Button>
             )}
           </Flex>
@@ -2462,15 +2646,21 @@ export default function CotizadorPage() {
             {money(totals.totalPagar, cotConfig.moneda)}
           </Text>
         </Box>
-        <Button data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg" leftIcon={<FiEye size={14} />}
-          onClick={() => safeNavigate('preview')}>Ver</Button>
-        <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="lg" leftIcon={<FiDownload size={14} />}
-          isLoading={pdfLoading} onClick={handlePDF} _hover={{ bg: '#2a2a28' }}>PDF</Button>
+        {/* Solo el ojo: con la palabra, el total no cabía y salía cortado */}
+        <IconButton data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg"
+          aria-label="Ver el documento" icon={<FiEye size={16} />}
+          onClick={() => safeNavigate('preview')} />
+        {/* «Enviar» en vez de «PDF»: lo que se hace con el PDF en el
+            mostrador es mandarlo por WhatsApp. Descargar sigue en el paso
+            Enviar y en la vista del documento. */}
+        <Button data-tour="pdf" size="sm" bg="#25D366" color="white" rounded="lg" leftIcon={<FaWhatsapp size={15} />}
+          isLoading={enviando || pdfLoading} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>Enviar</Button>
         <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
           rounded="lg" fontWeight="700" leftIcon={<FiSave size={14} />}
           isLoading={isSaving} onClick={handleSave}
           _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }}>
-          {editingId ? 'Actualizar' : 'Guardar'}
+          {/* «Actualizar» no cabía y cortaba el total; el estado ya lo dice el botón */}
+          {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
         </Button>
       </Box>
       )}

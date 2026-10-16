@@ -57,7 +57,8 @@ export const NAV_ARRIBA_H = 46;
  */
 export function useOffsetSuperior(hayPestanas) {
   const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
-  const pestanas = hayPestanas ? parseInt(TABS_BAR_H, 10) : 0;
+  /* En el celular la tira de pestañas no se muestra (ver TabsBar) */
+  const pestanas = hayPestanas && !esCelular ? parseInt(TABS_BAR_H, 10) : 0;
   return `${pestanas + (esCelular ? 0 : NAV_ARRIBA_H)}px`;
 }
 

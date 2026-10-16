@@ -315,7 +315,7 @@ export const RECORRIDOS = {
       {
         titulo: "Dos cosas que conviene revisar",
         texto:
-          "La forma de pago cambia sola si la que tenías no existe en el otro tipo — revísala en CONFIG. Y si convertiste desde el editor, acuérdate de Guardar para que quede aplicado.",
+          "La forma de pago cambia sola si la que tenías no existe en el otro tipo — revísala en CONDICIONES. Y si convertiste desde el editor, acuérdate de Guardar para que quede aplicado.",
       },
     ],
   },

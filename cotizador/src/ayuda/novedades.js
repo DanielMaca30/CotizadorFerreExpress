@@ -14,34 +14,34 @@
  */
 export const NOVEDADES = [
   {
-    id: "2026-10-16",
-    fecha: "16 de octubre de 2026",
-    titulo: "Facturación más clara",
+    id: "2026-10-15",
+    fecha: "15 de octubre de 2026",
+    titulo: "Más rápido de mandar, más claro de leer",
     puntos: [
       {
-        icono: "factura",
-        titulo: "NIT y cédula se ven de primeras en el documento",
-        texto: "Si el cliente pide factura, la razón social o su nombre sale grande y el NIT o la cédula en un recuadro amarillo. Si no la pide, el documento lleva solo su nombre.",
-      },
-      {
-        icono: "cliente",
-        titulo: "Nuevo recuadro «Datos para factura»",
-        texto: "En Cliente: razón social, tipo de documento (C.C., NIT o C.E.) y correo para la factura electrónica. Abajo te muestra cómo va a salir.",
-      },
-      {
-        icono: "guardado",
-        titulo: "Adiós al aviso de «Cambios sin guardar» falso",
-        texto: "Abrir una cotización y mirarla ya no la marca como cambiada, ni te pregunta si quieres guardar al salir.",
+        icono: "whatsapp",
+        titulo: "Botón verde «Enviar»: la cotización directo a WhatsApp",
+        texto: "Guarda, arma el PDF y abre WhatsApp con el archivo listo para el cliente. Está en la cotización y en cada tarjeta del listado. Si estaba en borrador, queda como «Enviada».",
       },
       {
         icono: "celular",
-        titulo: "Vista previa completa en el celular",
-        texto: "La hoja se ajusta a la pantalla: ves el total, las condiciones y la firma sin tener que mover la página de lado.",
+        titulo: "En el celular: Cliente · Productos · Enviar",
+        texto: "Tres pasos y listo. Solo el nombre es obligatorio; dirección y celular cuando hay domicilio. Las condiciones (fecha, pago, IVA) quedan plegadas en el último paso.",
       },
       {
-        icono: "tabla",
-        titulo: "Nombres de producto completos en el computador",
-        texto: "La tabla de productos le da más espacio a la descripción, así ya no se corta el nombre.",
+        icono: "factura",
+        titulo: "NIT y cédula se ven de primeras en el documento",
+        texto: "Si el cliente pide factura, llena el recuadro amarillo «Datos para factura»: la razón social o el nombre sale grande y el NIT o la cédula resaltados. Si no, sale solo el nombre.",
+      },
+      {
+        icono: "guardado",
+        titulo: "Se acabó el «Cambios sin guardar» falso",
+        texto: "Abrir y mirar una cotización ya no la marca como cambiada. El botón dice «Guardado» cuando todo está a salvo.",
+      },
+      {
+        icono: "buscar",
+        titulo: "Buscar por producto te dice cuál encontró",
+        texto: "Si buscas «cemento», cada cotización muestra el producto que coincidió. Y el valor de arriba ya no suma las rechazadas.",
       },
     ],
   },

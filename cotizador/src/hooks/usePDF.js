@@ -31,7 +31,9 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
 
-  const downloadPDF = useCallback(async (customFilename) => {
+  /* Arma el PDF. modo "descargar" lo baja al equipo; modo "archivo"
+     devuelve el File para compartirlo (WhatsApp, correo…) sin descargarlo. */
+  const construir = useCallback(async (customFilename, modo = "descargar") => {
     const el = document.getElementById(elementId);
     if (!el) {
       setError("Elemento PDF no encontrado en el DOM.");
@@ -90,7 +92,12 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
         }
       }
 
-      pdf.save(`${customFilename || filename}.pdf`);
+      const nombre = `${customFilename || filename}.pdf`;
+      if (modo === "archivo") {
+        const blob = pdf.output("blob");
+        return new File([blob], nombre, { type: "application/pdf" });
+      }
+      pdf.save(nombre);
       return true;
     } catch (e) {
       console.error("[usePDF] Error:", e);
@@ -101,5 +108,60 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
     }
   }, [elementId, filename]);
 
-  return { downloadPDF, loading, error };
+  const downloadPDF = useCallback((nombre) => construir(nombre, "descargar"), [construir]);
+  const archivoPDF  = useCallback((nombre) => construir(nombre, "archivo"), [construir]);
+
+  return { downloadPDF, archivoPDF, loading, error };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ENVIAR AL CLIENTE
+   En el mostrador la cotización se manda por WhatsApp. Antes había que
+   descargar el PDF, salir de la app, abrir WhatsApp, buscar el chat y
+   adjuntar el archivo desde Descargas. Ahora:
+     · Celular (y Chrome/Edge de computador): se abre el menú de
+       compartir del sistema con el PDF ya adjunto → WhatsApp → chat.
+     · Si el navegador no sabe compartir archivos: se descarga el PDF y
+       se abre WhatsApp con el chat del cliente y un mensaje escrito,
+       para solo adjuntar.
+   Devuelve "compartido" | "cancelado" | "descargado" | "sin-gesto".
+   "sin-gesto": el navegador exige un toque reciente para compartir y
+   armar el PDF tardó; quien llama ofrece un botón para reintentar.
+═══════════════════════════════════════════════════════════════ */
+export const puedeCompartirArchivos = () => {
+  try {
+    const f = new File(["x"], "x.pdf", { type: "application/pdf" });
+    return !!(navigator.canShare && navigator.canShare({ files: [f] }));
+  } catch { return false; }
+};
+
+/** Número de celular colombiano listo para wa.me (57 + 10 dígitos) */
+export const telWhatsApp = (tel) => {
+  const d = String(tel || "").replace(/\D/g, "");
+  if (d.length === 10 && d.startsWith("3")) return `57${d}`;
+  if (d.length === 12 && d.startsWith("57")) return d;
+  return d.length >= 10 ? d : "";
+};
+
+export async function compartirArchivo(file, { texto = "", tel = "" } = {}) {
+  if (puedeCompartirArchivos()) {
+    try {
+      await navigator.share({ files: [file], text: texto });
+      return "compartido";
+    } catch (e) {
+      if (e?.name === "AbortError") return "cancelado";
+      if (e?.name === "NotAllowedError") return "sin-gesto";
+      /* Cualquier otro fallo: seguimos con el plan B */
+    }
+  }
+  /* Plan B: descargar y abrir WhatsApp con el mensaje */
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url; a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  const num = telWhatsApp(tel);
+  const wa = `https://wa.me/${num}?text=${encodeURIComponent(texto)}`;
+  window.open(wa, "_blank", "noopener");
+  return "descargado";
 }
