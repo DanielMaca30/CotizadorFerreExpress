@@ -14,6 +14,7 @@ import PuertaAcceso from "./components/PuertaAcceso";
 import AyudaApp from "./components/AyudaApp";
 const AyudaPage = lazy(() => import("./pages/AyudaPage"));
 import RecorridoGuiado from "./components/RecorridoGuiado";
+import PanelNovedades from "./components/PanelNovedades";
 import NavegacionPrincipal from "./components/NavegacionPrincipal";
 import { CotizacionesProvider } from "./context/CotizacionesProvider";
 
@@ -44,6 +45,22 @@ const theme = extendTheme({
   components: {
     Button: {
       defaultProps: { colorScheme: "brand" },
+      /* En la escala de marca el 600 es el ROJO de FerreExpress, y los
+         botones ghost/outline toman su color de ahí: "Volver", "Editar",
+         "Descargar", "Importar"… salían en rojo, el color que la gente
+         asocia a borrar o a error. Se pasan al gris oscuro de la marca;
+         el rojo queda solo para lo que de verdad elimina. */
+      variants: {
+        ghost: (p) => (p.colorScheme === "brand"
+          ? { color: "#3a3a38", _hover: { bg: "blackAlpha.50" }, _active: { bg: "blackAlpha.100" },
+              _dark: { color: "gray.100", _hover: { bg: "whiteAlpha.100" } } }
+          : {}),
+        outline: (p) => (p.colorScheme === "brand"
+          ? { color: "#3a3a38", borderColor: "gray.300", _hover: { bg: "blackAlpha.50" },
+              _active: { bg: "blackAlpha.100" },
+              _dark: { color: "gray.100", borderColor: "whiteAlpha.300", _hover: { bg: "whiteAlpha.100" } } }
+          : {}),
+      },
     },
     Input: {
       defaultProps: { focusBorderColor: "#F9BF20" },
@@ -91,6 +108,8 @@ function Layout() {
           rutas, para que un recorrido pueda pasar del listado al cotizador
           sin perder el hilo. La de bienvenida arranca sola en el listado. */}
       <RecorridoGuiado autoIniciar={pathname === "/historial"} />
+      {/* Lo nuevo de cada actualización: sale una vez por equipo */}
+      <PanelNovedades />
     </Box>
   );
 }

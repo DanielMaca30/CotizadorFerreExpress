@@ -21,7 +21,7 @@ import {
   FiAlertTriangle, FiHelpCircle, FiLock, FiPlus, FiUser, FiPackage, FiTruck,
   FiPercent, FiSave, FiDownload, FiTool, FiRefreshCw, FiCheckCircle,
   FiMoreVertical, FiUsers, FiLayers, FiUpload, FiRotateCcw, FiCommand,
-  FiSmartphone, FiZap, FiTarget,
+  FiSmartphone, FiZap, FiTarget, FiStar,
 } from "react-icons/fi";
 import { TEMAS, GRUPOS, DIFICULTAD, buscarTemas } from "../ayuda/guia";
 import AsistenteAyuda from "../components/AsistenteAyuda";
@@ -30,6 +30,7 @@ import { TABS_BAR_H } from "../components/TabsBar";
 import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import { useCotizaciones } from "../hooks/useCotizaciones";
 import { iniciarRecorrido } from "../components/RecorridoGuiado";
+import { abrirNovedades } from "../ayuda/novedades";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -239,8 +240,13 @@ export default function AyudaPage() {
                 Ver el tour
               </Button>
             </Tooltip>
+            <Button size="sm" variant="outline" rounded="md" leftIcon={<FiStar />}
+              onClick={abrirNovedades}>
+              Novedades
+            </Button>
             <Tooltip label="Imprimir la guía completa" hasArrow>
               <IconButton size="sm" variant="outline" rounded="md" aria-label="Imprimir"
+                display={{ base: "none", md: "inline-flex" }}
                 icon={<FiPrinter />}
                 onClick={() => { setAbiertos(new Set(TEMAS.map((t) => t.id))); setTimeout(() => window.print(), 300); }} />
             </Tooltip>

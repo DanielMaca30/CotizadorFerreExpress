@@ -27,7 +27,7 @@ import { useCotizaciones } from "../hooks/useCotizaciones";
 import { useClientesFrecuentes } from "../hooks/useClientesFrecuentes";
 import { TABS_BAR_H } from "../components/TabsBar";
 import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
-import { money, fmtDateShort, ESTADO_META } from "../utils";
+import { money, fmtDateShort, ESTADO_META, datosFacturacion } from "../utils";
 
 const FY   = "#F9BF20";
 const DARK = "#3A3A38";
@@ -183,7 +183,11 @@ export default function ClientePage() {
                   ))}
                   {(ficha.empresa || ficha.nit) && (
                     <Text fontSize="11px" color={mutedL} alignSelf="center">
-                      {[ficha.empresa, ficha.nit && `NIT ${ficha.nit}`].filter(Boolean).join(" · ")}
+                      {/* Mismo criterio que el documento: C.C. o NIT según corresponda */}
+                      {(() => {
+                        const f = datosFacturacion(ficha);
+                        return [ficha.empresa, f.numero && `${f.docCorto} ${f.numero}`].filter(Boolean).join(" · ");
+                      })()}
                     </Text>
                   )}
                 </Flex>

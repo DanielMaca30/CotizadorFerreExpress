@@ -82,7 +82,7 @@ export default function AyudaApp() {
         <IconButton
           data-tour="ayuda"
           aria-label="Ayuda: cómo usar la app"
-          icon={<FiHelpCircle size={22} />}
+          icon={<FiHelpCircle size={esCelular ? 19 : 22} />}
           onClick={onOpen}
           position="fixed"
           /* En el celular hay hasta dos barras fijas abajo: la de
@@ -93,7 +93,9 @@ export default function AyudaApp() {
           right={{ base: 4, md: 6 }}
           display={{ base: escribiendo && !isOpen ? "none" : "inline-flex", md: "inline-flex" }}
           zIndex={500}
-          size="lg"
+          /* En el celular va más pequeño: el grande tapaba precios y
+             casillas al pasar la lista. Ayuda también está en la barra de abajo. */
+          size={esCelular ? "md" : "lg"}
           isRound
           bg={FY}
           color={DARK}

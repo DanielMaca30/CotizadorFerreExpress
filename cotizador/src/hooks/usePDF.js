@@ -43,7 +43,20 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
 
     try {
       const { html2canvas, jsPDF } = await cargarLibs();
-      const canvas = await html2canvas(el, {
+      /* Corrige el texto corrido hacia abajo en el PDF. html2canvas mide la
+         línea base de cada letra con una imagen de 1 px que mete en la
+         página; la hoja de estilos de Chakra pone todas las imágenes como
+         bloque centrado, y esa medición sale mal: todo el texto quedaba
+         unos píxeles más abajo que en pantalla (se notaba en los recuadros
+         del NIT y de TOTAL A PAGAR). La regla apunta solo al medidor
+         oculto de html2canvas y se quita al terminar. */
+      const ajuste = document.createElement("style");
+      ajuste.textContent =
+        'body > div[style*="hidden"] img { display: inline !important; vertical-align: baseline !important; }';
+      document.head.appendChild(ajuste);
+      let canvas;
+      try {
+      canvas = await html2canvas(el, {
         scale:           1.8,        // era 2.5 — menos px = menos peso
         useCORS:         true,
         allowTaint:      true,
@@ -52,6 +65,9 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
         scrollX:         0,
         scrollY:         0,
       });
+      } finally {
+        ajuste.remove();
+      }
 
       // JPEG calidad 0.82 en vez de PNG — reduce ~60-70% de peso
       const imgData = canvas.toDataURL("image/jpeg", 0.82);

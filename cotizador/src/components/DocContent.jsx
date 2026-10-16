@@ -8,8 +8,12 @@
  *     tabla de productos ocupa el centro y se estira, de modo que la hoja
  *     queda llena tanto con 3 productos como con 25. Antes el documento
  *     medía lo que midiera el contenido y quedaba media página en blanco.
- *   • DATOS DE ENTREGA destacados: nombre, dirección y celular. Lo demás
- *     (empresa, NIT, contacto, correo, ciudad) solo se imprime si existe.
+ *   • DATOS DE FACTURACIÓN al frente. Si el cliente pidió factura (hay
+ *     razón social o documento), su razón social o nombre va grande y el
+ *     NIT o la cédula en un recuadro resaltado, imposible de pasar por
+ *     alto. Si no, solo su nombre — sin casillas vacías de NIT.
+ *   • DATOS DE ENTREGA (dirección, celular, quién recibe) debajo, y solo
+ *     los que existan.
  *   • TABLA SIMPLE de seis columnas. El valor unitario es el precio real
  *     del producto, con IVA incluido; el IVA va discriminado en el resumen.
  *   • OBSERVACIONES al pie, con renglones para escribir a mano sobre la
@@ -21,7 +25,7 @@
  */
 
 import React from "react";
-import { money, fmtDate, calcRow } from "../utils";
+import { money, fmtDate, calcRow, datosFacturacion } from "../utils";
 import { PAGE_W, PAGE_H, repartirEnHojas } from "../lib/hojas";
 
 const FY    = "#F9BF20";
@@ -72,6 +76,91 @@ const Th = ({ w, align = "left", pad, children }) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════
+   BLOQUE DEL CLIENTE
+   Lo primero que busca contabilidad (y el cliente) es a nombre de quién
+   va y con qué NIT o cédula. Antes eso salía en una línea gris de 8 px
+   debajo de todo; ahora manda el bloque cuando existe, y desaparece por
+   completo cuando no — una venta de mostrador lleva solo el nombre.
+═══════════════════════════════════════════════════════════════ */
+function BloqueCliente({ cli }) {
+  const f = datosFacturacion(cli);
+  const lugar = [cli.direccion, cli.ciudad].map((v) => String(v || "").trim()).filter(Boolean).join(", ");
+  const contacto = String(cli.contacto || "").trim();
+  const atencion = contacto && contacto.toLowerCase() !== String(cli.nombre || "").trim().toLowerCase()
+    ? contacto : "";
+
+  /* Renglones de entrega: solo los que tienen dato */
+  const filas = [
+    f.recibe && ["Recibe", f.recibe],
+    atencion && ["Atención", atencion],
+    lugar && ["Dirección", lugar],
+    cli.tel && ["Celular", cli.tel],
+    !f.factura && f.correo && ["Correo", f.correo],
+  ].filter(Boolean);
+
+  return (
+    <div>
+      <Lbl style={{ marginBottom: 6, color: f.factura ? DARK : LABEL }}>
+        {f.factura ? (f.esEmpresa ? "Facturar a · razón social" : "Facturar a") : "Cliente"}
+      </Lbl>
+
+      <div style={{
+        fontSize: f.titular.length > 38 ? 15 : 18, fontWeight: 800, lineHeight: 1.15,
+        color: "#111", letterSpacing: -0.2,
+      }}>
+        {f.titular || "—"}
+      </div>
+
+      {/* Recuadro del documento. Va en tabla y no en inline-block: el
+          generador de PDF (html2canvas) desacomoda el texto de los
+          inline-block y el recuadro se montaba sobre el nombre. */}
+      {f.numero && (
+        <table style={{ borderCollapse: "collapse", marginTop: 10 }}>
+          <tbody>
+            <tr>
+              <td style={{ padding: 0, verticalAlign: "top" }}>
+                <div style={{
+                  background: "#fff6d6", border: `1px solid ${FY}`, borderLeft: `4px solid ${FY}`,
+                  padding: "3px 12px 6px 9px", whiteSpace: "nowrap",
+                }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: DARK }}>
+                    {f.docCorto}
+                  </span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "#111", marginLeft: 8 }}>
+                    {f.numero}
+                  </span>
+                </div>
+              </td>
+              {f.correo && (
+                <td style={{ fontSize: 9, color: "#555", paddingLeft: 10, verticalAlign: "middle", paddingBottom: 2 }}>
+                  Factura electrónica: <strong style={{ color: "#222" }}>{f.correo}</strong>
+                </td>
+              )}
+            </tr>
+          </tbody>
+        </table>
+      )}
+
+      {filas.length > 0 && (
+        <table style={{ borderCollapse: "collapse", marginTop: 9 }}>
+          <tbody>
+            {filas.map(([l, v]) => (
+              <tr key={l}>
+                <td style={{
+                  fontSize: 7.5, color: LABEL, letterSpacing: 0.8, width: 64, padding: "2px 0",
+                  verticalAlign: "baseline", fontWeight: 700, textTransform: "uppercase",
+                }}>{l}</td>
+                <td style={{ fontSize: 11, fontWeight: 700, padding: "2px 0", color: "#222" }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    UNA HOJA
    El cliente va solo en la primera; el resumen, las notas y la firma
    solo en la última. El encabezado y el pie se repiten en todas, para
@@ -79,8 +168,9 @@ const Th = ({ w, align = "left", pad, children }) => (
 ═══════════════════════════════════════════════════════════════ */
 function Hoja({
   empresa, cot, cli, items, descG, totals, notas, observaciones, aiuData,
-  esObra, hayAIU, moneda, extras, hayDesc, desde, esPrimera, esUltima, pag, total,
+  esObra, hayAIU, moneda, hayDesc, desde, esPrimera, esUltima, pag, total,
 }) {
+  const fact = datosFacturacion(cli);
   const st = {
     page: {
       fontFamily: "Arial, Helvetica, sans-serif",
@@ -143,33 +233,7 @@ function Hoja({
       {esPrimera ? (
         <div style={{ display: "flex", borderBottom: `2px solid ${DARK}`, flex: "0 0 auto" }}>
           <div style={{ flex: 1.75, padding: "13px 26px", borderRight: `1px solid ${LINE}` }}>
-            <Lbl style={{ marginBottom: 7 }}>Cliente</Lbl>
-            <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, marginBottom: 7 }}>
-              {cli.nombre || "—"}
-            </div>
-            <table style={{ borderCollapse: "collapse" }}>
-              <tbody>
-                <tr>
-                  <td style={{ fontSize: 8, color: LABEL, letterSpacing: 0.8, width: 62, padding: "2px 0", verticalAlign: "baseline", fontWeight: 700 }}>
-                    DIRECCIÓN
-                  </td>
-                  <td style={{ fontSize: 12, fontWeight: 700, padding: "2px 0" }}>
-                    {cli.direccion || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ fontSize: 8, color: LABEL, letterSpacing: 0.8, padding: "2px 0", verticalAlign: "baseline", fontWeight: 700 }}>
-                    CELULAR
-                  </td>
-                  <td style={{ fontSize: 12, fontWeight: 700, padding: "2px 0" }}>
-                    {cli.tel || "—"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {extras && (
-              <div style={{ fontSize: 8.5, color: LABEL, marginTop: 6 }}>{extras}</div>
-            )}
+            <BloqueCliente cli={cli} />
           </div>
 
           <div style={{ flex: 1, padding: "13px 26px" }}>
@@ -200,7 +264,12 @@ function Hoja({
           borderBottom: `2px solid ${DARK}`, padding: "8px 26px", flex: "0 0 auto",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
-          <span style={{ fontSize: 11, fontWeight: 700 }}>{cli.nombre || "—"}</span>
+          <span style={{ fontSize: 11, fontWeight: 700 }}>
+            {fact.titular || "—"}
+            {fact.numero && (
+              <span style={{ fontWeight: 400, color: MUTED }}>  ·  {fact.docCorto} {fact.numero}</span>
+            )}
+          </span>
           <span style={{ fontSize: 9, color: MUTED }}>continuación · {fmtDate(cot.fecha)}</span>
         </div>
       )}
@@ -444,10 +513,6 @@ export default function DocContent({
   const hayDesc = filled.some((r) => parseFloat(r.disc) > 0);
   const moneda  = cot.moneda || "COP";
 
-  /* Datos opcionales del cliente: se imprimen solo si están */
-  const extras = [cli.empresa, cli.nit && `NIT ${cli.nit}`, cli.ciudad,
-    cli.contacto && `Attn: ${cli.contacto}`, cli.correo].filter(Boolean).join("  ·  ");
-
   /* Cada hoja necesita saber en qué número de ítem empieza, para que la
      numeración sea continua entre páginas. Se calcula de antemano. */
   const hojas = repartirEnHojas(filled);
@@ -463,7 +528,7 @@ export default function DocContent({
             empresa={empresa} cot={cot} cli={cli} items={hoja} descG={descG}
             totals={totals} notas={notas} observaciones={observaciones}
             aiuData={aiuData} esObra={esObra} hayAIU={hayAIU} moneda={moneda}
-            extras={extras} hayDesc={hayDesc} desde={desde}
+            hayDesc={hayDesc} desde={desde}
             esPrimera={i === 0} esUltima={i === hojas.length - 1}
             pag={i + 1} total={hojas.length} />
         );

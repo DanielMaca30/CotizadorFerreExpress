@@ -60,7 +60,7 @@ import {
   UNITS, FORMAS_PAGO, FORMAS_PAGO_OBRA, IVA_OPTS, MONEDAS,
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
-  AVISO_LATERAL,
+  AVISO_LATERAL, TIPOS_DOC, deducirTipoDoc, datosFacturacion,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
 import AppLogo from '../components/AppLogo';
@@ -262,6 +262,38 @@ function ModalTipo({ isOpen, onSelect, onCancel, onIrHistorial, onAyuda }) {
   );
 }
 
+/* ── Documento a escala del ancho disponible ──
+   La hoja mide 816 px (carta). En un celular de 390 px antes se veía solo
+   la mitad izquierda: ni el valor unitario, ni el total, ni las
+   condiciones. Ahora se encoge para caber entero y se puede ampliar con
+   los dedos. En pantallas anchas queda a tamaño real. */
+function DocEscalado({ children }) {
+  const caja = useRef(null);
+  const hoja = useRef(null);
+  const [esc, setEsc] = useState(1);
+  const [alto, setAlto] = useState(null);
+  useEffect(() => {
+    const medir = () => {
+      const w = caja.current?.clientWidth || PAGE_W;
+      const k = Math.min(1, w / PAGE_W);
+      setEsc(k);
+      setAlto((hoja.current?.offsetHeight || 0) * k);
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    if (caja.current) ro.observe(caja.current);
+    if (hoja.current) ro.observe(hoja.current);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <Box ref={caja} w="100%" overflow="hidden" h={alto ? `${alto}px` : 'auto'}>
+      <Box ref={hoja} w={`${PAGE_W}px`} transform={`scale(${esc})`} transformOrigin="top left">
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════
    PANELES DE FORMULARIO
 ════════════════════════════════════════════════════════════ */
@@ -312,46 +344,108 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const C = k => ({ value: cliente[k] ?? '', onChange: e => setCliente(p => ({ ...p, [k]: e.target.value })) });
   const faltan = ['nombre', 'direccion', 'tel'].filter(k => !String(cliente[k] ?? '').trim());
+  const fact = datosFacturacion(cliente);
+  const tipoActual = deducirTipoDoc(cliente);
+  const factBg = useColorModeValue('yellow.50', 'whiteAlpha.100');
+  const factBc = useColorModeValue('yellow.300', 'whiteAlpha.300');
+  const segBg = useColorModeValue('white', 'gray.700');
+  const muted = useColorModeValue('gray.500', 'gray.400');
   return (
     <Stack spacing={3} p={4}>
       {/* Los tres datos con los que se entrega un domicilio.
           El envoltorio lleva marca para que el recorrido guiado pueda
           señalarlos como bloque. */}
-      <Box data-tour="cliente-obligatorios">
-      <Box>
-        <FL required>Nombre / Razón social</FL>
-        <ClienteAutocomplete {...ip} data-tour="cliente-nombre" placeholder="Juan García"
-          value={cliente.nombre}
-          onChange={v => setCliente(p => ({ ...p, nombre: v }))}
-          onAccept={onUsarCliente}
-          getClientes={getClientes} />
-      </Box>
-      <Box><FL required>Dirección de entrega</FL>
-        <Input {...ip} placeholder="Cra 100 #11-60, Ciudad Jardín" {...C('direccion')} /></Box>
-      <Box><FL required>Celular</FL><Input {...ip} type="tel" placeholder="311 308 5083" {...C('tel')} /></Box>
+      <Stack spacing={3} data-tour="cliente-obligatorios">
+        <Box>
+          <FL required>Nombre del cliente</FL>
+          <ClienteAutocomplete {...ip} data-tour="cliente-nombre" placeholder="Juan García"
+            value={cliente.nombre}
+            onChange={v => setCliente(p => ({ ...p, nombre: v }))}
+            onAccept={onUsarCliente}
+            getClientes={getClientes} />
+        </Box>
+        <Box><FL required>Dirección de entrega</FL>
+          <Input {...ip} placeholder="Cra 100 #11-60, Ciudad Jardín" {...C('direccion')} /></Box>
+        <Box><FL required>Celular</FL><Input {...ip} type="tel" inputMode="tel" placeholder="311 308 5083" {...C('tel')} /></Box>
 
-      {faltan.length > 0 && (
-        <Text fontSize="10px" color="orange.500" fontWeight="600" mt={-1}>
-          Falta {faltan.length === 1 ? 'el' : 'llenar'}{' '}
-          {faltan.map(k => ({ nombre: 'nombre', direccion: 'dirección', tel: 'celular' }[k])).join(', ')}
+        {faltan.length > 0 && (
+          <Text fontSize="10px" color="orange.500" fontWeight="600" mt={-1}>
+            Falta {faltan.length === 1 ? 'el' : 'llenar'}{' '}
+            {faltan.map(k => ({ nombre: 'nombre', direccion: 'dirección', tel: 'celular' }[k])).join(', ')}
+          </Text>
+        )}
+      </Stack>
+
+      {/* ── Facturación ──
+          Antes eran "opcionales" sueltos y en el documento salían en una
+          línea gris diminuta. Ahora se agrupan como lo que son: los datos
+          para facturar, y en el documento mandan cuando existen. */}
+      <Box border="1px solid" borderColor={factBc} bg={factBg} rounded="lg" p={3} mt={1}>
+        <Text fontSize="10px" fontWeight="800" letterSpacing="0.12em" textTransform="uppercase" color={DARK}
+          _dark={{ color: FY }}>
+          Datos para factura
         </Text>
-      )}
+        <Text fontSize="10.5px" color={muted} mt={0.5} mb={3} lineHeight="1.45">
+          Solo si el cliente pide factura. Salen destacados en el documento; si los dejas vacíos, sale solo el nombre.
+        </Text>
+        <Stack spacing={3}>
+          <Box>
+            <FL>Razón social <Text as="span" textTransform="none" letterSpacing="0" fontWeight="500">(si es empresa)</Text></FL>
+            <Input {...ip} placeholder="Constructora XYZ S.A.S." {...C('empresa')} />
+          </Box>
+          <Box>
+            <FL>Documento</FL>
+            <Flex gap={2} flexWrap="wrap">
+              <HStack spacing={0} border="1px solid" borderColor="gray.200" rounded="md" bg={segBg} p="2px" flexShrink={0}
+                role="radiogroup" aria-label="Tipo de documento">
+                {TIPOS_DOC.map(t => {
+                  const activo = tipoActual === t.v;
+                  return (
+                    <Button key={t.v} size="xs" h="26px" px={2} rounded="sm" role="radio" aria-checked={activo}
+                      title={t.largo}
+                      bg={activo ? DARK : 'transparent'} color={activo ? FY : muted}
+                      _hover={{ bg: activo ? DARK : 'gray.100' }} fontWeight="800" fontSize="10px"
+                      onClick={() => setCliente(p => ({ ...p, tipoDoc: t.v }))}>
+                      {t.corto}
+                    </Button>
+                  );
+                })}
+              </HStack>
+              <Input {...ip} minW="120px" inputMode="numeric" placeholder={tipoActual === 'NIT' ? '900.123.456-7' : 'Número'} {...C('nit')} />
+            </Flex>
+          </Box>
+          <Box>
+            <FL>Correo para la factura electrónica</FL>
+            <Input {...ip} type="email" inputMode="email" placeholder="facturas@cliente.com" {...C('correo')} />
+          </Box>
+        </Stack>
+
+        {/* Así queda en el documento — para no tener que abrir la vista previa */}
+        <Box mt={3} pt={2.5} borderTop="1px dashed" borderColor={factBc}>
+          <Text fontSize="9px" fontWeight="800" letterSpacing="0.12em" textTransform="uppercase" color={muted}>
+            Así sale en el documento
+          </Text>
+          {fact.factura ? (
+            <Text fontSize="12px" mt={1} lineHeight="1.4">
+              <Text as="span" fontWeight="800">{fact.titular || '—'}</Text>
+              {fact.numero && <> · <Text as="span" fontWeight="800">{fact.docCorto} {fact.numero}</Text></>}
+              {fact.recibe && <Text as="span" color={muted}> · recibe {fact.recibe}</Text>}
+            </Text>
+          ) : (
+            <Text fontSize="11.5px" mt={1} color={muted}>
+              Sin datos de factura: solo el nombre{cliente.nombre ? <> (<strong>{cliente.nombre}</strong>)</> : ''}.
+            </Text>
+          )}
+        </Box>
       </Box>
 
-      <Divider />
-      <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY}>
-        Opcionales
+      <Text fontSize="9px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={FY} pt={1}>
+        Otros datos (opcionales)
       </Text>
-      <Text fontSize="10px" color="gray.500" mt={-1}>
-        Solo se imprimen en el documento si los llenas.
-      </Text>
-      <Box><FL>Empresa</FL><Input {...ip} placeholder="Constructora XYZ" {...C('empresa')} /></Box>
       <Flex gap={2}>
-        <Box flex={1}><FL>NIT / Cédula</FL><Input {...ip} {...C('nit')} /></Box>
         <Box flex={1}><FL>Ciudad</FL><Input {...ip} placeholder="Cali" {...C('ciudad')} /></Box>
+        <Box flex={1}><FL>Atención / contacto</FL><Input {...ip} placeholder="Nombre" {...C('contacto')} /></Box>
       </Flex>
-      <Box><FL>Contacto</FL><Input {...ip} placeholder="Attn: nombre" {...C('contacto')} /></Box>
-      <Box><FL>Correo</FL><Input {...ip} type="email" placeholder="correo@..." {...C('correo')} /></Box>
     </Stack>
   );
 });
@@ -537,7 +631,10 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           placeholder="—" fontSize="11px" color={mutedL} px={2} py={1} rounded="md"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
-      <Td borderColor={border} p={1}>
+      {/* La descripción se lleva todo el ancho sobrante: antes la tabla
+          repartía el espacio entre columnas de números y el nombre del
+          producto quedaba cortado ("Tubo PVC", "Soldadura"). */}
+      <Td borderColor={border} p={1} w="100%" minW="170px">
         <AutocompleteInput
           value={r.desc}
           onChange={val => upItem(r.id, 'desc', val)}
@@ -566,16 +663,19 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           rowId={r.id} />
       </Td>
       {!esObra && (
-        <>
-          <Td borderColor={border} isNumeric pr={2} w="82px">
-            <Text fontSize="11px" color={mutedL}>{p > 0 ? money(pSin, cotConfig.moneda) : '—'}</Text>
-          </Td>
-          <Td borderColor={border} isNumeric pr={2} w="68px">
-            {r.sinIva
-              ? <Text fontSize="9px" fontWeight="700" color="blue.400" title="Transporte excluido de IVA">EXCL.</Text>
-              : <Text fontSize="11px" color={mutedL}>{p > 0 ? money(pIva, cotConfig.moneda) : '—'}</Text>}
-          </Td>
-        </>
+        /* Base sin IVA e IVA en una sola columna de dos renglones: son datos
+           de consulta, no se escriben, y como dos columnas le quitaban al
+           nombre del producto el espacio que necesita para leerse. */
+        <Td borderColor={border} isNumeric pr={2} w="86px" lineHeight="1.25" whiteSpace="nowrap">
+          {r.sinIva
+            ? <Text fontSize="9px" fontWeight="700" color="blue.400" title="Transporte excluido de IVA">SIN IVA</Text>
+            : p > 0
+              ? <>
+                  <Text fontSize="10.5px" color={mutedL} title="Precio sin IVA">{money(pSin, cotConfig.moneda)}</Text>
+                  <Text fontSize="9.5px" color={mutedL} title="IVA por unidad">+ {money(pIva, cotConfig.moneda)}</Text>
+                </>
+              : <Text fontSize="11px" color={mutedL}>—</Text>}
+        </Td>
       )}
       <Td borderColor={border} p={1} isNumeric w="94px">
         <PriceInput value={r.price} onChange={val => upItem(r.id, 'price', val)}
@@ -639,7 +739,7 @@ const TablaProductos = memo(function TablaProductos({
 
   const cols = esObra
     ? ['#', 'Ref.', 'Descripción / Actividad', 'Cant.', 'Und.', 'Vr. Unit.', 'Desc.%', 'Total', '']
-    : ['#', 'Ref.', 'Nombre Producto', 'Cant.', 'Und.', 'P. s/IVA', 'IVA', 'P. c/IVA', 'Desc.%', 'Total', ''];
+    : ['#', 'Ref.', 'Nombre Producto', 'Cant.', 'Und.', 'Base + IVA', 'P. c/IVA', 'Desc.%', 'Total', ''];
 
   return (
     <Box ref={tableRef}
@@ -657,8 +757,8 @@ const TablaProductos = memo(function TablaProductos({
           <Tr bg={theadBg}>
             {cols.map((h, i) => (
               <Th key={i} color={FY} borderColor="transparent" fontSize="8px"
-                letterSpacing="wider" fontWeight="700"
-                isNumeric={['Cant.', 'P. s/IVA', 'IVA', 'P. c/IVA', 'Vr. Unit.', 'Desc.%', 'Total'].includes(h)}>
+                letterSpacing="wider" fontWeight="700" whiteSpace="nowrap" px={2}
+                isNumeric={['Cant.', 'Base + IVA', 'P. c/IVA', 'Vr. Unit.', 'Desc.%', 'Total'].includes(h)}>
                 {h}
               </Th>
             ))}
@@ -992,7 +1092,26 @@ export default function CotizadorPage() {
     });
   }, []);
 
-  useEffect(() => { setHasChanges(true); }, [cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig]);
+  /* ¿Hay cambios sin guardar?
+     Antes cualquier cambio de estado marcaba "Sin guardar", incluida la
+     propia carga de la cotización: al abrir una guardada ya salía el aviso
+     naranja y, al tocar "Ver" o salir, preguntaba por cambios que nadie
+     hizo. Ahora se compara contra la firma de lo guardado. En una nueva,
+     solo cuenta como cambio si ya tiene algo escrito. */
+  useEffect(() => {
+    if (editingId && sigRef.current) {
+      const actual = firmaDe({
+        cliente, cotConfig, items, descG: parseFloat(descLocal) || 0,
+        notas, observaciones, aiuConfig,
+      });
+      setHasChanges(actual !== sigRef.current);
+    } else {
+      setHasChanges(
+        items.some(r => String(r.desc || '').trim() || String(r.price || '').trim())
+        || !!String(cliente.nombre || '').trim()
+      );
+    }
+  }, [cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig, editingId]);
 
   const stRef = useRef({});
   const itemsRef = useRef(items);   // lectura estable para los atajos de teclado
@@ -1589,7 +1708,13 @@ export default function CotizadorPage() {
       aprenderProductos(items);
       aprenderCliente(cliente);   // alimenta el directorio para la próxima vez
       clearDraft();
-      sigRef.current = firmaDe(stRef.current);   // queda como referencia de "ya guardado"
+      /* Queda como referencia de "ya guardado". En una nueva, el número
+         recién asignado entra en la configuración: se firma con él para
+         que el aviso no vuelva a "Sin guardar" justo después de crearla. */
+      sigRef.current = firmaDe({
+        ...stRef.current,
+        cotConfig: (!editingId && saved?.config) ? saved.config : stRef.current.cotConfig,
+      });
       if (!editingId) {
         if (saved?.config) setCotConfig(saved.config);
         setEditingId(saved.id);
@@ -1723,7 +1848,7 @@ export default function CotizadorPage() {
   const handleUsarCliente = useCallback((c) => {
     setCliente({
       nombre: c.nombre || '', direccion: c.direccion || '', tel: c.tel || '',
-      empresa: c.empresa || '', nit: c.nit || '', contacto: c.contacto || '',
+      empresa: c.empresa || '', nit: c.nit || '', tipoDoc: c.tipoDoc || '', contacto: c.contacto || '',
       correo: c.correo || '', ciudad: c.ciudad || '',
     });
     toast({
@@ -1807,7 +1932,7 @@ export default function CotizadorPage() {
         px={{ base: 3, md: 6 }} py={3} position="sticky" top={0} zIndex={10}>
         <Flex justify="space-between" align="center" gap={2} flexWrap="wrap">
           <HStack>
-            <Button size="sm" variant="outline" rounded="md" leftIcon={<FiEye />}
+            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiArrowLeft />}
               onClick={() => setIsPreview(false)}>Volver</Button>
             {cotConfig.numero && <Badge bg={FY} color={DARK} rounded="full" px={3} fontWeight="700">{cotConfig.numero}</Badge>}
             <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'} rounded="full" px={2} fontSize="9px">
@@ -1826,7 +1951,7 @@ export default function CotizadorPage() {
       </Box>
       <Box maxW="900px" mx="auto" py={6} px={{ base: 2, md: 4 }}>
         <GlassCard rounded="lg" overflow="hidden" boxShadow="0 4px 32px rgba(0,0,0,0.12)">
-          <DocContent {...docProps} />
+          <DocEscalado><DocContent {...docProps} /></DocEscalado>
         </GlassCard>
         <Flex justify="center" mt={5} pb={8}>
           <Button size="lg" bg={DARK} color={FY} rounded="full" px={10} leftIcon={<FiDownload />}
@@ -2394,19 +2519,25 @@ export default function CotizadorPage() {
       </AlertDialog>
 
       {/* Dialogo cambios sin guardar */}
-      <AlertDialog isOpen={isExitOpen} leastDestructiveRef={cancelRef} onClose={onExitClose}>
+      {/* En celular los tres botones no caben en fila: se apilan, con la
+          acción recomendada (guardar) arriba y a lo ancho. Antes los tres
+          eran del mismo amarillo y "Quedarme aquí" parecía la principal. */}
+      <AlertDialog isOpen={isExitOpen} leastDestructiveRef={cancelRef} onClose={onExitClose} isCentered>
         <AlertDialogOverlay>
-          <AlertDialogContent rounded="xl">
+          <AlertDialogContent rounded="xl" mx={4}>
             <AlertDialogHeader fontWeight="900">
               <HStack><Icon as={FiAlertCircle} color="orange.400" /><Text>Cambios sin guardar</Text></HStack>
             </AlertDialogHeader>
             <AlertDialogBody>¿Qué deseas hacer con los cambios actuales?</AlertDialogBody>
-            <AlertDialogFooter gap={2}>
-              <Button ref={cancelRef} onClick={onExitClose} rounded="md" size="sm">Quedarme aquí</Button>
+            <AlertDialogFooter gap={2} flexDirection={{ base: 'column-reverse', sm: 'row' }} alignItems="stretch">
+              <Button ref={cancelRef} onClick={onExitClose} rounded="md" size="sm" variant="ghost" colorScheme="gray">
+                Quedarme aquí
+              </Button>
               <Button variant="outline" colorScheme="red" rounded="md" size="sm" onClick={discardAndExit}>
                 Salir sin guardar
               </Button>
-              <Button bg={FY} color={DARK} rounded="md" size="sm" fontWeight="700" onClick={confirmExit}>
+              <Button bg={FY} color={DARK} rounded="md" size="sm" fontWeight="700" onClick={confirmExit}
+                _hover={{ bg: '#e0b010' }}>
                 Guardar y salir
               </Button>
             </AlertDialogFooter>

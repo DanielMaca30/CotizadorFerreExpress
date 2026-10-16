@@ -27,7 +27,7 @@ const CLIENTES_KEY   = "ferreexpress_clientes";
 const MAX_SUGERENCIAS = 6;
 
 /* Campos que se recuerdan de cada cliente */
-const CAMPOS = ["nombre", "direccion", "tel", "empresa", "nit", "contacto", "correo", "ciudad"];
+const CAMPOS = ["nombre", "direccion", "tel", "empresa", "nit", "tipoDoc", "contacto", "correo", "ciudad"];
 
 const cargar = () => {
   try {

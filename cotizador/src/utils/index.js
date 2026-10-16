@@ -257,7 +257,59 @@ export const DEFAULT_EMPRESA = {
    El resto es opcional y solo se imprime si está diligenciado. */
 export const DEFAULT_CLIENTE = {
   nombre: "", direccion: "", tel: "",
-  empresa: "", nit: "", contacto: "", correo: "", ciudad: "",
+  empresa: "", nit: "", tipoDoc: "", contacto: "", correo: "", ciudad: "",
+};
+
+/* ── Datos de facturación del cliente ─────────────────────────────
+   Un solo sitio decide cómo se presenta el cliente en el documento,
+   el formulario y la ficha, para que no digan cosas distintas.
+
+   · Con razón social (campo "empresa") → se factura a la empresa, con NIT.
+   · Sin razón social pero con documento → se factura a la persona, con
+     su cédula (o NIT si es persona natural con NIT).
+   · Sin ninguno de los dos → no hay datos de factura: solo el nombre.
+
+   tipoDoc lo elige quien cotiza (CC · NIT · CE). Si lo deja en
+   automático se deduce: empresa → NIT; número con dígito de
+   verificación (900.123.456-7) o de 9 cifras que empieza por 8 o 9 → NIT;
+   cualquier otro → C.C. */
+export const TIPOS_DOC = [
+  { v: "CC",  corto: "C.C.", largo: "Cédula de ciudadanía" },
+  { v: "NIT", corto: "NIT",  largo: "NIT" },
+  { v: "CE",  corto: "C.E.", largo: "Cédula de extranjería" },
+];
+
+export const deducirTipoDoc = (cli = {}) => {
+  if (cli.tipoDoc && TIPOS_DOC.some((t) => t.v === cli.tipoDoc)) return cli.tipoDoc;
+  const num = String(cli.nit || "").trim();
+  if (String(cli.empresa || "").trim()) return "NIT";
+  if (/-\s*\d\s*$/.test(num)) return "NIT";
+  const digitos = num.replace(/\D/g, "");
+  if (digitos.length === 9 && /^[89]/.test(digitos)) return "NIT";
+  return "CC";
+};
+
+export const datosFacturacion = (cli = {}) => {
+  const limpio = (v) => String(v || "").trim();
+  const razon  = limpio(cli.empresa);
+  const nombre = limpio(cli.nombre);
+  const numero = limpio(cli.nit);
+  const tipo   = numero ? deducirTipoDoc(cli) : "";
+  const meta   = TIPOS_DOC.find((t) => t.v === tipo);
+  return {
+    /* ¿Hay datos de factura que destacar? */
+    factura: !!(razon || numero),
+    /* A nombre de quién se factura */
+    titular: razon || nombre,
+    esEmpresa: !!razon,
+    /* Persona que recibe cuando se factura a una empresa */
+    recibe: razon && nombre && nombre.toLowerCase() !== razon.toLowerCase() ? nombre : "",
+    tipoDoc: tipo,
+    docCorto: meta?.corto || "",
+    docLargo: meta?.largo || "",
+    numero,
+    correo: limpio(cli.correo),
+  };
 };
 
 export const DEFAULT_CONFIG = {

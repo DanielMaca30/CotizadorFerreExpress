@@ -105,10 +105,11 @@ export const TEMAS = [
     ir: "/cotizador",
     pasos: [
       'En el panel de la izquierda, toca la pestaña "CLIENTE".',
-      'Empieza a escribir el nombre en "Nombre / Razón social". Con una sola letra aparece una lista con los clientes que ya has atendido.',
-      "Si tu cliente está en la lista, HAZ CLIC sobre él: se llenan de un golpe dirección, celular, empresa, NIT, contacto, correo y ciudad.",
+      'Empieza a escribir el nombre en "Nombre del cliente". Con una sola letra aparece una lista con los clientes que ya has atendido.',
+      "Si tu cliente está en la lista, HAZ CLIC sobre él: se llenan de un golpe dirección, celular, razón social, documento, contacto, correo y ciudad.",
       'Si es cliente nuevo, escribe a mano la "Dirección de entrega" y el "Celular".',
-      'Los demás campos (Empresa, NIT, Ciudad, Contacto, Correo) son opcionales: solo se imprimen si los llenas.',
+      'Si el cliente pide factura, llena el recuadro amarillo "Datos para factura": razón social (si es empresa), el documento (toca C.C., NIT o C.E.) y el correo para la factura electrónica. En el documento salen destacados. Si no pide factura, déjalo vacío y sale solo el nombre.',
+      'Ciudad y Atención/contacto son opcionales: solo se imprimen si los llenas.',
     ],
     ojo: [
       "Los tres campos con asterisco rojo (nombre, dirección, celular) son los que hacen falta para el PDF: el documento sirve también de remisión al entregar a domicilio.",
@@ -116,7 +117,7 @@ export const TEMAS = [
       "Escribe el nombre siempre igual. «Ferretería Central» y «Ferreteria Central S.A.S.» quedan como dos clientes distintos, y luego su historial sale partido en dos.",
       "Si esta vez dejas un campo vacío, no se borra lo que ya estaba guardado de ese cliente: se conserva lo anterior.",
     ],
-    claves: ["cliente", "nombre", "direccion", "celular", "telefono", "nit", "autocompletar cliente", "datos del cliente"],
+    claves: ["cliente", "nombre", "direccion", "celular", "telefono", "nit", "cedula", "factura", "razon social", "facturar", "autocompletar cliente", "datos del cliente"],
   },
   {
     id: "productos",
