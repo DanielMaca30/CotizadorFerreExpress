@@ -2114,14 +2114,19 @@ export default function CotizadorPage() {
       empresa?.tel ? `\n📞 ${empresa.tel}` : '',
     ].filter(Boolean).join('\n');
 
-    const telLimpio = (cliente?.tel || '').replace(/\D/g, '');
-    const url = telLimpio
-      ? `https://wa.me/57${telLimpio}?text=${encodeURIComponent(partes)}`
+    /* Express → siempre al número de la ferre; normal → al del cliente */
+    const NUM_FERRE = '3028043116';
+    const telDestino = modoExpress
+      ? NUM_FERRE
+      : (cliente?.tel || '').replace(/\D/g, '');
+
+    const url = telDestino
+      ? `https://wa.me/57${telDestino}?text=${encodeURIComponent(partes)}`
       : `https://wa.me/?text=${encodeURIComponent(partes)}`;
 
     window.open(url, '_blank', 'noopener');
-    if (editingId) addEvento(editingId, 'enviada_whatsapp', 'texto directo');
-  }, [items, cotConfig, empresa, totals, cliente, notas, editingId, addEvento]);
+    if (editingId) addEvento(editingId, 'enviada_whatsapp', modoExpress ? 'remisión interna → ferre' : 'texto directo');
+  }, [items, cotConfig, empresa, totals, cliente, notas, editingId, addEvento, modoExpress]);
 
   /* ── Convertir Comercial ⇄ Obra ──
      Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
@@ -2649,13 +2654,15 @@ export default function CotizadorPage() {
         </Flex>
       </Box>
 
-      {/* ─── Indicador de etapa del proceso ─── */}
-      <ProcesoIndicador
-        items={items}
-        cliente={cliente}
-        estado={cotConfig.estado || 'borrador'}
-        eventos={[]}
-      />
+      {/* ─── Indicador de etapa del proceso (solo escritorio) ─── */}
+      <Box display={{ base: 'none', md: 'block' }}>
+        <ProcesoIndicador
+          items={items}
+          cliente={cliente}
+          estado={cotConfig.estado || 'borrador'}
+          eventos={[]}
+        />
+      </Box>
 
       <Box maxW="1600px" mx="auto" px={{ base: 3, md: 5 }} py={4}>
 
@@ -2804,12 +2811,12 @@ export default function CotizadorPage() {
         {esCelular && (
         /* Sitio para las dos barras fijas de abajo: la del total con
            Ver/PDF/Guardar y, debajo, la de navegación. */
-        <Box display="flex" flexDirection="column" pb={`calc(${NAV_MOVIL_H} + 96px)`}>
+        <Box display="flex" flexDirection="column" pb={`calc(${NAV_MOVIL_H} + 120px)`}>
 
           {/* Tab bar mobile — en modo Express solo la barra naranja, sin pasos */}
           {modoExpress ? (
-            <Flex bg="orange.100" _dark={{ bg: 'orange.900' }} border="1px solid" borderColor="orange.300"
-              _dark_borderColor="orange.600" rounded="2xl" mb={4} px={4} py={2.5} align="center" justify="space-between">
+            <Flex bg="orange.100" _dark={{ bg: 'orange.900', borderColor: 'orange.600' }} border="1px solid" borderColor="orange.300"
+              rounded="2xl" mb={4} px={4} py={2.5} align="center" justify="space-between">
               <HStack spacing={2}>
                 <Text fontSize="16px">⚡</Text>
                 <Text fontWeight="900" fontSize="13px" color="orange.700" _dark={{ color: 'orange.200' }}>
@@ -2822,11 +2829,12 @@ export default function CotizadorPage() {
           <Flex bg={barBg} border="1px solid" borderColor={border}
             rounded="2xl" mb={4} overflow="hidden">
             {STEPS.map((label, idx) => (
-              <Box key={label} data-tour={`paso-${label.toLowerCase()}`} flex={1} as="button" py={2.5}
+              <Box key={label} data-tour={`paso-${label.toLowerCase()}`} flex={1} as="button" py={3}
+                minH="44px" display="flex" alignItems="center" justifyContent="center"
                 bg={mobileStep === idx ? FY : 'transparent'}
                 onClick={() => setMobileStep(idx)}
                 transition="all 0.15s">
-                <Text fontSize="9px" fontWeight="700" textTransform="uppercase" letterSpacing="wider"
+                <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="wider"
                   color={mobileStep === idx ? DARK : mutedL}>
                   {label}
                 </Text>
@@ -2843,42 +2851,48 @@ export default function CotizadorPage() {
                 {mobileStep === 0 && <PanelCliente {...panelClienteProps} />}
                 {mobileStep === 1 && (
                   <Box>
-                    {/* Header productos mobile */}
-                    <Flex px={4} py={3} align="center" justify="space-between"
-                      borderBottom="1px solid" borderColor={border}>
-                      <HStack>
-                        <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                        <Text fontWeight="700">{esObra ? 'Actividades' : 'Productos'}</Text>
-                        <Tag size="sm" colorScheme="gray" rounded="full">
-                          {items.filter(r => r.desc || r.price).length}
-                        </Tag>
-                      </HStack>
-                      <Button size="xs" variant="outline" rounded="md" leftIcon={<FiUpload size={11} />}
-                        onClick={() => setShowImport(true)}>Importar</Button>
-                    </Flex>
-
-                    {/* Express: quien saca la mercancía */}
-                    {modoExpress && (
-                      <Box px={4} py={3} bg="orange.50" borderBottom="2px solid" borderColor="orange.300"
+                    {/* Header: Express unificado vs normal */}
+                    {modoExpress ? (
+                      /* ── Express: todo en una sola barra naranja ── */
+                      <Box px={4} pt={3} pb={3} bg="orange.50" borderBottom="2px solid" borderColor="orange.300"
                         _dark={{ bg: 'orange.900', borderColor: 'orange.600' }}>
-                        <Flex align="center" gap={2} mb={2}>
-                          <Text fontSize="14px">⚡</Text>
-                          <Text fontWeight="800" fontSize="13px" color="orange.700" _dark={{ color: 'orange.200' }}>
-                            Despacho Express
-                          </Text>
-                          <Badge colorScheme="orange" rounded="full" fontSize="9px">Remisión interna</Badge>
+                        <Flex align="center" justify="space-between" mb={2.5}>
+                          <HStack spacing={2}>
+                            <Text fontSize="16px" lineHeight="1">⚡</Text>
+                            <Text fontWeight="900" fontSize="14px" color="orange.700" _dark={{ color: 'orange.200' }}>
+                              Despacho Express
+                            </Text>
+                            <Tag size="sm" colorScheme="orange" rounded="full">
+                              {items.filter(r => r.desc || r.price).length} prod.
+                            </Tag>
+                          </HStack>
                         </Flex>
                         <Input
-                          placeholder="Nombre del trabajador..."
+                          placeholder="¿Quién saca la mercancía? (nombre del trabajador)"
                           value={expressTrabajador}
                           onChange={e => {
                             setExpressTrabajador(e.target.value);
                             setCliente(p => ({ ...p, nombre: e.target.value }));
                           }}
-                          size="sm" rounded="lg" fontWeight="600" fontSize="14px"
+                          rounded="lg" fontWeight="600" fontSize="14px" h="44px"
                           bg="white" _dark={{ bg: 'gray.700' }}
+                          borderColor="orange.300" focusBorderColor="orange.500"
                         />
                       </Box>
+                    ) : (
+                      /* ── Normal: header con importar ── */
+                      <Flex px={4} py={3} align="center" justify="space-between"
+                        borderBottom="1px solid" borderColor={border}>
+                        <HStack>
+                          <Icon as={FiPackage} color={mutedL} boxSize={4} />
+                          <Text fontWeight="700">{esObra ? 'Actividades' : 'Productos'}</Text>
+                          <Tag size="sm" colorScheme="gray" rounded="full">
+                            {items.filter(r => r.desc || r.price).length}
+                          </Tag>
+                        </HStack>
+                        <Button size="xs" variant="outline" rounded="md" leftIcon={<FiUpload size={11} />}
+                          onClick={() => setShowImport(true)}>Importar</Button>
+                      </Flex>
                     )}
 
                     {/* Captura rápida: sin abrir ni cerrar tarjetas */}
@@ -3015,7 +3029,8 @@ export default function CotizadorPage() {
             </AnimatePresence>
           </GlassCard>
 
-          {/* Navegación pasos */}
+          {/* Navegación pasos — oculta en express (solo botón único en barra fija) */}
+          {!modoExpress && (
           <Flex gap={2}>
             {mobileStep > 0 && (
               <Button flex={1} variant="outline" rounded="xl" leftIcon={<FiChevronLeft />}
@@ -3031,6 +3046,7 @@ export default function CotizadorPage() {
               </Button>
             )}
           </Flex>
+          )}
         </Box>
         )}
       </Box>
@@ -3051,20 +3067,24 @@ export default function CotizadorPage() {
             {money(totals.totalPagar, cotConfig.moneda)}
           </Text>
         </Box>
-        {/* Solo el ojo: con la palabra, el total no cabía y salía cortado */}
+        {/* Eye + Print: solo en modo normal (express no los necesita) */}
+        {!modoExpress && (<>
         <IconButton data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg"
           aria-label="Ver el documento" icon={<FiEye size={16} />}
           onClick={() => safeNavigate('preview')} />
         <IconButton size="sm" variant="outline" colorScheme="gray" rounded="lg"
           aria-label="Imprimir" icon={<FiPrinter size={16} />}
           onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
+        </>)}
         {/* Express: botón único grande «Guardar Remisión». Normal: WhatsApp + Guardar */}
         {modoExpress ? (
+          /* Un solo toque: guarda Y abre WhatsApp en la ferre */
           <Button size="sm" bg="orange.400" color="white" rounded="lg" fontWeight="800"
-            flex={2} leftIcon={<FiTruck size={15} />}
-            isLoading={isSaving} onClick={handleSave}
+            flex={2} leftIcon={<FaWhatsapp size={16} />}
+            isLoading={isSaving}
+            onClick={async () => { await handleSave(); enviarComoTexto(); }}
             _hover={{ bg: 'orange.500' }}>
-            {hasChanges || !editingId ? 'Guardar remisión' : '✓ Guardada'}
+            {hasChanges || !editingId ? 'Enviar a la ferre' : '✓ Enviada'}
           </Button>
         ) : (
           <>
