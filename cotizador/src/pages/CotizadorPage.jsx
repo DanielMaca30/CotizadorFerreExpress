@@ -28,7 +28,7 @@ import {
   Menu, MenuButton, MenuList, MenuItem, MenuDivider,
 } from '@chakra-ui/react';
 import {
-  FiPlus, FiTrash2, FiSave, FiDownload, FiEye, FiPrinter, FiGrid, FiBookmark, FiFeather,
+  FiPlus, FiTrash2, FiSave, FiDownload, FiEye, FiPrinter, FiGrid, FiBookmark, FiFeather, FiCamera,
   FiList, FiCopy, FiHome, FiUser, FiFileText,
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
@@ -46,6 +46,7 @@ import PlantillasModal from '../components/PlantillasModal';
 import FirmaModal from '../components/FirmaModal';
 import ProcesoIndicador from '../components/ProcesoIndicador';
 import AtajosPanel from '../components/AtajosPanel';
+import EscanerCodigo from '../components/EscanerCodigo';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useListaProgresiva } from '../hooks/useListaProgresiva';
 import { useImport } from '../hooks/useImport';
@@ -68,7 +69,7 @@ import {
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
   AVISO_LATERAL, TIPOS_DOC, deducirTipoDoc, datosFacturacion,
-  pushEvento, mkEvento,
+  pushEvento, mkEvento, ESTADO_META, ESTADOS,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
 import AppLogo from '../components/AppLogo';
@@ -155,6 +156,7 @@ function FL({ children, required, title }) {
 ════════════════════════════════════════════════════════════ */
 function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px', ...rest }) {
   const [display, setDisplay] = useState(() => formatPriceCO(value));
+  const [focused, setFocused] = useState(false);
 
   // Sincronizar si value cambia desde afuera (patrón "valor previo en estado")
   const [lastValue, setLastValue] = useState(value);
@@ -164,29 +166,45 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
     if (curRaw !== String(value ?? '')) setDisplay(formatPriceCO(value));
   }
 
+  /* ── Valor que se muestra según si el campo está enfocado ──────────
+     Mientras el campo está activo mostramos el valor sin puntos de miles
+     (ej. "1500,50") para que el teclado decimal de iOS/Android pueda
+     escribir normalmente. Al perder el foco volvemos a formatear. */
+  const displayValue = focused
+    ? (() => {
+        // valor crudo = "1500.50" (punto como decimal interno)
+        // lo convertimos a "1500,50" para que sea natural en español
+        const raw = parsePriceCO(display);
+        if (!raw) return '';
+        return raw.replace('.', ',');
+      })()
+    : display;
+
   return (
     <Input
       variant="unstyled"
       inputMode="decimal"       /* teclado numérico con coma/punto en iOS/Android */
-      value={display}
+      value={displayValue}
       onChange={e => {
         const raw = e.target.value;
-        /* Permitir: dígitos, puntos (miles) y UNA coma o punto al final como decimal.
-           Mientras el usuario está escribiendo el decimal no formateamos para no
-           borrarle la coma/punto que acaba de teclear. */
+        /* Aceptar tanto coma como punto como separador decimal */
         const typing = /[,.]$/.test(raw) || /[,.]\d{0,1}$/.test(raw);
         const parsed = parsePriceCO(raw);
         if (parsed === '' || /^\d*\.?\d{0,2}$/.test(parsed)) {
+          // mientras edita, guardar lo que escribe tal cual
           setDisplay(typing ? raw : formatPriceCO(parsed));
           onChange(parsed);
         }
       }}
+      onFocus={e => {
+        setFocused(true);
+        setTimeout(() => e.target.select(), 0);
+      }}
       onBlur={e => {
-        // Al salir del campo, formatear limpio
+        setFocused(false);
         const parsed = parsePriceCO(e.target.value);
         setDisplay(formatPriceCO(parsed));
       }}
-      onFocus={e => e.target.select()}
       data-row-id={dataRowId}
       data-field={dataField}
       placeholder="0"
@@ -649,11 +667,22 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           <Text>{i + 1}</Text>
         </HStack>
       </Td>
-      <Td borderColor={border} p={1} w="56px">
-        <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
-          data-row-id={r.id} data-field="ref" tabIndex={-1}
-          placeholder="—" fontSize="11px" color={mutedL} px={2} py={1} rounded="md"
-          _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
+      <Td borderColor={border} p={1} w="72px">
+        <HStack spacing={0.5}>
+          <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
+            data-row-id={r.id} data-field="ref" tabIndex={-1}
+            placeholder="—" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" flex={1}
+            _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
+          {typeof navigator !== 'undefined' && navigator.mediaDevices && (
+            <Tooltip label="Escanear código con la cámara" hasArrow>
+              <IconButton size="xs" variant="ghost" rounded="sm" color={mutedL} tabIndex={-1}
+                aria-label="Escanear código de barras"
+                icon={<FiCamera size={10} />}
+                onClick={() => { setScanTargetRow(r.id); setShowScanner(true); }}
+                _hover={{ color: FY, bg: 'transparent' }} />
+            </Tooltip>
+          )}
+        </HStack>
       </Td>
       {/* La descripción se lleva todo el ancho sobrante: antes la tabla
           repartía el espacio entre columnas de números y el nombre del
@@ -1105,6 +1134,8 @@ export default function CotizadorPage() {
   const [showPlantillas, setShowPlantillas] = useState(false);
   const [plantillasMode, setPlantillasMode] = useState("usar"); // "usar" | "guardar"
   const [showFirma, setShowFirma] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanTargetRow, setScanTargetRow] = useState(null);
   const [firma, setFirma] = useState(null); // { dataURL, firmante, fecha }
   const [showAtajos, setShowAtajos] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
@@ -2254,6 +2285,25 @@ export default function CotizadorPage() {
 
       <AtajosPanel isOpen={showAtajos} onClose={() => setShowAtajos(false)} />
 
+      <EscanerCodigo
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onDetected={(codigo) => {
+          if (scanTargetRow) {
+            /* Código escaneado para una fila existente */
+            upItem(scanTargetRow, 'ref', codigo);
+          } else {
+            /* Nueva fila: creamos la fila, luego asignamos el código */
+            const row = blankRow();
+            setItems(p => [...p, { ...row, ref: codigo }]);
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+              focusInput(tableRef.current, row.id, 'desc')
+            ));
+          }
+          setScanTargetRow(null);
+        }}
+      />
+
       {/* Aviso: faltan datos de entrega */}
       <AlertDialog isOpen={showFaltantes} leastDestructiveRef={cancelRef}
         onClose={() => setShowFaltantes(false)} isCentered>
@@ -2343,6 +2393,51 @@ export default function CotizadorPage() {
                 {esObra ? 'OBRA' : 'COMERCIAL'} ⇄
               </Badge>
             </Tooltip>
+            {/* ── SELECTOR DE ESTADO RÁPIDO ──
+                El vendedor puede cambiar el estado sin ir al historial.
+                Muestra el estado actual como badge clickeable que abre un menú. */}
+            {editingId && (() => {
+              const estadoActual = cotConfig.estado || 'borrador';
+              const meta = ESTADO_META[estadoActual] || ESTADO_META.borrador;
+              return (
+                <Menu isLazy placement="bottom-start">
+                  <Tooltip label={`Estado: ${meta.desc}`} hasArrow openDelay={600}>
+                    <MenuButton as={Badge}
+                      cursor="pointer"
+                      colorScheme={meta.color}
+                      rounded="full" px={2.5} py={0.5}
+                      fontSize="9px" fontWeight="700"
+                      _hover={{ opacity: 0.8 }}
+                      display={{ base: 'none', md: 'inline-flex' }}>
+                      {meta.icon} {meta.label}
+                    </MenuButton>
+                  </Tooltip>
+                  <MenuList fontSize="13px" zIndex={300} minW="220px">
+                    {ESTADOS.map(e => {
+                      const m = ESTADO_META[e];
+                      const activo = e === estadoActual;
+                      return (
+                        <MenuItem key={e}
+                          isDisabled={activo}
+                          icon={<Text fontSize="14px">{m.icon}</Text>}
+                          onClick={() => {
+                            const prev = cotConfig.estado || 'borrador';
+                            setCotConfig(p => ({ ...p, estado: e }));
+                            setHasChanges(true);
+                            if (editingId) addEvento(editingId, 'estado_cambiado', `${prev} → ${e}`);
+                          }}>
+                          <Box>
+                            <Text fontWeight={activo ? '700' : '500'}>{m.label}{activo ? ' ← actual' : ''}</Text>
+                            <Text fontSize="11px" color="gray.500" mt={0.5}>{m.hint}</Text>
+                          </Box>
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuList>
+                </Menu>
+              );
+            })()}
+
             {/* Estado de guardado, SIEMPRE visible — antes solo aparecía el
                 aviso naranja y nunca la confirmación de que ya estaba a
                 salvo, así que la duda quedaba sin resolver. */}
@@ -2448,6 +2543,11 @@ export default function CotizadorPage() {
                 onClick={() => safeNavigate('preview')}>
                 Vista previa
               </Button>
+              <Tooltip label="Imprimir directamente sin descargar el PDF" hasArrow openDelay={400}>
+                <IconButton size="sm" variant="outline" colorScheme="gray" rounded="md"
+                  aria-label="Imprimir cotización" icon={<FiPrinter />}
+                  onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
+              </Tooltip>
               <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
                 isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
                 PDF
@@ -2839,6 +2939,9 @@ export default function CotizadorPage() {
         <IconButton data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg"
           aria-label="Ver el documento" icon={<FiEye size={16} />}
           onClick={() => safeNavigate('preview')} />
+        <IconButton size="sm" variant="outline" colorScheme="gray" rounded="lg"
+          aria-label="Imprimir" icon={<FiPrinter size={16} />}
+          onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
         {/* «Enviar» en vez de «PDF»: lo que se hace con el PDF en el
             mostrador es mandarlo por WhatsApp. Descargar sigue en el paso
             Enviar y en la vista del documento. */}

@@ -20,15 +20,16 @@
  * transporte sin IVA, duplicar, borrar) vive en el botón "⋯" de cada
  * renglón, para no estorbar.
  */
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Box, Flex, HStack, Text, Input, Select, Icon, IconButton, Button,
   Menu, MenuButton, MenuList, MenuItem, MenuDivider, Badge,
   useColorModeValue, Divider,
 } from "@chakra-ui/react";
 import {
-  FiPlus, FiTruck, FiCopy, FiTrash2, FiMoreVertical, FiTag, FiPercent,
+  FiPlus, FiTruck, FiCopy, FiTrash2, FiMoreVertical, FiTag, FiPercent, FiCamera,
 } from "react-icons/fi";
+import EscanerCodigo from "./EscanerCodigo";
 import { MdDragIndicator } from "react-icons/md";
 import AutocompleteInput from "./AutocompleteInput";
 import SelectUnidad from "./SelectUnidad";
@@ -58,8 +59,16 @@ function enfocar(rowId, campo) {
 /* ─── Precio con puntos de miles, para dedo y teclado numérico ─── */
 const PrecioRapido = memo(function PrecioRapido({ rowId, value, onChange, onSiguiente, inputBg, border, sinIva }) {
   const ref = useRef(null);
-  const display = formatPriceCO(value);
+  const [focused, setFocused] = useState(false);
   const muted = useColorModeValue("gray.400", "gray.500");
+
+  /* Al enfocar mostramos el valor sin puntos de miles ("1500,50") para que el
+     teclado decimal de iOS/Android pueda escribir normalmente. Al perder
+     el foco volvemos al formato colombiano con puntos ("1.500,50"). */
+  const display = focused
+    ? (() => { const r = parsePriceCO(formatPriceCO(value)); return r ? r.replace('.', ',') : ''; })()
+    : formatPriceCO(value);
+
   return (
     <Flex align="center" flex={1} minW={0} bg={inputBg} rounded="lg"
       border="1px solid" borderColor={border} px={2.5} h="44px"
@@ -74,11 +83,13 @@ const PrecioRapido = memo(function PrecioRapido({ rowId, value, onChange, onSigu
         value={display}
         onChange={(e) => {
           const raw = parsePriceCO(e.target.value);
-          if (raw === "" || /^\d+$/.test(raw)) onChange(raw);
+          /* Permitir enteros Y decimales (hasta 2 cifras) */
+          if (raw === "" || /^\d*\.?\d{0,2}$/.test(raw)) onChange(raw);
         }}
-        onFocus={(e) => e.target.select()}
+        onFocus={(e) => { setFocused(true); setTimeout(() => e.target.select(), 0); }}
+        onBlur={() => setFocused(false)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSiguiente(); } }}
-        inputMode="numeric"
+        inputMode="decimal"   /* teclado con coma/punto en iOS y Android */
         enterKeyHint="next"
         placeholder={sinIva ? "Precio sin IVA" : "Precio"}
         fontSize="15px" fontWeight="700" textAlign="right"
@@ -214,7 +225,7 @@ const FilaRapida = memo(function FilaRapida({
           onChange={(e) => upItem(r.id, "qty", e.target.value)}
           onFocus={(e) => e.target.select()}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); enfocar(r.id, "price"); } }}
-          type="number" min="1" inputMode="numeric" enterKeyHint="next"
+          type="number" min="0.001" step="any" inputMode="decimal" enterKeyHint="next"
           w="66px" flexShrink={0} h="44px" rounded="lg" bg={inputBg}
           border="1px solid" borderColor={border} focusBorderColor={FY}
           textAlign="center" fontSize="15px" fontWeight="700" px={1}
@@ -295,6 +306,32 @@ export default function ListaRapidaProductos({
   startRowDrag, dragId,
 }) {
   const muted = useColorModeValue("gray.500", "gray.400");
+  const [showScanner, setShowScanner] = useState(false);
+  /* rowId al que se asignará el código escaneado (null = nueva fila) */
+  const scanTargetRef = useRef(null);
+
+  /* Cuando el escáner detecta un código:
+     · Crea una fila nueva con ese código en el campo ref
+     · Enfoca la descripción para que el vendedor escriba el nombre */
+  const handleEscaneo = useCallback((codigo) => {
+    addItem(); // crea fila nueva y la deja al final
+    /* Esperar un tick para que addItem haga el setState y el DOM aparezca */
+    setTimeout(() => {
+      const lista = document.querySelectorAll('[data-field="ref"]');
+      /* La fila nueva es la última; filtrar las visibles */
+      const visible = [...lista].filter(el => el.offsetParent !== null);
+      const ultima = visible[visible.length - 1];
+      if (ultima) {
+        /* Encontrar el id de esa fila y actualizar su ref */
+        const rowId = ultima.closest('[data-drag-row]')?.getAttribute('data-drag-row');
+        if (rowId) {
+          upItem(rowId, 'ref', codigo);
+          /* Enfocar descripción */
+          setTimeout(() => enfocar(rowId, 'desc'), 50);
+        }
+      }
+    }, 80);
+  }, [addItem, upItem]);
 
   /* Enter en el precio: pasa al producto siguiente y, si era el
      último, crea uno nuevo y salta a él. Es el gesto que encadena
@@ -360,6 +397,17 @@ export default function ListaRapidaProductos({
       {/* Espacio a la derecha en celular: ahí flota el botón de ayuda y
           si no se reserva, le tapa la esquina al botón de Domicilio. */}
       <Flex px={2.5} py={2.5} gap={2} align="center" pr={{ base: "62px", md: 2.5 }}>
+        {/* Botón escanear — solo si hay cámara disponible (MediaDevices existe en https) */}
+        {typeof navigator !== 'undefined' && navigator.mediaDevices && (
+          <IconButton
+            size="md" h="44px" w="44px" flexShrink={0}
+            variant="outline" rounded="xl"
+            aria-label="Escanear código de barras"
+            icon={<FiCamera size={18} />}
+            onClick={() => setShowScanner(true)}
+            title="Escanear código de barras con la cámara"
+          />
+        )}
         <Button flex={1} size="md" h="44px" variant="outline" rounded="xl"
           leftIcon={<FiPlus />} onClick={addItem} fontWeight="700" fontSize="14px">
           Producto
@@ -373,6 +421,12 @@ export default function ListaRapidaProductos({
           </Button>
         )}
       </Flex>
+
+      <EscanerCodigo
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onDetected={handleEscaneo}
+      />
 
       <Text fontSize="10.5px" color={muted} px={4} pb={3} textAlign="center">
         {conDatos === 0

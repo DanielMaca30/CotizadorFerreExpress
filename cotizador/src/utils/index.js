@@ -271,13 +271,65 @@ export const FORMAS_PAGO_OBRA = ["Anticipo + Actas", "Anticipo", "Por Actas", "C
 
 export const IVA_OPTS = [0, 5, 8, 10, 16, 19];
 export const MONEDAS  = ["COP", "USD", "EUR", "MXN"];
-export const ESTADOS  = ["borrador", "enviada", "aceptada", "rechazada"];
+export const ESTADOS  = ["borrador", "enviada", "aceptada", "entregada", "rechazada"];
 
+/*
+  GUÍA DE ESTADOS PARA EL EQUIPO DE FERREEXPRESS
+  ─────────────────────────────────────────────────────────────────────────────
+  📝 BORRADOR   → La cotización se está armando. No se ha enviado al cliente.
+                  Siguiente paso: completar productos y cliente, luego ENVIAR.
+
+  📤 ENVIADA    → Se compartió con el cliente (WhatsApp o PDF).
+                  Esperando que confirme o pida cambios.
+                  Siguiente paso: marcar ACEPTADA si dice que sí, RECHAZADA si no.
+
+  ✅ ACEPTADA   → El cliente confirmó que va a comprar.
+                  Alista el pedido en bodega / mostrador.
+                  Siguiente paso: marcar ENTREGADA cuando ya se le dio la mercancía.
+
+  🚚 ENTREGADA  → Mercancía entregada. Cobro recibido (efectivo, transferencia, etc.).
+                  Estado final: no necesita más acción.
+
+  ❌ RECHAZADA  → El cliente no compró. Puede ser precio, disponibilidad u otro.
+                  Guárdala para referencia; no hace falta borrarla.
+  ─────────────────────────────────────────────────────────────────────────────
+*/
 export const ESTADO_META = {
-  borrador:  { label: "Borrador",  color: "gray"  },
-  enviada:   { label: "Enviada",   color: "blue"  },
-  aceptada:  { label: "Aceptada", color: "green" },
-  rechazada: { label: "Rechazada",color: "red"   },
+  borrador:  {
+    label: "Borrador",   color: "gray",
+    icon: "📝",
+    desc: "Se está armando. No enviada aún.",
+    hint: "Envíala al cliente para avanzar.",
+    siguiente: "enviada",
+  },
+  enviada:   {
+    label: "Enviada",    color: "blue",
+    icon: "📤",
+    desc: "Enviada al cliente. Esperando respuesta.",
+    hint: "¿Dijo que sí? → Aceptada. ¿Que no? → Rechazada.",
+    siguiente: "aceptada",
+  },
+  aceptada:  {
+    label: "Aceptada",   color: "green",
+    icon: "✅",
+    desc: "Cliente confirmó. Alista el pedido.",
+    hint: "Cuando entregues la mercancía, cambia a Entregada.",
+    siguiente: "entregada",
+  },
+  entregada: {
+    label: "Entregada",  color: "teal",
+    icon: "🚚",
+    desc: "Mercancía entregada y cobro recibido.",
+    hint: "Listo. No necesita más acción.",
+    siguiente: null,
+  },
+  rechazada: {
+    label: "Rechazada",  color: "red",
+    icon: "❌",
+    desc: "El cliente no compró.",
+    hint: "Puedes duplicarla y ajustar precio si quieren retomar.",
+    siguiente: null,
+  },
 };
 
 /* ── Valores por defecto ─────────────────────────────────────── */
