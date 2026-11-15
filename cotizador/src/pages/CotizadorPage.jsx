@@ -47,6 +47,7 @@ import FirmaModal from '../components/FirmaModal';
 import ProcesoIndicador from '../components/ProcesoIndicador';
 import AtajosPanel from '../components/AtajosPanel';
 import EscanerCodigo from '../components/EscanerCodigo';
+import RegistroSiigo from '../components/RegistroSiigo';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useListaProgresiva } from '../hooks/useListaProgresiva';
 import { useImport } from '../hooks/useImport';
@@ -1104,7 +1105,11 @@ export default function CotizadorPage() {
       : DEFAULT_CLIENTE)
   );
   const [cotConfig, setCotConfig] = useState(
-    () => ({ ...DEFAULT_CONFIG, ...(location.state?.tipoPrefill ? { tipo: location.state.tipoPrefill } : null) })
+    () => ({
+      ...DEFAULT_CONFIG,
+      ...(location.state?.tipoPrefill ? { tipo: location.state.tipoPrefill } : null),
+      ...(location.state?.modoExpress ? { iva: 0, formaPago: 'Interno', notas: 'Remisión interna' } : null),
+    })
   );
   const [aiuConfig, setAiuConfig] = useState({ ...DEFAULT_AIU });
   const [items, setItems] = useState([blankRow(), blankRow()]);
@@ -1116,7 +1121,7 @@ export default function CotizadorPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [descLocal, setDescLocal] = useState('0');
   const [pendingNav, setPendingNav] = useState(null);
-  const [mobileStep, setMobileStep] = useState(0);
+  const [mobileStep, setMobileStep] = useState(location.state?.modoExpress ? 1 : 0);
   /* Al cambiar de paso se vuelve arriba. Antes se conservaba el scroll del
      paso anterior: al tocar «Productos» al final del formulario del
      cliente se aterrizaba en mitad de la lista, sin ver el comienzo. */
@@ -1129,14 +1134,17 @@ export default function CotizadorPage() {
   const [enviando, setEnviando] = useState(false);
   /* Si se entró con "Nueva para este cliente" ya sabemos el tipo: no tiene
      sentido volver a preguntarlo. Se puede cambiar después en Configuración. */
-  const [showTipoModal, setShowTipoModal] = useState(!id && !location.state?.tipoPrefill);
+  const modoExpress = !id && !!location.state?.modoExpress;
+  const [showTipoModal, setShowTipoModal] = useState(!id && !location.state?.tipoPrefill && !modoExpress);
   const [showImport, setShowImport] = useState(false);
   const [showPlantillas, setShowPlantillas] = useState(false);
   const [plantillasMode, setPlantillasMode] = useState("usar"); // "usar" | "guardar"
   const [showFirma, setShowFirma] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scanTargetRow, setScanTargetRow] = useState(null);
+  const [showSiigo, setShowSiigo]       = useState(false);
   const [firma, setFirma] = useState(null); // { dataURL, firmante, fecha }
+  const [expressTrabajador, setExpressTrabajador] = useState('');
   const [showAtajos, setShowAtajos] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
@@ -2076,6 +2084,47 @@ export default function CotizadorPage() {
     }
   }, [items, faltantesCliente, cotConfig, editingId, hasChanges, handleSave, archivoPDF, addEvento, cliente.nombre, cliente.tel, empresa, totals.totalPagar, toast]);
 
+  /* ── Enviar como TEXTO por WhatsApp (sin generar PDF) ──────────
+     Mucho más rápido que el PDF. Ideal para:
+     · El cajero que necesita la lista en WhatsApp para registrar en Siigo
+     · Clientes que ven mejor el texto que un PDF
+     Se abre WhatsApp directamente con el mensaje pre-escrito. */
+  const enviarComoTexto = useCallback(() => {
+    const lineas = items
+      .filter(r => r.desc?.trim())
+      .map(r => {
+        const qty = parseFloat(r.qty) || 1;
+        const qtyStr = qty === Math.floor(qty) ? String(qty) : qty.toFixed(2);
+        const unit  = r.unit && r.unit !== 'Und' ? ` ${r.unit}` : '';
+        const total = calcRow(r);
+        const precio = total?.total ? ` ━ ${money(total.total, cotConfig.moneda)}` : '';
+        const disc  = parseFloat(r.disc) > 0 ? ` (-${r.disc}%)` : '';
+        return `• ${qtyStr}${unit}  ${r.desc.trim()}${disc}${precio}`;
+      });
+
+    const partes = [
+      `📋 *${empresa?.nombre || 'FerreExpress'}*${cotConfig.numero ? ` — ${cotConfig.numero}` : ''}`,
+      cliente?.nombre ? `👤 ${cliente.nombre}` : '',
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...lineas,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💰 *TOTAL: ${money(totals.totalPagar, cotConfig.moneda)}*`,
+      cotConfig.formaPago ? `💳 ${cotConfig.formaPago}` : '',
+      notas?.trim() ? `📝 _${notas.trim()}_` : '',
+      empresa?.tel ? `
+📞 ${empresa.tel}` : '',
+    ].filter(Boolean).join('
+');
+
+    const telLimpio = (cliente?.tel || '').replace(/\D/g, '');
+    const url = telLimpio
+      ? `https://wa.me/57${telLimpio}?text=${encodeURIComponent(partes)}`
+      : `https://wa.me/?text=${encodeURIComponent(partes)}`;
+
+    window.open(url, '_blank', 'noopener');
+    if (editingId) addEvento(editingId, 'enviada_whatsapp', 'texto directo');
+  }, [items, cotConfig, empresa, totals, cliente, notas, editingId, addEvento]);
+
   /* ── Convertir Comercial ⇄ Obra ──
      Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
      (si la actual no aplica) y las notas (solo si siguen siendo las de fábrica).
@@ -2192,8 +2241,10 @@ export default function CotizadorPage() {
               title="Exportar tabla de productos a Excel">Excel</Button>
             <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
               isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>PDF</Button>
+            <Button size="sm" variant="outline" colorScheme="whatsapp" rounded="md" leftIcon={<FaWhatsapp />}
+              onClick={enviarComoTexto} title="Enviar como texto (sin PDF)">Texto</Button>
             <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
-              isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>Enviar</Button>
+              isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>PDF</Button>
             <Button size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700" leftIcon={<FiSave />}
               isLoading={isSaving} _hover={{ bg: '#e0b010' }} onClick={handleSave}>
               {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
@@ -2284,6 +2335,23 @@ export default function CotizadorPage() {
       />
 
       <AtajosPanel isOpen={showAtajos} onClose={() => setShowAtajos(false)} />
+
+      <RegistroSiigo
+        isOpen={showSiigo}
+        onClose={() => setShowSiigo(false)}
+        items={items}
+        cotNumero={cotConfig.numero}
+        clienteNombre={cliente.nombre}
+        moneda={cotConfig.moneda}
+        totalPagar={totals.totalPagar}
+        onConfirmar={() => {
+          setCotConfig(p => ({ ...p, estado: 'entregada' }));
+          setHasChanges(true);
+          if (editingId) addEvento(editingId, 'estado_cambiado', 'aceptada → entregada');
+          toast({ title: '¡Registrado en Siigo! Estado → Entregada ✓', status: 'success', duration: 3000, ...AVISO_LATERAL });
+          handleSave({ estado: 'entregada' });
+        }}
+      />
 
       <EscanerCodigo
         isOpen={showScanner}
@@ -2522,6 +2590,13 @@ export default function CotizadorPage() {
                   Capturar firma del cliente
                   {firma && <Badge ml={2} colorScheme="green" fontSize="9px">Firmada</Badge>}
                 </MenuItem>
+                {editingId && (
+                  <MenuItem icon={<Text fontSize="13px">🖥️</Text>}
+                    onClick={() => setShowSiigo(true)}>
+                    Registrar en Siigo POS
+                    <Badge ml={2} colorScheme="teal" fontSize="9px">Cajero</Badge>
+                  </MenuItem>
+                )}
                 <MenuDivider />
                 <MenuItem icon={<FiRefreshCw size={13} />} onClick={handleClear}>
                   Vaciar y empezar otra en blanco
@@ -2552,10 +2627,16 @@ export default function CotizadorPage() {
                 isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
                 PDF
               </Button>
+              <Tooltip label="Envía la lista como texto a WhatsApp — instantáneo, sin PDF" hasArrow openDelay={400}>
+                <Button size="sm" variant="outline" colorScheme="whatsapp" rounded="md" leftIcon={<FaWhatsapp />}
+                  onClick={enviarComoTexto}>
+                  Texto
+                </Button>
+              </Tooltip>
               <Tooltip label="Guarda, arma el PDF y lo comparte (WhatsApp, correo…)" hasArrow openDelay={400}>
                 <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
                   isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>
-                  Enviar
+                  PDF
                 </Button>
               </Tooltip>
               <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
@@ -2727,7 +2808,19 @@ export default function CotizadorPage() {
            Ver/PDF/Guardar y, debajo, la de navegación. */
         <Box display="flex" flexDirection="column" pb={`calc(${NAV_MOVIL_H} + 96px)`}>
 
-          {/* Tab bar mobile */}
+          {/* Tab bar mobile — en modo Express solo la barra naranja, sin pasos */}
+          {modoExpress ? (
+            <Flex bg="orange.100" _dark={{ bg: 'orange.900' }} border="1px solid" borderColor="orange.300"
+              _dark_borderColor="orange.600" rounded="2xl" mb={4} px={4} py={2.5} align="center" justify="space-between">
+              <HStack spacing={2}>
+                <Text fontSize="16px">⚡</Text>
+                <Text fontWeight="900" fontSize="13px" color="orange.700" _dark={{ color: 'orange.200' }}>
+                  Despacho Express
+                </Text>
+              </HStack>
+              <Badge colorScheme="orange" rounded="full" fontSize="9px" fontWeight="800">Remisión interna</Badge>
+            </Flex>
+          ) : (
           <Flex bg={barBg} border="1px solid" borderColor={border}
             rounded="2xl" mb={4} overflow="hidden">
             {STEPS.map((label, idx) => (
@@ -2742,6 +2835,7 @@ export default function CotizadorPage() {
               </Box>
             ))}
           </Flex>
+          )}
 
           <GlassCard rounded="xl" overflow="hidden" mb={3}>
             <AnimatePresence mode="wait">
@@ -2764,6 +2858,30 @@ export default function CotizadorPage() {
                       <Button size="xs" variant="outline" rounded="md" leftIcon={<FiUpload size={11} />}
                         onClick={() => setShowImport(true)}>Importar</Button>
                     </Flex>
+
+                    {/* Express: quien saca la mercancía */}
+                    {modoExpress && (
+                      <Box px={4} py={3} bg="orange.50" borderBottom="2px solid" borderColor="orange.300"
+                        _dark={{ bg: 'orange.900', borderColor: 'orange.600' }}>
+                        <Flex align="center" gap={2} mb={2}>
+                          <Text fontSize="14px">⚡</Text>
+                          <Text fontWeight="800" fontSize="13px" color="orange.700" _dark={{ color: 'orange.200' }}>
+                            Despacho Express
+                          </Text>
+                          <Badge colorScheme="orange" rounded="full" fontSize="9px">Remisión interna</Badge>
+                        </Flex>
+                        <Input
+                          placeholder="Nombre del trabajador..."
+                          value={expressTrabajador}
+                          onChange={e => {
+                            setExpressTrabajador(e.target.value);
+                            setCliente(p => ({ ...p, nombre: e.target.value }));
+                          }}
+                          size="sm" rounded="lg" fontWeight="600" fontSize="14px"
+                          bg="white" _dark={{ bg: 'gray.700' }}
+                        />
+                      </Box>
+                    )}
 
                     {/* Captura rápida: sin abrir ni cerrar tarjetas */}
                     <ListaRapidaProductos {...listaRapidaProps} />
@@ -2942,18 +3060,26 @@ export default function CotizadorPage() {
         <IconButton size="sm" variant="outline" colorScheme="gray" rounded="lg"
           aria-label="Imprimir" icon={<FiPrinter size={16} />}
           onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
-        {/* «Enviar» en vez de «PDF»: lo que se hace con el PDF en el
-            mostrador es mandarlo por WhatsApp. Descargar sigue en el paso
-            Enviar y en la vista del documento. */}
-        <Button data-tour="pdf" size="sm" bg="#25D366" color="white" rounded="lg" leftIcon={<FaWhatsapp size={15} />}
-          isLoading={enviando || pdfLoading} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>Enviar</Button>
-        <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
-          rounded="lg" fontWeight="700" leftIcon={<FiSave size={14} />}
-          isLoading={isSaving} onClick={handleSave}
-          _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }}>
-          {/* «Actualizar» no cabía y cortaba el total; el estado ya lo dice el botón */}
-          {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
-        </Button>
+        {/* Express: botón único grande «Guardar Remisión». Normal: WhatsApp + Guardar */}
+        {modoExpress ? (
+          <Button size="sm" bg="orange.400" color="white" rounded="lg" fontWeight="800"
+            flex={2} leftIcon={<FiTruck size={15} />}
+            isLoading={isSaving} onClick={handleSave}
+            _hover={{ bg: 'orange.500' }}>
+            {hasChanges || !editingId ? 'Guardar remisión' : '✓ Guardada'}
+          </Button>
+        ) : (
+          <>
+            <Button data-tour="pdf" size="sm" bg="#25D366" color="white" rounded="lg" leftIcon={<FaWhatsapp size={15} />}
+              isLoading={enviando || pdfLoading} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>Enviar</Button>
+            <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
+              rounded="lg" fontWeight="700" leftIcon={<FiSave size={14} />}
+              isLoading={isSaving} onClick={handleSave}
+              _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }}>
+              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
+            </Button>
+          </>
+        )}
       </Box>
       )}
 

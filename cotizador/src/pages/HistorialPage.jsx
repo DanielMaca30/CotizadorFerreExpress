@@ -28,7 +28,7 @@ import {
   FiFileText, FiRefreshCw, FiCheckCircle,
   FiSend, FiGrid, FiList, FiMoreVertical,
   FiDollarSign, FiUser, FiCloud, FiTool, FiShoppingCart,
-  FiFilter, FiX, FiFilePlus, FiPhone, FiChevronDown, FiSettings,
+  FiFilter, FiX, FiFilePlus, FiPhone, FiChevronDown, FiSettings, FiTruck,
 } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
@@ -43,6 +43,7 @@ import { TABS_BAR_H }        from "../components/TabsBar";
 import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
 import AppLogo              from "../components/AppLogo";
+import RegistroSiigo        from "../components/RegistroSiigo";
 import { money, fmtDateShort, calcTotals, calcTotalsObra, ESTADO_META, ESTADOS, loadEmpresaLocal, DEFAULT_AIU, AVISO_LATERAL } from "../utils";
 
 /* ─── Preferencias de vista (se recuerdan entre sesiones) ─── */
@@ -240,7 +241,7 @@ function EstadoSelect({ cot, onCambiar, grande }) {
 }
 
 /* ─── Menú de acciones (compartido por tabla y tarjetas) ─── */
-function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, onNuevaMismoCliente, pdfDisabled }) {
+function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, onNuevaMismoCliente, pdfDisabled, onSiigo }) {
   const esObra = getTipo(cot) === "obra";
   const hayCliente = !!cot.cliente?.nombre?.trim();
   return (
@@ -263,6 +264,13 @@ function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, 
       <MenuItem icon={<FiDownload size={13} />} onClick={() => onPDF(cot)} isDisabled={pdfDisabled}>
         Descargar PDF
       </MenuItem>
+      {onSiigo && (
+        <MenuItem icon={<Text fontSize="13px">🖥️</Text>}
+          onClick={() => onSiigo(cot)}>
+          Registrar en Siigo POS
+          <Badge ml={2} colorScheme="teal" fontSize="9px">Cajero</Badge>
+        </MenuItem>
+      )}
       <MenuDivider />
       <MenuItem icon={esObra ? <FiShoppingCart size={13} /> : <FiTool size={13} />}
         onClick={() => onConvertir(cot)}>
@@ -280,7 +288,7 @@ function AccionesMenu({ cot, onEdit, onDuplicate, onDelete, onPDF, onConvertir, 
    Memoizada: cambiar el estado de una no repinta toda la rejilla. */
 const CotizacionCard = memo(function CotizacionCard({
   cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
-  onConvertir, onVerCliente, onNuevaMismoCliente,
+  onConvertir, onVerCliente, onNuevaMismoCliente, onSiigo,
 }) {
   const navigate   = useNavigate();
   const [showTraza, setShowTraza] = useState(false);
@@ -318,7 +326,8 @@ const CotizacionCard = memo(function CotizacionCard({
               <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
                 onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
                 onNuevaMismoCliente={onNuevaMismoCliente}
-                pdfDisabled={pdfLoading && pdfCotId === cot.id} />
+                pdfDisabled={pdfLoading && pdfCotId === cot.id}
+                onSiigo={onSiigo} />
             </Menu>
           </Flex>
         </Flex>
@@ -389,7 +398,7 @@ const ACCION_PIE = {
 
 const TarjetaMovil = memo(function TarjetaMovil({
   cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
-  onConvertir, onNuevaMismoCliente, busqueda,
+  onConvertir, onNuevaMismoCliente, onSiigo, busqueda,
 }) {
   const encontrado = coincidencia(cot, busqueda);
   const navigate = useNavigate();
@@ -462,7 +471,8 @@ const TarjetaMovil = memo(function TarjetaMovil({
           <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
             onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
             onNuevaMismoCliente={onNuevaMismoCliente}
-            pdfDisabled={pdfLoading && pdfCotId === cot.id} />
+            pdfDisabled={pdfLoading && pdfCotId === cot.id}
+            onSiigo={onSiigo} />
         </Menu>
       </Flex>
     </GlassCard>
@@ -474,7 +484,7 @@ const TarjetaMovil = memo(function TarjetaMovil({
    estado de una sola dejaba de repintar las otras 49. */
 const FilaCotizacion = memo(function FilaCotizacion({
   cot, par, onEdit, onDuplicate, onDelete, onPDF, onCambiarEstado, onConvertir, onVerCliente,
-  onNuevaMismoCliente, busqueda,
+  onNuevaMismoCliente, onSiigo, busqueda,
   pdfLoading, pdfCotId, tableBg, stripeBg, hoverBg, border, muted, mutedL,
 }) {
   const navigate = useNavigate();
@@ -540,7 +550,8 @@ const FilaCotizacion = memo(function FilaCotizacion({
             <AccionesMenu cot={cot} onEdit={onEdit} onDuplicate={onDuplicate}
               onDelete={onDelete} onPDF={onPDF} onConvertir={onConvertir}
                 onNuevaMismoCliente={onNuevaMismoCliente}
-              pdfDisabled={pdfLoading && pdfCotId === cot.id} />
+              pdfDisabled={pdfLoading && pdfCotId === cot.id}
+              onSiigo={onSiigo} />
           </Menu>
         </HStack>
       </Td>
@@ -769,6 +780,7 @@ export default function HistorialPage() {
   const cambiarBusqueda = useCallback((v) => { setSearch(v);   setPage(1); }, []);
   const cambiarTipo     = useCallback((v) => { setTipo(v);     setPage(1); }, []);
   const cambiarEstadoF  = useCallback((v) => { setEstado(v);   setPage(1); }, []);
+  const [siigoData, setSiigoData] = useState(null); // { items, numero, cliente, moneda, totalPagar, id }
   const cambiarPageSize = useCallback((v) => { setPageSize(v); setPage(1); }, []);
   useEffect(() => { setTandaMovil(8); }, [debSearch, estado, tipo, rangoDesde, sortBy, sortDir]);
 
@@ -810,6 +822,20 @@ export default function HistorialPage() {
     navigate(`/cotizador/${copia.id}`);
   }, [duplicarCotizacion, navigate, toast]);
 
+  const handleSiigo = useCallback((cot) => {
+    const items = cot.items || [];
+    setSiigoData({
+      id: cot.id,
+      items,
+      numero: cot.config?.numero || '',
+      cliente: cot.cliente?.nombre || '',
+      moneda: cot.config?.moneda || 'COP',
+      totalPagar: cot.config?.tipo === 'obra'
+        ? calcTotalsObra(items, cot.config?.aiu ?? DEFAULT_AIU, parseFloat(cot.config?.descG || 0)).totalPagar
+        : calcTotals(items, parseFloat(cot.config?.iva || 0) / 100, parseFloat(cot.config?.descG || 0)).totalPagar,
+    });
+  }, []);
+
   const handleCambiarEstado = useCallback((id, nuevoEstado) => {
     const cot = cotizaciones.find(c => c.id === id);
     const estadoAnterior = cot?.estado || cot?.config?.estado || 'borrador';
@@ -822,6 +848,10 @@ export default function HistorialPage() {
   /* Abrir en pestaña */
   const handleEditar = useCallback((id) => { openTab(id); navigate(`/cotizador/${id}`); }, [openTab, navigate]);
   const handleNueva  = useCallback(() => { openTab(NEW_TAB_ID); navigate("/cotizador"); }, [openTab, navigate]);
+  const handleNuevaExpress = useCallback(() => {
+    openTab(NEW_TAB_ID);
+    navigate("/cotizador", { state: { tipoPrefill: 'comercial', modoExpress: true } });
+  }, [openTab, navigate]);
 
   /* Nueva cotización EN BLANCO para un cliente que ya cotizó.
      Se lleva solo la ficha del cliente — ni un producto, ni el descuento,
@@ -976,6 +1006,12 @@ export default function HistorialPage() {
                   onClick={() => setViewMode((v) => v === "tabla" ? "tarjetas" : "tabla")} />
               </Tooltip>
             )}
+            <Button size="sm" variant="outline" rounded="md" fontWeight="700"
+              h={{ base: "38px", md: "32px" }} px={{ base: 2, md: 4 }}
+              leftIcon={<FiTruck size={14} />} onClick={handleNuevaExpress}
+              colorScheme="orange">
+              {esCelular ? "Express" : "Despacho Express"}
+            </Button>
             <Button data-tour="nueva" size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700"
               h={{ base: "38px", md: "32px" }} px={{ base: 3, md: 4 }}
               leftIcon={<FiPlus />} onClick={handleNueva}
@@ -1129,6 +1165,7 @@ export default function HistorialPage() {
                         onCambiarEstado={handleCambiarEstado}
                         onConvertir={handleConvertir}
                         onNuevaMismoCliente={handleNuevaMismoCliente}
+                        onSiigo={handleSiigo}
                         busqueda={debSearch}
                       />
                     ))}
@@ -1151,6 +1188,7 @@ export default function HistorialPage() {
                         onConvertir={handleConvertir}
                         onVerCliente={handleVerCliente}
                         onNuevaMismoCliente={handleNuevaMismoCliente}
+                        onSiigo={handleSiigo}
                       />
                     </MotionBox>
                   ))}
@@ -1230,6 +1268,7 @@ export default function HistorialPage() {
                           onConvertir={handleConvertir}
                           onVerCliente={handleVerCliente}
                           onNuevaMismoCliente={handleNuevaMismoCliente}
+                          onSiigo={handleSiigo}
                           busqueda={debSearch}
                           pdfLoading={pdfLoading}
                           pdfCotId={pdfCot?.id}
@@ -1261,6 +1300,27 @@ export default function HistorialPage() {
           </GlassCard>
         )}
       </Box>
+
+      {/* ─── Siigo: checklist cajero ─── */}
+      {siigoData && (
+        <RegistroSiigo
+          isOpen={!!siigoData}
+          onClose={() => setSiigoData(null)}
+          items={siigoData.items || []}
+          cotNumero={siigoData.numero}
+          clienteNombre={siigoData.cliente}
+          moneda={siigoData.moneda}
+          totalPagar={siigoData.totalPagar || 0}
+          onConfirmar={() => {
+            if (siigoData?.id) {
+              cambiarEstado(siigoData.id, 'entregada');
+              addEvento(siigoData.id, 'estado_cambiado', 'registrado en Siigo → Entregada');
+              toast({ title: '¡Registrado en Siigo! Estado → Entregada ✓', status: 'success', duration: 3000, isClosable: true });
+            }
+            setSiigoData(null);
+          }}
+        />
+      )}
 
       {/* ─── Dialogo: eliminar ─── */}
       <AlertDialog isOpen={isOpen} leastDestructiveRef={cancelRef} onClose={onClose}>
@@ -1300,11 +1360,18 @@ function EmptyState({ cotizaciones, navigate }) {
           : "Prueba cambiando los filtros de búsqueda."}
       </Text>
       {cotizaciones.length === 0 && (
-        <Button bg="#F9BF20" color="#3A3A38" rounded="md" fontWeight="700"
-          leftIcon={<FiPlus />} onClick={() => navigate("/cotizador")}
-          _hover={{ bg: "#e0b010" }}>
-          Nueva cotización
-        </Button>
+        <HStack spacing={3}>
+          <Button variant="outline" colorScheme="orange" rounded="md" fontWeight="700"
+            leftIcon={<FiTruck size={14} />}
+            onClick={() => navigate("/cotizador", { state: { tipoPrefill: 'comercial', modoExpress: true } })}>
+            Despacho Express
+          </Button>
+          <Button bg="#F9BF20" color="#3A3A38" rounded="md" fontWeight="700"
+            leftIcon={<FiPlus />} onClick={() => navigate("/cotizador")}
+            _hover={{ bg: "#e0b010" }}>
+            Nueva cotización
+          </Button>
+        </HStack>
       )}
     </Flex>
   );
