@@ -68,7 +68,6 @@ import {
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
   AVISO_LATERAL, TIPOS_DOC, deducirTipoDoc, datosFacturacion,
-,
   pushEvento, mkEvento,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
