@@ -2111,10 +2111,8 @@ export default function CotizadorPage() {
       `💰 *TOTAL: ${money(totals.totalPagar, cotConfig.moneda)}*`,
       cotConfig.formaPago ? `💳 ${cotConfig.formaPago}` : '',
       notas?.trim() ? `📝 _${notas.trim()}_` : '',
-      empresa?.tel ? `
-📞 ${empresa.tel}` : '',
-    ].filter(Boolean).join('
-');
+      empresa?.tel ? `\n📞 ${empresa.tel}` : '',
+    ].filter(Boolean).join('\n');
 
     const telLimpio = (cliente?.tel || '').replace(/\D/g, '');
     const url = telLimpio
