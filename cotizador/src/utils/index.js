@@ -55,15 +55,55 @@ export const fmtDateShort = (iso) =>
 /** Formatea un número a "1.500.000" (sin símbolo de moneda) */
 const fMiles = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
 
+/**
+ * Formatea un valor a notación colombiana: "1.500.000" ó "1.500,50".
+ * Acepta number o string, incluyendo strings con decimal tipo "1500.5".
+ */
 export const formatPriceCO = (value) => {
-  const num = String(value ?? "").replace(/\D/g, "");
+  const s = String(value ?? "");
+  if (!s) return "";
+  // Separar parte entera y decimal si el string tiene un punto decimal
+  // (punto seguido de 1–2 dígitos al final, como en "1500.5" o "1500.50")
+  const m = s.match(/^(\d*)\.?(\d{1,2})?$/);
+  if (m) {
+    const intNum = parseInt(m[1] || "0", 10);
+    if (isNaN(intNum)) return "";
+    const intFmt = fMiles.format(intNum);
+    return m[2] !== undefined ? `${intFmt},${m[2]}` : intFmt;
+  }
+  // Fallback: solo entero
+  const num = s.replace(/\D/g, "");
   if (!num) return "";
   return fMiles.format(parseInt(num, 10));
 };
 
-/** Quita los puntos de formato y devuelve el número como string */
-export const parsePriceCO = (formatted) =>
-  String(formatted ?? "").replace(/\./g, "").replace(/,/g, "");
+/**
+ * Convierte texto en formato colombiano (1.500,50 ó 1500.50) a string numérico
+ * que parseFloat() entiende ("1500.5").
+ * Reglas:
+ *  · Si hay coma → la coma es el decimal; los puntos son miles.
+ *  · Si hay un solo punto y ≤2 dígitos detrás → es decimal (iPhone/teclado QWERTY).
+ *  · Si hay varios puntos → todos son separadores de miles, sin decimal.
+ */
+export const parsePriceCO = (formatted) => {
+  const s = String(formatted ?? "");
+  if (!s) return "";
+  // Tiene coma: colombiano estándar  "1.500,50" → "1500.50"
+  if (s.includes(",")) {
+    return s.replace(/\./g, "").replace(",", ".");
+  }
+  // Tiene UN solo punto → puede ser decimal o miles
+  const dots = s.split(".").length - 1;
+  if (dots === 1) {
+    const afterDot = s.slice(s.lastIndexOf(".") + 1);
+    if (afterDot.length <= 2) {
+      // "1500.50" → decimal (teclado QWERTY/iPhone)
+      return s;
+    }
+  }
+  // Sin coma y sin punto decimal → solo quitar puntos de miles
+  return s.replace(/\./g, "");
+};
 
 /* ── Fechas automáticas ──────────────────────────────────────── */
 
@@ -443,4 +483,35 @@ export const AVISO_LATERAL = {
       ? { marginTop: "10px", maxWidth: "calc(100vw - 24px)" }
       : { marginBottom: "92px", marginLeft: "10px" };
   },
+};
+
+/* ── Trazabilidad ────────────────────────────────────────────── */
+
+export const EVENTO_TIPOS = {
+  creada:            { label: "Cotización creada",         icon: "✦", color: "green"  },
+  modificada:        { label: "Datos actualizados",        icon: "✎", color: "blue"   },
+  pdf_generado:      { label: "PDF generado",              icon: "⬇", color: "purple" },
+  impresa:           { label: "Enviada a impresora",       icon: "⎙", color: "gray"   },
+  enviada_whatsapp:  { label: "Enviada por WhatsApp",      icon: "W", color: "green"  },
+  estado_cambiado:   { label: "Estado cambiado",           icon: "↺", color: "orange" },
+  excel_exportado:   { label: "Exportada a Excel",         icon: "X", color: "teal"   },
+  firmada:           { label: "Firmada por el cliente",    icon: "✍", color: "blue"   },
+  vista_previa:      { label: "Vista previa abierta",      icon: "👁", color: "gray"   },
+};
+
+/** Crea un objeto evento listo para insertar en cot.eventos */
+export const mkEvento = (tipo, detalle = "") => ({
+  tipo,
+  fecha: new Date().toISOString(),
+  detalle,
+});
+
+/** Agrega un evento a la lista, evitando duplicados en menos de 5 s */
+export const pushEvento = (eventos = [], tipo, detalle = "") => {
+  const ultimo = eventos[eventos.length - 1];
+  const ahora = Date.now();
+  if (ultimo?.tipo === tipo && ahora - new Date(ultimo.fecha).getTime() < 5000) {
+    return eventos; // demasiado reciente, no duplicar
+  }
+  return [...eventos, mkEvento(tipo, detalle)];
 };

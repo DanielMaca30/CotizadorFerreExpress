@@ -28,7 +28,7 @@ import {
   Menu, MenuButton, MenuList, MenuItem, MenuDivider,
 } from '@chakra-ui/react';
 import {
-  FiPlus, FiTrash2, FiSave, FiDownload, FiEye,
+  FiPlus, FiTrash2, FiSave, FiDownload, FiEye, FiPrinter, FiGrid, FiBookmark, FiFeather,
   FiList, FiCopy, FiHome, FiUser, FiFileText,
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
   FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
@@ -40,6 +40,12 @@ import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
 import { usePDF, compartirArchivo } from '../hooks/usePDF';
+import { useExcel } from '../hooks/useExcel';
+import { usePlantillas } from '../hooks/usePlantillas';
+import PlantillasModal from '../components/PlantillasModal';
+import FirmaModal from '../components/FirmaModal';
+import ProcesoIndicador from '../components/ProcesoIndicador';
+import AtajosPanel from '../components/AtajosPanel';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useListaProgresiva } from '../hooks/useListaProgresiva';
 import { useImport } from '../hooks/useImport';
@@ -62,6 +68,8 @@ import {
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
   AVISO_LATERAL, TIPOS_DOC, deducirTipoDoc, datosFacturacion,
+,
+  pushEvento, mkEvento,
 } from '../utils';
 import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
 import AppLogo from '../components/AppLogo';
@@ -160,13 +168,24 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
   return (
     <Input
       variant="unstyled"
+      inputMode="decimal"       /* teclado numérico con coma/punto en iOS/Android */
       value={display}
       onChange={e => {
-        const raw = parsePriceCO(e.target.value);
-        if (raw === '' || /^\d+$/.test(raw)) {
-          setDisplay(formatPriceCO(raw));
-          onChange(raw);
+        const raw = e.target.value;
+        /* Permitir: dígitos, puntos (miles) y UNA coma o punto al final como decimal.
+           Mientras el usuario está escribiendo el decimal no formateamos para no
+           borrarle la coma/punto que acaba de teclear. */
+        const typing = /[,.]$/.test(raw) || /[,.]\d{0,1}$/.test(raw);
+        const parsed = parsePriceCO(raw);
+        if (parsed === '' || /^\d*\.?\d{0,2}$/.test(parsed)) {
+          setDisplay(typing ? raw : formatPriceCO(parsed));
+          onChange(parsed);
         }
+      }}
+      onBlur={e => {
+        // Al salir del campo, formatear limpio
+        const parsed = parsePriceCO(e.target.value);
+        setDisplay(formatPriceCO(parsed));
       }}
       onFocus={e => e.target.select()}
       data-row-id={dataRowId}
@@ -656,7 +675,7 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
         />
       </Td>
       <Td borderColor={border} p={1} isNumeric w="52px">
-        <Input variant="unstyled" type="number" min="1" value={r.qty}
+        <Input variant="unstyled" type="number" min="0.001" step="any" inputMode="decimal" value={r.qty}
           onChange={e => upItem(r.id, 'qty', e.target.value)}
           data-row-id={r.id} data-field="qty" tabIndex={-1}
           textAlign="center" fontWeight="700" fontSize="12px" px={1} py={1} rounded="md" w="44px"
@@ -688,7 +707,7 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           dataRowId={r.id} dataField="price" inputBg={inputBg} w="88px" tabIndex={-1} />
       </Td>
       <Td borderColor={border} p={1} isNumeric w="50px">
-        <Input variant="unstyled" type="number" min="0" max="100" value={r.disc}
+        <Input variant="unstyled" type="number" min="0" max="100" step="any" inputMode="decimal" value={r.disc}
           onChange={e => upItem(r.id, 'disc', e.target.value)}
           data-row-id={r.id} data-field="disc" tabIndex={-1}
           textAlign="center" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" w="44px"
@@ -721,7 +740,7 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
 });
 
 const TablaProductos = memo(function TablaProductos({
-  items, tableRef, handleTableKeyDown, esObra,
+  items, tableRef, handleTableKeyDown, handlePasteExcel, esObra,
   border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, cotConfig, upItem, removeItem, toggleSinIva,
   handleAcceptSugerencia, getSugerencias, addItem, addTransporte, duplicateItem,
@@ -754,6 +773,7 @@ const TablaProductos = memo(function TablaProductos({
       flex={1}
       h={0}          /* ← clave: h=0 + flex=1 fuerza scroll interno */
       onKeyDownCapture={handleTableKeyDown}
+      onPaste={handlePasteExcel}
       sx={{
         '&::-webkit-scrollbar': { w: '4px', h: '4px' },
         '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' }
@@ -817,7 +837,8 @@ const TablaProductos = memo(function TablaProductos({
                   <Kbd fontSize="8px">Ctrl+D</Kbd> duplica ·{' '}
                   <Kbd fontSize="8px">Ctrl+Enter</Kbd> nueva fila ·{' '}
                   <Kbd fontSize="8px">Supr</Kbd> elimina ·{' '}
-                  <Kbd fontSize="8px">Ctrl+S</Kbd> guarda
+                  <Kbd fontSize="8px">Ctrl+S</Kbd> guarda ·{' '}
+                  <Kbd fontSize="8px">Ctrl+V</Kbd> pega desde Excel
                 </Text>
               </Flex>
             </Td>
@@ -1033,13 +1054,16 @@ export default function CotizadorPage() {
 
   const {
     getCotizacion, saveCotizacion, deleteCotizacion, duplicarCotizacion,
+    addEvento,
     tabs, openTab, replaceTab, registerAutoSave, closeTab,
   } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
   /* Debajo de la tira de pestañas Y de la navegación principal */
   const topOffset = useOffsetSuperior(tabs.length > 0);
-  const { downloadPDF, archivoPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
+  const { downloadPDF, archivoPDF, printDoc, loading: pdfLoading } = usePDF('cotizacion-pdf');
+  const { exportar: exportarExcel, loading: xlsxLoading } = useExcel();
+  const { plantillas, guardarPlantilla, eliminarPlantilla, renombrarPlantilla } = usePlantillas();
   const { getSugerencias } = useProductosFrecuentes();
   const { getClientes } = useClientesFrecuentes();
   const importHook = useImport();
@@ -1079,6 +1103,11 @@ export default function CotizadorPage() {
      sentido volver a preguntarlo. Se puede cambiar después en Configuración. */
   const [showTipoModal, setShowTipoModal] = useState(!id && !location.state?.tipoPrefill);
   const [showImport, setShowImport] = useState(false);
+  const [showPlantillas, setShowPlantillas] = useState(false);
+  const [plantillasMode, setPlantillasMode] = useState("usar"); // "usar" | "guardar"
+  const [showFirma, setShowFirma] = useState(false);
+  const [firma, setFirma] = useState(null); // { dataURL, firmante, fecha }
+  const [showAtajos, setShowAtajos] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);   // monta el PDF oculto solo al exportar
   const [draftFound, setDraftFound] = useState(null); // borrador recuperable
   const [showConvertir, setShowConvertir] = useState(false);
@@ -1195,9 +1224,18 @@ export default function CotizadorPage() {
     });
   }, [id]); // eslint-disable-line
 
-  /* Atajos globales: Ctrl+S guardar · Ctrl+Z deshacer · Ctrl+Shift+Z / Ctrl+Y rehacer */
+  /* Atajos globales: Ctrl+S guardar · Ctrl+Z deshacer · Ctrl+Shift+Z / Ctrl+Y rehacer · ? atajos */
   useEffect(() => {
     const h = e => {
+      // "?" abre el panel de atajos (solo si no se está escribiendo en un input)
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+        const tag = document.activeElement?.tagName;
+        if (!['INPUT','TEXTAREA','SELECT'].includes(tag)) {
+          e.preventDefault();
+          setShowAtajos(v => !v);
+          return;
+        }
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); saveRef.current?.(); return; }
@@ -1461,6 +1499,77 @@ export default function CotizadorPage() {
      Delete (vacía)  : elimina fila vacía
      Escape          : quita el foco
   ════════════════════════════════════════════════ */
+
+  /* ── Pegar desde Excel / Google Sheets / cualquier tabla ──────
+     Cuando el usuario tiene el foco en la tabla y pega (Ctrl+V),
+     si el portapapeles tiene datos tabulares los convierte en filas
+     de la cotización. Columnas detectadas por cabecera o por posición:
+       desc | qty | unit | price | disc
+     Si la hoja tiene una sola columna se toma como descripción.
+  ══════════════════════════════════════════════════════════════ */
+  const handlePasteExcel = useCallback((e) => {
+    const text = e.clipboardData?.getData("text/plain") || "";
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length === 0) return;
+
+    // Detectar si la primera línea es una cabecera de Excel (no tiene números en cols numéricas)
+    const rows = lines.map(l => l.split("\t"));
+    const maxCols = Math.max(...rows.map(r => r.length));
+
+    // Si solo hay una columna y solo texto, podría ser accidental — no interceptar
+    if (maxCols === 1 && lines.length === 1) return;
+
+    // Detectar cabeceras conocidas
+    const HEADER_PATTERNS = [/^(ítem|item|#|num|n[°º])/i, /desc/i, /cant/i, /unid/i, /prec/i, /val/i, /desc.*%/i];
+    const firstRow = rows[0].map(c => c.trim().toLowerCase());
+    const isHeader = firstRow.some(c => HEADER_PATTERNS.some(p => p.test(c)));
+    const dataRows = isHeader ? rows.slice(1) : rows;
+
+    if (dataRows.length === 0) return;
+
+    // Mapeo de columnas: buscar por nombre o usar posición por defecto
+    let colMap = { desc: 1, qty: 2, unit: 3, price: 4, disc: 5 }; // 1-based, 0 = ignorar
+    if (isHeader) {
+      const ci = firstRow;
+      colMap = {
+        desc:  ci.findIndex(c => /desc|nombre|product|actividad|concepto/i.test(c)) + 1 || 1,
+        qty:   ci.findIndex(c => /cant|qty|quantity/i.test(c)) + 1 || 2,
+        unit:  ci.findIndex(c => /unid|unit/i.test(c)) + 1 || 3,
+        price: ci.findIndex(c => /prec|val|price|vr\.?\s*unit/i.test(c)) + 1 || 4,
+        disc:  ci.findIndex(c => /desc.*%|disc|%desc/i.test(c)) + 1 || 0,
+      };
+    }
+
+    const get = (row, col) => col > 0 ? (row[col - 1] || "").trim() : "";
+    const toNum = (s) => parseFloat(s.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+
+    const nuevas = dataRows
+      .filter(row => row.some(c => c.trim()))
+      .map(row => ({
+        ...blankRow(),
+        desc:  get(row, colMap.desc),
+        qty:   Math.max(0.001, toNum(get(row, colMap.qty)) || 1),
+        unit:  get(row, colMap.unit) || "Und",
+        price: String(toNum(get(row, colMap.price)) || ""),
+        disc:  toNum(get(row, colMap.disc)),
+      }))
+      .filter(r => r.desc || r.price);
+
+    if (nuevas.length === 0) return;
+
+    e.preventDefault();
+    setItems(prev => {
+      // Si la última fila está vacía, reemplazarla; si no, agregar
+      const ultimaVacia = prev.length > 0 && !prev[prev.length - 1].desc && !prev[prev.length - 1].price;
+      return ultimaVacia ? [...prev.slice(0, -1), ...nuevas] : [...prev, ...nuevas];
+    });
+    setHasChanges(true);
+    toast({
+      title: `${nuevas.length} fila${nuevas.length > 1 ? "s" : ""} pegada${nuevas.length > 1 ? "s" : ""} desde Excel ✓`,
+      status: "success", duration: 3000, ...AVISO_LATERAL,
+    });
+  }, [toast]);
+
   const handleTableKeyDown = useCallback(e => {
     const el = e.target;
     if (!el) return;
@@ -1846,9 +1955,11 @@ export default function CotizadorPage() {
     const cn = (cliente.nombre || 'Cliente').replace(/[^a-zA-Z0-9\u00C0-\u024F\u00f1\u00d1\s]/g, '').trim().replace(/\s+/g, '_');
     const ok = await downloadPDF(`${cn}_${numero || 'SinNumero'}`);
     setPdfReady(false);
-    if (ok) toast({ title: 'PDF descargado \u2713', status: 'success', duration: 2500, ...AVISO_LATERAL });
-    else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
-  }, [editingId, hasChanges, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, toast]);
+    if (ok) {
+      toast({ title: 'PDF descargado ✓', status: 'success', duration: 2500, ...AVISO_LATERAL });
+      if (editingId) addEvento(editingId, 'pdf_generado', `${cn}_${numero || 'SinNumero'}.pdf`);
+    } else toast({ title: 'Error generando PDF', status: 'error', duration: 4000 });
+  }, [editingId, hasChanges, cotConfig.numero, cliente.nombre, handleSave, downloadPDF, addEvento, toast]);
 
   /* Comprobaciones antes de descargar.
      El documento sirve de remisi\u00f3n de domicilio: si sale sin direcci\u00f3n o sin
@@ -1924,11 +2035,16 @@ export default function CotizadorPage() {
       } else if (r === 'compartido' && marcar) {
         toast({ title: 'Enviada ✓', description: 'La marqué como «Enviada» en el listado.', status: 'success', duration: 3000, ...AVISO_LATERAL });
       }
+      // Trazabilidad: registrar envío por WhatsApp
+      if (r === 'compartido' || r === 'descargado') {
+        const idActual = editingId || content?.id;
+        if (idActual) addEvento(idActual, 'enviada_whatsapp', cliente.nombre || 'cliente');
+      }
     } finally {
       setEnviando(false);
       setPdfReady(false);
     }
-  }, [items, faltantesCliente, cotConfig, editingId, hasChanges, handleSave, archivoPDF, cliente.nombre, cliente.tel, empresa, totals.totalPagar, toast]);
+  }, [items, faltantesCliente, cotConfig, editingId, hasChanges, handleSave, archivoPDF, addEvento, cliente.nombre, cliente.tel, empresa, totals.totalPagar, toast]);
 
   /* ── Convertir Comercial ⇄ Obra ──
      Los precios NO se tocan; cambia el motor de cálculo, la forma de pago
@@ -1997,7 +2113,7 @@ export default function CotizadorPage() {
   const ivaRate = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
   const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, observaciones, aiu: aiuConfig };
   const tablaProps = {
-    items, tableRef, handleTableKeyDown, esObra,
+    items, tableRef, handleTableKeyDown, handlePasteExcel, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
     ivaRate, cotConfig, upItem, removeItem, duplicateItem, toggleSinIva,
     handleAcceptSugerencia, getSugerencias, addItem, addTransporte,
@@ -2033,6 +2149,17 @@ export default function CotizadorPage() {
             </Badge>
           </HStack>
           <HStack>
+            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiPrinter />}
+              onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }}
+              title="Imprimir directamente sin descargar el PDF">Imprimir</Button>
+            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiGrid />}
+              isLoading={xlsxLoading}
+              onClick={async () => {
+                const ok = await exportarExcel({ items, cotConfig, cliente, empresa, aiuConfig, notas });
+                if (ok && editingId) addEvento(editingId, 'excel_exportado');
+                if (!ok) toast({ title: 'Error generando Excel', status: 'error', duration: 3000 });
+              }}
+              title="Exportar tabla de productos a Excel">Excel</Button>
             <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
               isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>PDF</Button>
             <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
@@ -2048,7 +2175,9 @@ export default function CotizadorPage() {
         <GlassCard rounded="lg" overflow="hidden" boxShadow="0 4px 32px rgba(0,0,0,0.12)">
           <DocEscalado><DocContent {...docProps} /></DocEscalado>
         </GlassCard>
-        <Flex justify="center" mt={5} pb={8}>
+        <Flex justify="center" gap={3} mt={5} pb={8} flexWrap="wrap">
+          <Button size="lg" variant="outline" colorScheme="gray" rounded="full" px={8}
+            leftIcon={<FiPrinter />} onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }}>Imprimir</Button>
           <Button size="lg" bg={DARK} color={FY} rounded="full" px={10} leftIcon={<FiDownload />}
             isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>Descargar PDF</Button>
         </Flex>
@@ -2087,6 +2216,44 @@ export default function CotizadorPage() {
         importHook={importHook}
         onConfirm={handleImportConfirm}
       />
+
+      <FirmaModal
+        isOpen={showFirma}
+        onClose={() => setShowFirma(false)}
+        firmante={cliente.nombre}
+        cotNumero={cotConfig.numero}
+        onGuardar={(f) => {
+          setFirma(f);
+          setHasChanges(true);
+          if (editingId) addEvento(editingId, 'firmada', `Firmado por ${f.firmante || 'cliente'}`);
+          toast({ title: 'Firma registrada ✓', status: 'success', duration: 2500, ...AVISO_LATERAL });
+        }}
+      />
+
+      <PlantillasModal
+        isOpen={showPlantillas}
+        onClose={() => setShowPlantillas(false)}
+        mode={plantillasMode}
+        plantillas={plantillas}
+        onGuardar={(nombre) => guardarPlantilla({ nombre, items, cotConfig, notas, aiuConfig })}
+        onUsar={(p) => {
+          // Cargar plantilla: items + config base (no sobreescribe cliente ni número)
+          const newItems = p.items.map(r => ({ ...r, id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2) }));
+          setItems(newItems.length > 0 ? newItems : items);
+          if (p.config) {
+            setCotConfig(prev => ({ ...prev, tipo: p.config.tipo, iva: p.config.iva, moneda: p.config.moneda, formaPago: p.config.formaPago }));
+          }
+          if (p.aiuConfig) setAiuConfig(p.aiuConfig);
+          if (p.notas) setNotas(p.notas);
+          setHasChanges(true);
+          setShowPlantillas(false);
+          toast({ title: `Plantilla "${p.nombre}" cargada ✓`, status: 'success', duration: 2500, ...AVISO_LATERAL });
+        }}
+        onEliminar={eliminarPlantilla}
+        onRenombrar={renombrarPlantilla}
+      />
+
+      <AtajosPanel isOpen={showAtajos} onClose={() => setShowAtajos(false)} />
 
       {/* Aviso: faltan datos de entrega */}
       <AlertDialog isOpen={showFaltantes} leastDestructiveRef={cancelRef}
@@ -2236,6 +2403,16 @@ export default function CotizadorPage() {
                   command="PDF · foto · Excel">
                   Importar productos
                 </MenuItem>
+                <MenuItem icon={<FiBookmark size={13} />}
+                  onClick={() => { setPlantillasMode("usar"); setShowPlantillas(true); }}
+                  command={`${plantillas.length} guardadas`}>
+                  Usar plantilla
+                </MenuItem>
+                <MenuItem icon={<FiBookmark size={13} />}
+                  onClick={() => { setPlantillasMode("guardar"); setShowPlantillas(true); }}>
+                  Guardar como plantilla
+                </MenuItem>
+                <MenuDivider />
                 <MenuItem icon={esObra ? <FiShoppingCart size={13} /> : <FiTool size={13} />}
                   onClick={() => setShowConvertir(true)}>
                   Convertir a {esObra ? 'Comercial' : 'Obra'}
@@ -2246,6 +2423,11 @@ export default function CotizadorPage() {
                     Duplicar esta cotización
                   </MenuItem>
                 )}
+                <MenuItem icon={<FiFeather size={13} />}
+                  onClick={() => setShowFirma(true)}>
+                  Capturar firma del cliente
+                  {firma && <Badge ml={2} colorScheme="green" fontSize="9px">Firmada</Badge>}
+                </MenuItem>
                 <MenuDivider />
                 <MenuItem icon={<FiRefreshCw size={13} />} onClick={handleClear}>
                   Vaciar y empezar otra en blanco
@@ -2288,6 +2470,14 @@ export default function CotizadorPage() {
           </HStack>
         </Flex>
       </Box>
+
+      {/* ─── Indicador de etapa del proceso ─── */}
+      <ProcesoIndicador
+        items={items}
+        cliente={cliente}
+        estado={cotConfig.estado || 'borrador'}
+        eventos={[]}
+      />
 
       <Box maxW="1600px" mx="auto" px={{ base: 3, md: 5 }} py={4}>
 

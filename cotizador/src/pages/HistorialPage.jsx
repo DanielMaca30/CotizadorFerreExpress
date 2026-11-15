@@ -35,6 +35,7 @@ import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { usePDF, compartirArchivo } from "../hooks/usePDF";
 import { FaWhatsapp }       from "react-icons/fa";
 import DocContent          from "../components/DocContent";
+import TrazabilidadTimeline from "../components/TrazabilidadTimeline";
 import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
 import { useListaProgresiva } from "../hooks/useListaProgresiva";
@@ -281,7 +282,8 @@ const CotizacionCard = memo(function CotizacionCard({
   cot, onEdit, onDuplicate, onDelete, onPDF, pdfLoading, pdfCotId, onCambiarEstado,
   onConvertir, onVerCliente, onNuevaMismoCliente,
 }) {
-  const navigate = useNavigate();
+  const navigate   = useNavigate();
+  const [showTraza, setShowTraza] = useState(false);
   const estado   = getEstado(cot);
   const border   = useColorModeValue("gray.200", "whiteAlpha.200");
   const muted    = useColorModeValue("gray.500", "gray.400");
@@ -342,10 +344,25 @@ const CotizacionCard = memo(function CotizacionCard({
           <Text fontSize="10px" color={muted}>
             {nItems} ítem{nItems !== 1 ? "s" : ""}
           </Text>
-          <Text fontWeight="800" fontSize="15px" color={totalCol}>
-            {money(getTotal(cot), cot.config?.moneda || "COP")}
-          </Text>
+          <HStack spacing={2}>
+            {(cot.eventos?.length > 0) && (
+              <Button size="xs" variant="ghost" colorScheme="gray" rounded="md"
+                fontWeight="500" fontSize="10px" px={2}
+                onClick={(e) => { e.stopPropagation(); setShowTraza(v => !v); }}>
+                {showTraza ? "Ocultar historial" : `Historial (${cot.eventos.length})`}
+              </Button>
+            )}
+            <Text fontWeight="800" fontSize="15px" color={totalCol}>
+              {money(getTotal(cot), cot.config?.moneda || "COP")}
+            </Text>
+          </HStack>
         </Flex>
+        {showTraza && cot.eventos?.length > 0 && (
+          <Box pt={3} borderTop="1px solid" borderColor={border} mt={3}
+            onClick={(e) => e.stopPropagation()}>
+            <TrazabilidadTimeline eventos={cot.eventos} maxVisible={3} />
+          </Box>
+        )}
       </Box>
     </GlassCard>
   );
@@ -540,7 +557,7 @@ export default function HistorialPage() {
   const cancelRef = useRef();
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, stats,
+  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, addEvento, stats,
     convertirCotizacion, openTab, tabs, nubeActiva, syncing, sync } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
@@ -794,10 +811,13 @@ export default function HistorialPage() {
   }, [duplicarCotizacion, navigate, toast]);
 
   const handleCambiarEstado = useCallback((id, nuevoEstado) => {
+    const cot = cotizaciones.find(c => c.id === id);
+    const estadoAnterior = cot?.estado || cot?.config?.estado || 'borrador';
     cambiarEstado(id, nuevoEstado);
+    addEvento(id, 'estado_cambiado', `${estadoAnterior} → ${nuevoEstado}`);
     const meta = ESTADO_META[nuevoEstado];
     toast({ title: `Estado: ${meta?.label}`, status: "success", duration: 1800, ...AVISO_LATERAL });
-  }, [cambiarEstado, toast]);
+  }, [cambiarEstado, addEvento, cotizaciones, toast]);
 
   /* Abrir en pestaña */
   const handleEditar = useCallback((id) => { openTab(id); navigate(`/cotizador/${id}`); }, [openTab, navigate]);

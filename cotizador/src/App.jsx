@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { ChakraProvider, extendTheme, ColorModeScript, Box, Spinner, Flex } from "@chakra-ui/react";
+import { ChakraProvider, extendTheme, ColorModeScript, Box, Spinner, Flex, localStorageManager } from "@chakra-ui/react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 /* Cada pantalla se descarga cuando se entra a ella, no al abrir la app.
    Quien solo consulta el listado no paga el peso del cotizador completo. */
@@ -23,6 +23,7 @@ const theme = extendTheme({
   config: {
     initialColorMode:   "light",
     useSystemColorMode: false,
+    disableTransitionOnChange: false,
   },
   fonts: {
     heading: `'DM Sans', sans-serif`,
@@ -119,7 +120,7 @@ export default function App() {
   return (
     <>
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
-      <ChakraProvider theme={theme}>
+      <ChakraProvider theme={theme} colorModeManager={localStorageManager}>
         {/* Estado compartido: una sola copia de las cotizaciones y una sola
             sincronización con la nube para toda la aplicación. */}
         <PuertaAcceso>

@@ -111,7 +111,39 @@ export function usePDF(elementId = "cotizacion-pdf", filename = "cotizacion") {
   const downloadPDF = useCallback((nombre) => construir(nombre, "descargar"), [construir]);
   const archivoPDF  = useCallback((nombre) => construir(nombre, "archivo"), [construir]);
 
-  return { downloadPDF, archivoPDF, loading, error };
+  /**
+   * printDoc — Imprime la cotización directamente sin pasar por PDF.
+   * Mueve momentáneamente el elemento #cotizacion-pdf a posición visible
+   * con la clase "ferreexpress-print-active", dispara window.print() y
+   * luego lo restaura. El CSS @media print en index.css se encarga de
+   * ocultar toda la UI excepto ese elemento.
+   */
+  const printDoc = useCallback(() => {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    // Guardar estilos inline para restaurarlos después
+    const prevStyle = el.getAttribute("style") || "";
+
+    // Hacer visible el elemento durante la impresión
+    el.setAttribute("style",
+      "position:static!important;top:auto!important;left:auto!important;" +
+      "z-index:auto!important;display:block!important;width:216mm!important;" +
+      "background:white!important;"
+    );
+    el.classList.add("ferreexpress-print-active");
+
+    // Disparar diálogo de impresión del sistema
+    window.print();
+
+    // Restaurar estado original
+    setTimeout(() => {
+      el.setAttribute("style", prevStyle);
+      el.classList.remove("ferreexpress-print-active");
+    }, 1000);
+  }, [elementId]);
+
+  return { downloadPDF, archivoPDF, printDoc, loading, error };
 }
 
 /* ═══════════════════════════════════════════════════════════════

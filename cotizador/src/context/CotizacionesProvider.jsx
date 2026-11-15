@@ -14,7 +14,7 @@
  * También administra las PESTAÑAS de cotizaciones abiertas.
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { uid, convertirTipo, calcTotalsPorTipo } from "../utils";
+import { uid, convertirTipo, calcTotalsPorTipo, pushEvento, mkEvento } from "../utils";
 import {
   nubeActiva, pullCotizaciones, pushCotizacion,
   removeCotizacion, pullBorrados, nextNumeroNube, seedCounterNube,
@@ -318,6 +318,7 @@ export function CotizacionesProvider({ children }) {
         estado: payload.config?.estado || "borrador",
         createdAt: now,
         updatedAt: now,
+        eventos: [mkEvento("creada", `Tipo: ${payload.config?.tipo || "comercial"}`)],
       };
       setCotizaciones((prev) => [saved, ...prev]);
     }
@@ -387,6 +388,20 @@ export function CotizacionesProvider({ children }) {
   const flushAutoSave = useCallback(async () => {
     try { return await autoSaveRef.current?.(); }
     catch (e) { console.error("[autoSave pestañas]", e); return null; }
+  }, []);
+
+  /* ── Trazabilidad: agregar evento a una cotización ── */
+  const addEvento = useCallback((id, tipo, detalle = "") => {
+    setCotizaciones((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        return {
+          ...c,
+          eventos: pushEvento(c.eventos, tipo, detalle),
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
   }, []);
 
   /* ── Eliminar ── */
@@ -502,12 +517,13 @@ export function CotizacionesProvider({ children }) {
     replaceTab,
     registerAutoSave,
     flushAutoSave,
+    addEvento,
   }), [
     cotizaciones, syncing, sync, getCotizacion, saveCotizacion, deleteCotizacion,
     duplicarCotizacion, cambiarEstado, convertirCotizacion, stats,
     errorGuardado, descartarErrorGuardado,
     tabs, openTab, closeTab, closeOtherTabs, closeAllTabs, replaceTab,
-    registerAutoSave, flushAutoSave,
+    registerAutoSave, flushAutoSave, addEvento,
   ]);
 
   return <CotizacionesCtx.Provider value={value}>{children}</CotizacionesCtx.Provider>;

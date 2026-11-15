@@ -109,3 +109,37 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* ════════════════════════════════════════════════════════════════
+   IMPRESIÓN DIRECTA (@media print)
+   Al llamar window.print() desde el botón "Imprimir":
+   · Se oculta TODA la UI de React.
+   · Solo se muestra #cotizacion-pdf cuando tiene la clase
+     ferreexpress-print-active (la agrega printDoc() en usePDF.js).
+   · El documento se imprime a tamaño carta sin bordes ni URL.
+════════════════════════════════════════════════════════════════ */
+@media print {
+  /* Ocultar toda la interfaz */
+  body > #root {
+    display: none !important;
+  }
+
+  /* Mostrar SOLO el elemento PDF cuando está marcado como activo */
+  #cotizacion-pdf.ferreexpress-print-active {
+    display: block !important;
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    z-index: auto !important;
+    width: 100% !important;
+    max-width: 216mm !important;
+    margin: 0 auto !important;
+    background: white !important;
+    page-break-inside: avoid;
+  }
+
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+}
