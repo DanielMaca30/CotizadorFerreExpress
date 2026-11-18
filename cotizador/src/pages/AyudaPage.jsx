@@ -26,10 +26,9 @@ import {
 import { TEMAS, GRUPOS, DIFICULTAD, buscarTemas } from "../ayuda/guia";
 import AsistenteAyuda from "../components/AsistenteAyuda";
 import AppLogo from "../components/AppLogo";
-import { TABS_BAR_H } from "../components/TabsBar";
-import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
 import { useCotizaciones } from "../hooks/useCotizaciones";
-import { iniciarRecorrido } from "../components/RecorridoGuiado";
+import { iniciarRecorrido } from "../lib/recorrido";
 import { abrirNovedades } from "../ayuda/novedades";
 
 const FY = "#F9BF20";
@@ -169,10 +168,15 @@ export default function AyudaPage() {
   useEffect(() => { document.title = "Guía de uso | FerreExpress"; return () => { document.title = "FerreExpress — Cotizador"; }; }, []);
 
   /* Si llega ?tema=xxx, lo abre y baja hasta él */
+  const temaUrl = params.get("tema");
+  const [temaVisto, setTemaVisto] = useState(null);
+  if (temaUrl && temaUrl !== temaVisto) {
+    setTemaVisto(temaUrl);
+    setAbiertos((prev) => new Set(prev).add(temaUrl));
+  }
   useEffect(() => {
     const id = params.get("tema");
     if (!id) return;
-    setAbiertos((prev) => new Set(prev).add(id));
     const t = setTimeout(() => {
       refs.current[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 250);

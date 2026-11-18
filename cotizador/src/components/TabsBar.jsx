@@ -21,8 +21,7 @@ import { useCotizaciones, NEW_TAB_ID } from "../context/cotizacionesContext";
 
 const FY = "#F9BF20";
 
-/** Alto de la barra — las páginas lo usan para posicionar su topbar sticky */
-export const TABS_BAR_H = "36px";
+import { TABS_BAR_H, MEDIA_PESTANAS } from "../lib/disposicion";
 
 /* ─── Una pestaña ─── */
 const Tab = memo(function Tab({ id, label, sub, esObra, esNueva, activa, onSelect, onClose }) {
@@ -90,7 +89,7 @@ export default function TabsBar() {
      de 390 px se leían como basura arriba ("Nueva · sin guardar ×") y le
      quitaban espacio al trabajo. Allí se cambia de cotización desde el
      listado. Las pestañas siguen funcionando por debajo (autoguardado). */
-  const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
+  const [conPestanas] = useMediaQuery(MEDIA_PESTANAS, { ssr: false });
   const scrollRef = useRef(null);
 
   const bg     = useColorModeValue("gray.100", "gray.900");
@@ -157,7 +156,7 @@ export default function TabsBar() {
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, tabs.length]);
 
-  if (!tabs.length || esCelular) return null;
+  if (!tabs.length || !conPestanas) return null;
 
   return (
     <Box bg={bg} borderBottom="1px solid" borderColor={border}

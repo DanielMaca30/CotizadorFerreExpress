@@ -43,7 +43,7 @@ import {
 } from "react-icons/fi";
 import { buscarTemas, PREGUNTAS_SUGERIDAS, DIFICULTAD } from "../ayuda/guia";
 import { getRecorrido } from "../ayuda/recorridos";
-import { iniciarRecorrido } from "./RecorridoGuiado";
+import { iniciarRecorrido } from "../lib/recorrido";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -293,7 +293,7 @@ export default function AsistenteAyuda({ onAbrirTema, onAntesDeGuiar, alto = "38
                       {m.temas.slice(1).map((t) => (
                         <WrapItem key={t.id}>
                           <Button size="xs" variant="outline" colorScheme="gray" rounded="full"
-                            fontSize="11px" fontWeight="600" whiteSpace="normal" h="auto"
+                            fontSize="12px" fontWeight="600" whiteSpace="normal" h="auto" minH="36px"
                             py={1.5} px={3} leftIcon={<FiHelpCircle size={11} />}
                             onClick={() => preguntar(t.titulo)}>
                             {t.titulo}
@@ -320,7 +320,7 @@ export default function AsistenteAyuda({ onAbrirTema, onAntesDeGuiar, alto = "38
               {PREGUNTAS_SUGERIDAS.map((p) => (
                 <WrapItem key={p}>
                   <Button size="xs" variant="outline" colorScheme="gray" rounded="full" fontWeight="600"
-                    fontSize="11px" whiteSpace="normal" h="auto" py={1.5} px={3}
+                    fontSize="12px" whiteSpace="normal" h="auto" minH="36px" py={1.5} px={3}
                     onClick={() => preguntar(p)}>
                     {p}
                   </Button>

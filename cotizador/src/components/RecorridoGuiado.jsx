@@ -6,7 +6,7 @@
  * toca nada por debajo: quien aprende es quien hace.
  *
  * Cómo se usa desde cualquier parte de la app:
- *     import { iniciarRecorrido } from "./RecorridoGuiado";
+ *     import { iniciarRecorrido } from "../lib/recorrido";
  *     iniciarRecorrido("cotizacion");
  *
  * Detalles que importan:
@@ -31,17 +31,7 @@ import { getRecorrido } from "../ayuda/recorridos";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
-const VISTO_KEY = "ferreexpress_tour_visto_v1";
-const EVENTO = "ferreexpress:recorrido";
-
-/** Arranca un recorrido por su id (ver src/ayuda/recorridos.js) */
-export function iniciarRecorrido(id = "inicio") {
-  try { localStorage.setItem(VISTO_KEY, "1"); } catch { /* noop */ }
-  window.dispatchEvent(new CustomEvent(EVENTO, { detail: { id } }));
-}
-
-/** Compatibilidad con el nombre anterior */
-export const reiniciarTour = () => iniciarRecorrido("inicio");
+import { VISTO_KEY, EVENTO_RECORRIDO as EVENTO, iniciarRecorrido } from "../lib/recorrido";
 
 const yaVisto = () => {
   try { return localStorage.getItem(VISTO_KEY) === "1"; } catch { return true; }

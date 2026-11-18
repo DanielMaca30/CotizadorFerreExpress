@@ -24,29 +24,27 @@ import {
   useColorModeValue, usePrefersReducedMotion, useToast, useDisclosure,
   AlertDialog, AlertDialogOverlay, AlertDialogContent,
   AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
-  Kbd, Progress, Collapse, useMediaQuery,
+  Kbd, Collapse, useMediaQuery, ButtonGroup, SimpleGrid,
   Menu, MenuButton, MenuList, MenuItem, MenuDivider,
 } from '@chakra-ui/react';
 import {
-  FiPlus, FiTrash2, FiSave, FiDownload, FiEye, FiPrinter, FiGrid, FiBookmark, FiFeather, FiCamera,
-  FiList, FiCopy, FiHome, FiUser, FiFileText,
+  FiPlus, FiTrash2, FiSave, FiDownload, FiEye, FiPrinter, FiGrid, FiBookmark, FiFeather,
+  FiCopy, FiHome, FiUser, FiFileText,
   FiPackage, FiUpload, FiAlertCircle, FiRefreshCw,
-  FiChevronLeft, FiChevronRight, FiTool, FiShoppingCart,
-  FiEdit2, FiX, FiMaximize2, FiTruck,
+  FiChevronLeft, FiChevronRight, FiChevronDown, FiTool, FiShoppingCart,
+  FiTruck, FiMessageSquare,
   FiCornerUpLeft, FiCornerUpRight, FiHelpCircle,
   FiArrowLeft, FiMoreVertical, FiCheckCircle,
 } from 'react-icons/fi';
 import { MdDragIndicator } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCotizaciones, NEW_TAB_ID } from '../hooks/useCotizaciones';
-import { usePDF, compartirArchivo } from '../hooks/usePDF';
+import { usePDF, compartirArchivo, telWhatsApp } from '../hooks/usePDF';
 import { useExcel } from '../hooks/useExcel';
 import { usePlantillas } from '../hooks/usePlantillas';
 import PlantillasModal from '../components/PlantillasModal';
 import FirmaModal from '../components/FirmaModal';
-import ProcesoIndicador from '../components/ProcesoIndicador';
 import AtajosPanel from '../components/AtajosPanel';
-import EscanerCodigo from '../components/EscanerCodigo';
 import RegistroSiigo from '../components/RegistroSiigo';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useListaProgresiva } from '../hooks/useListaProgresiva';
@@ -57,22 +55,24 @@ import { useHistorialEdicion } from '../hooks/useHistorialEdicion';
 import AutocompleteInput from '../components/AutocompleteInput';
 import ClienteAutocomplete from '../components/ClienteAutocomplete';
 import DocContent from '../components/DocContent';
+import CampoNumero from '../components/CampoNumero';
+import { ZonaImpresion } from '../components/ZonaImpresion';
+import { useImpresion } from '../hooks/useImpresion';
 import { PAGE_W } from '../lib/hojas';
 import ImportModal from '../components/ImportModal';
 import ListaRapidaProductos from '../components/ListaRapidaProductos';
 import ModalConvertirTipo from '../components/ModalConvertirTipo';
-import { TABS_BAR_H } from '../components/TabsBar';
-import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
 import {
   blankRow, calcRow, calcTotals, calcTotalsObra, money, fmtDate,
-  precioBase, ivaUnidad, formatPriceCO, parsePriceCO, esTransporte,
+  precioBase, ivaUnidad, esTransporte,
   UNITS, FORMAS_PAGO, FORMAS_PAGO_OBRA, IVA_OPTS, MONEDAS,
   DEFAULT_CLIENTE, DEFAULT_CONFIG, DEFAULT_NOTAS, DEFAULT_NOTAS_OBRA,
   DEFAULT_AIU, saveEmpresaLocal, loadEmpresaLocal,
   AVISO_LATERAL, TIPOS_DOC, deducirTipoDoc, datosFacturacion,
-  pushEvento, mkEvento, ESTADO_META, ESTADOS,
+  ESTADO_META, ESTADOS, parseNumeroCO, fmtCantidad,
 } from '../utils';
-import { nubeActiva, pullEmpresa, pushEmpresaDebounced } from '../lib/nube';
+import { nubeActiva, pullEmpresa } from '../lib/nube';
 import AppLogo from '../components/AppLogo';
 
 /* Firma del contenido: sirve para saber si algo cambió DE VERDAD y no
@@ -84,6 +84,7 @@ const soloConDatos = (items = []) => items.filter(r => String(r.desc || '').trim
 const firmaDe = (s) => JSON.stringify({
   cliente: s.cliente, cotConfig: s.cotConfig, items: soloConDatos(s.items),
   descG: s.descG, notas: s.notas, observaciones: s.observaciones, aiuConfig: s.aiuConfig,
+  firma: s.firma?.dataURL ? s.firma.fecha + s.firma.dataURL.length : null,
 });
 
 /* ── Borrador local (protección contra pérdida de trabajo) ── */
@@ -109,7 +110,7 @@ const SelectUnidadSimple = memo(function SelectUnidadSimple({ value, onChange, r
       onMouseDown={abrir} onTouchStart={abrir} onFocus={abrir} onKeyDown={abrir}
       style={{
         background: 'transparent', border: 'none', fontSize: 11, color: '#777',
-        width: 50, cursor: 'pointer', outline: 'none', padding: '4px 1px'
+        width: 58, cursor: 'pointer', outline: 'none', padding: '4px 1px'
       }}>
       {abierta ? OPCIONES_UNIDAD : <option value={value}>{value}</option>}
     </select>
@@ -156,56 +157,12 @@ function FL({ children, required, title }) {
    PRICE INPUT — formato 1.500.000 mientras se escribe
 ════════════════════════════════════════════════════════════ */
 function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px', ...rest }) {
-  const [display, setDisplay] = useState(() => formatPriceCO(value));
-  const [focused, setFocused] = useState(false);
-
-  // Sincronizar si value cambia desde afuera (patrón "valor previo en estado")
-  const [lastValue, setLastValue] = useState(value);
-  if (lastValue !== value) {
-    setLastValue(value);
-    const curRaw = parsePriceCO(display);
-    if (curRaw !== String(value ?? '')) setDisplay(formatPriceCO(value));
-  }
-
-  /* ── Valor que se muestra según si el campo está enfocado ──────────
-     Mientras el campo está activo mostramos el valor sin puntos de miles
-     (ej. "1500,50") para que el teclado decimal de iOS/Android pueda
-     escribir normalmente. Al perder el foco volvemos a formatear. */
-  const displayValue = focused
-    ? (() => {
-        // valor crudo = "1500.50" (punto como decimal interno)
-        // lo convertimos a "1500,50" para que sea natural en español
-        const raw = parsePriceCO(display);
-        if (!raw) return '';
-        return raw.replace('.', ',');
-      })()
-    : display;
-
   return (
-    <Input
+    <CampoNumero
+      tipo="precio"
       variant="unstyled"
-      inputMode="decimal"       /* teclado numérico con coma/punto en iOS/Android */
-      value={displayValue}
-      onChange={e => {
-        const raw = e.target.value;
-        /* Aceptar tanto coma como punto como separador decimal */
-        const typing = /[,.]$/.test(raw) || /[,.]\d{0,1}$/.test(raw);
-        const parsed = parsePriceCO(raw);
-        if (parsed === '' || /^\d*\.?\d{0,2}$/.test(parsed)) {
-          // mientras edita, guardar lo que escribe tal cual
-          setDisplay(typing ? raw : formatPriceCO(parsed));
-          onChange(parsed);
-        }
-      }}
-      onFocus={e => {
-        setFocused(true);
-        setTimeout(() => e.target.select(), 0);
-      }}
-      onBlur={e => {
-        setFocused(false);
-        const parsed = parsePriceCO(e.target.value);
-        setDisplay(formatPriceCO(parsed));
-      }}
+      value={value}
+      onChange={onChange}
       data-row-id={dataRowId}
       data-field={dataField}
       placeholder="0"
@@ -218,13 +175,17 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
   );
 }
 
-function focusInput(container, rowId, field) {
-  /* Puede haber varias copias del mismo campo en el DOM (la disposición de
-     escritorio, la de tablet y la de celular conviven ocultándose entre sí).
-     Hay que enfocar la que está a la vista, no la primera que aparezca. */
+function focusInput(container, rowId, field, intentos = 6) {
+  /* Si hay varias copias del mismo campo en el DOM, se enfoca la que está
+     a la vista. Si la fila se acaba de crear y todavía no se ha dibujado,
+     se reintenta unos cuadros en vez de rendirse (antes el cursor se
+     quedaba en el botón «+ Transporte» o «+ Agregar fila»). */
   const todos = [...document.querySelectorAll(`[data-row-id="${rowId}"][data-field="${field}"]`)];
   const el = todos.find(e => e.offsetParent !== null) || todos[0];
-  if (!el) return;
+  if (!el) {
+    if (intentos > 0) requestAnimationFrame(() => focusInput(container, rowId, field, intentos - 1));
+    return;
+  }
   el.focus();
   if (el.tagName === 'INPUT') { try { el.select(); } catch { /* algunos input no soportan select */ } }
 }
@@ -339,49 +300,6 @@ function DocEscalado({ children }) {
 /* ════════════════════════════════════════════════════════════
    PANELES DE FORMULARIO
 ════════════════════════════════════════════════════════════ */
-const PanelEmpresa = memo(function PanelEmpresa({ empresa, setEmpresa, border, mutedL, inputBg, onLogoError }) {
-  const logoRef = useRef();
-  const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
-  const E = k => ({ value: empresa[k] ?? '', onChange: e => setEmpresa(p => ({ ...p, [k]: e.target.value })) });
-  return (
-    <Box p={4}>
-      <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }}
-        onChange={e => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          if (file.size > 2 * 1024 * 1024) { onLogoError?.({ title: 'Logo demasiado grande', description: 'El logo no puede superar 2MB.', status: 'warning', duration: 3000, ...AVISO_LATERAL }); return; }
-          const reader = new FileReader();
-          reader.onload = ev => setEmpresa(p => ({ ...p, logo: ev.target.result }));
-          reader.readAsDataURL(file);
-          e.target.value = '';
-        }} />
-      <Box border="1.5px dashed" borderColor={border} rounded="lg" p={3} textAlign="center" mb={4}
-        bg={useColorModeValue('gray.50', 'blackAlpha.200')}>
-        <Box display="flex" justifyContent="center" mb={2}>
-          <AppLogo src={empresa.logo} h="48px" />
-        </Box>
-        <Button size="xs" variant="outline" rounded="md" leftIcon={<FiUpload size={11} />}
-          onClick={() => logoRef.current?.click()}>
-          {empresa.logo ? 'Cambiar logo' : 'Cargar logo'}
-        </Button>
-        <Text fontSize="9px" color={mutedL} mt={1}>PNG · JPG · SVG · Máx. 2MB</Text>
-      </Box>
-      <Stack spacing={3}>
-        <Box><FL>Nombre empresa</FL><Input {...ip} {...E('nombre')} placeholder="Mi Empresa S.A.S." /></Box>
-        <Flex gap={2}>
-          <Box flex={1}><FL>NIT</FL><Input {...ip} {...E('nit')} placeholder="000.000.000-0" /></Box>
-          <Box flex={1}><FL>Ciudad</FL><Input {...ip} {...E('ciudad')} placeholder="Cali" /></Box>
-        </Flex>
-        <Box><FL>Dirección</FL><Input {...ip} {...E('dir')} placeholder="Calle, carrera…" /></Box>
-        <Flex gap={2}>
-          <Box flex={1}><FL>Teléfono</FL><Input {...ip} {...E('tel')} placeholder="+57 3XX…" /></Box>
-          <Box flex={1}><FL>Correo</FL><Input {...ip} {...E('correo')} type="email" placeholder="correo@empresa.com" /></Box>
-        </Flex>
-      </Stack>
-    </Box>
-  );
-});
-
 const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, getClientes, onUsarCliente }) {
   const ip = { size: 'sm', rounded: 'md', bg: inputBg, focusBorderColor: FY };
   const C = k => ({ value: cliente[k] ?? '', onChange: e => setCliente(p => ({ ...p, [k]: e.target.value })) });
@@ -444,7 +362,7 @@ const PanelCliente = memo(function PanelCliente({ cliente, setCliente, inputBg, 
                 {TIPOS_DOC.map(t => {
                   const activo = tipoActual === t.v;
                   return (
-                    <Button key={t.v} size="xs" h="26px" px={2} rounded="sm" role="radio" aria-checked={activo}
+                    <Button key={t.v} size="xs" h={{ base: '36px', lg: '26px' }} px={{ base: 3, lg: 2 }} rounded="sm" role="radio" aria-checked={activo}
                       title={t.largo}
                       bg={activo ? DARK : 'transparent'} color={activo ? FY : muted}
                       _hover={{ bg: activo ? DARK : 'gray.100' }} fontWeight="800" fontSize="10px"
@@ -632,8 +550,8 @@ const PanelCotizacion = memo(function PanelCotizacion({
 ════════════════════════════════════════════════════════════ */
 const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, esObra, cotConfig, upItem, removeItem, toggleSinIva,
-  handleAcceptSugerencia, getSugerencias, puedeBorrar, duplicateItem, tableRef,
-  startRowDrag, dragId }) {
+  handleAcceptSugerencia, getSugerencias, puedeBorrar, duplicateItem,
+  startRowDrag, dragId, mostrarBase }) {
   const hoverBg = useColorModeValue('yellow.50', 'whiteAlpha.50');
   const dragBg = useColorModeValue('yellow.100', 'whiteAlpha.200');
   const isDragging = dragId === r.id;
@@ -668,55 +586,46 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           <Text>{i + 1}</Text>
         </HStack>
       </Td>
-      <Td borderColor={border} p={1} w="72px">
-        <HStack spacing={0.5}>
-          <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
-            data-row-id={r.id} data-field="ref" tabIndex={-1}
-            placeholder="—" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" flex={1}
-            _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
-          {typeof navigator !== 'undefined' && navigator.mediaDevices && (
-            <Tooltip label="Escanear código con la cámara" hasArrow>
-              <IconButton size="xs" variant="ghost" rounded="sm" color={mutedL} tabIndex={-1}
-                aria-label="Escanear código de barras"
-                icon={<FiCamera size={10} />}
-                onClick={() => { setScanTargetRow(r.id); setShowScanner(true); }}
-                _hover={{ color: FY, bg: 'transparent' }} />
-            </Tooltip>
-          )}
-        </HStack>
+      {/* La cámara que había aquí llamaba a funciones que no existían en
+          esta tabla: tocarla tumbaba la aplicación entera. El escáner vive
+          en la lista rápida del celular, que es donde hay cámara a mano. */}
+      <Td borderColor={border} p={1} w={{ base: '48px', xl: '64px' }}>
+        <Input variant="unstyled" value={r.ref} onChange={e => upItem(r.id, 'ref', e.target.value)}
+          data-row-id={r.id} data-field="ref" tabIndex={-1} title={r.ref || 'Código o referencia'}
+          placeholder="—" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" w={{ base: '42px', xl: '56px' }}
+          _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
       {/* La descripción se lleva todo el ancho sobrante: antes la tabla
           repartía el espacio entre columnas de números y el nombre del
           producto quedaba cortado ("Tubo PVC", "Soldadura"). */}
-      <Td borderColor={border} p={1} w="100%" minW="170px">
+      <Td borderColor={border} p={1} w="100%" minW="150px">
         <AutocompleteInput
           value={r.desc}
           onChange={val => upItem(r.id, 'desc', val)}
           onAccept={sug => handleAcceptSugerencia(r.id, sug)}
-          onMoveNext={() => {
-            requestAnimationFrame(() => focusInput(tableRef?.current, r.id, 'qty'));
-          }}
           getSugerencias={getSugerencias}
           dataRowId={r.id}
           inputBg={inputBg}
           FY={FY}
           tabIndex={-1}
+          title={r.desc || undefined}
         />
       </Td>
-      <Td borderColor={border} p={1} isNumeric w="52px">
-        <Input variant="unstyled" type="number" min="0.001" step="any" inputMode="decimal" value={r.qty}
-          onChange={e => upItem(r.id, 'qty', e.target.value)}
+      <Td borderColor={border} p={1} isNumeric w="56px">
+        <CampoNumero tipo="cantidad" variant="unstyled" value={r.qty}
+          onChange={v => upItem(r.id, 'qty', v)}
+          onBlur={() => { if (!(parseFloat(r.qty) > 0)) upItem(r.id, 'qty', '1'); }}
           data-row-id={r.id} data-field="qty" tabIndex={-1}
-          textAlign="center" fontWeight="700" fontSize="12px" px={1} py={1} rounded="md" w="44px"
+          textAlign="center" fontWeight="700" fontSize="12px" px={1} py={1} rounded="md" w="48px"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
-      <Td borderColor={border} p={1} w="52px">
+      <Td borderColor={border} p={1} w="60px">
         {/* Solo la unidad elegida hasta que alguien toque la lista: las 17
             unidades por fila eran la cuarta parte de toda la página. */}
         <SelectUnidadSimple value={r.unit} onChange={e => upItem(r.id, 'unit', e.target.value)}
           rowId={r.id} />
       </Td>
-      {!esObra && (
+      {!esObra && mostrarBase && (
         /* Base sin IVA e IVA en una sola columna de dos renglones: son datos
            de consulta, no se escriben, y como dos columnas le quitaban al
            nombre del producto el espacio que necesita para leerse. */
@@ -736,9 +645,9 @@ const ItemRow = memo(function ItemRow({ r, i, border, mutedL, inputBg, tableBg, 
           dataRowId={r.id} dataField="price" inputBg={inputBg} w="88px" tabIndex={-1} />
       </Td>
       <Td borderColor={border} p={1} isNumeric w="50px">
-        <Input variant="unstyled" type="number" min="0" max="100" step="any" inputMode="decimal" value={r.disc}
-          onChange={e => upItem(r.id, 'disc', e.target.value)}
-          data-row-id={r.id} data-field="disc" tabIndex={-1}
+        <CampoNumero tipo="porcentaje" max={100} variant="unstyled" value={r.disc}
+          onChange={v => upItem(r.id, 'disc', v)}
+          data-row-id={r.id} data-field="disc" tabIndex={-1} placeholder="0"
           textAlign="center" fontSize="11px" color={mutedL} px={1} py={1} rounded="md" w="44px"
           _hover={{ bg: inputBg }} _focus={{ bg: inputBg, boxShadow: `0 0 0 1.5px ${FY}55` }} />
       </Td>
@@ -773,7 +682,7 @@ const TablaProductos = memo(function TablaProductos({
   border, mutedL, inputBg, tableBg, stripeBg,
   ivaRate, cotConfig, upItem, removeItem, toggleSinIva,
   handleAcceptSugerencia, getSugerencias, addItem, addTransporte, duplicateItem,
-  startRowDrag, dragId,
+  startRowDrag, dragId, alto,
 }) {
   /* Con cotizaciones de 40+ productos, montar todas las filas de un golpe
      dejaba la pantalla pegada varios segundos al abrir. Se pintan las
@@ -790,17 +699,24 @@ const TablaProductos = memo(function TablaProductos({
   const addBtnHover = useColorModeValue('yellow.50', 'whiteAlpha.100');
   const theadBg = '#3A3A38';
   const mutedText = useColorModeValue('gray.400', 'gray.500');
+  /* La columna «Base + IVA» (dato de consulta) solo cuando sobra ancho.
+     En pantallas de 1024–1279 le quitaba al nombre del producto el espacio
+     para leerse: salía «Tornillo drywall 6x1 caja x1». */
+  const [mostrarBase] = useMediaQuery('(min-width: 80em)', { ssr: false });
 
   const cols = esObra
     ? ['#', 'Ref.', 'Descripción / Actividad', 'Cant.', 'Und.', 'Vr. Unit.', 'Desc.%', 'Total', '']
-    : ['#', 'Ref.', 'Nombre Producto', 'Cant.', 'Und.', 'Base + IVA', 'P. c/IVA', 'Desc.%', 'Total', ''];
+    : ['#', 'Ref.', 'Producto', 'Cant.', 'Und.', ...(mostrarBase ? ['Base + IVA'] : []), 'P. c/IVA', 'Desc.%', 'Total', ''];
 
   return (
     <Box ref={tableRef}
       overflowX="auto"
       overflowY="auto"
-      flex={1}
-      h={0}          /* ← clave: h=0 + flex=1 fuerza scroll interno */
+      /* En el computador ocupa el alto que le deja la tarjeta (flex) y hace
+         scroll por dentro; en la tablet se le da un alto fijo. */
+      flex={alto ? undefined : 1}
+      h={alto || 0}
+      minH={alto ? '320px' : undefined}
       onKeyDownCapture={handleTableKeyDown}
       onPaste={handlePasteExcel}
       sx={{
@@ -830,7 +746,7 @@ const TablaProductos = memo(function TablaProductos({
               handleAcceptSugerencia={handleAcceptSugerencia}
               getSugerencias={getSugerencias}
               puedeBorrar={puedeBorrar}
-              tableRef={tableRef}
+              mostrarBase={mostrarBase}
               startRowDrag={startRowDrag} dragId={dragId} />
           ))}
           {faltanPorPintar > 0 && (
@@ -857,7 +773,7 @@ const TablaProductos = memo(function TablaProductos({
                     + Transporte
                   </Button>
                 )}
-                <Text fontSize="9px" color={mutedText} display={{ base: 'none', xl: 'block' }}>
+                <Text fontSize="9px" color={mutedText} display={{ base: 'none', '2xl': 'block' }}>
                   <Kbd fontSize="8px">Tab</Kbd> avanza ·{' '}
                   <Kbd fontSize="8px">Shift+Tab</Kbd> retrocede ·{' '}
                   <Kbd fontSize="8px">← →</Kbd> campos ·{' '}
@@ -956,7 +872,7 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
       <Box h="1px" bg={`${FY}44`} my={3} />
       <Flex justify="space-between" align="flex-end">
         <Text fontSize="11px" color="whiteAlpha.500">Total a Pagar</Text>
-        <Text fontSize={fTotal} fontWeight="800" color={FY} lineHeight="1" fontVariantNumeric="tabular-nums">
+        <Text fontSize={fTotal} fontWeight="800" color={FY} lineHeight="1" sx={{ fontVariantNumeric: "tabular-nums" }}>
           {money(totals.totalPagar, cotConfig.moneda)}
         </Text>
       </Flex>
@@ -964,89 +880,85 @@ function ResumenTotales({ totals, cotConfig, descGNum, aiuConfig, size = 'md' })
   );
 }
 
-const ResumenDesktop = memo(function ResumenDesktop({ items, cotConfig, totals, descGNum, aiuConfig,
-  cliente, safeNavigate, handleSave, isSaving, hasChanges, onEnviar, enviando }) {
-  const esObra = cotConfig.tipo === 'obra';
-  /* El resumen es un vistazo, no la lista completa. Con 45 productos,
-     repintarlos todos aquí en cada tecla costaba tanto como la tabla. */
-  const TOPE_RESUMEN = 15;
-  const conDatos = items.filter(r => r.desc || r.price);
-  const visibles = conDatos.slice(0, TOPE_RESUMEN);
-  const ocultos = conDatos.length - visibles.length;
+/* ════════════════════════════════════════════════════════════
+   PIE DE TOTALES (computador)
+   Antes había una tercera columna «Resumen» que repetía la lista de
+   productos de la tabla y le robaba 276 px al nombre de cada producto.
+   Ahora los totales van pegados al pie de la tabla, a la vista siempre,
+   con el botón de enviar al lado del total.
+════════════════════════════════════════════════════════════ */
+function Cifra({ label, valor, color = 'whiteAlpha.800', labelColor = 'whiteAlpha.500' }) {
   return (
-    <Box bg={DARK} rounded="xl" overflow="hidden" display="flex" flexDirection="column"
-      border="1px solid" borderColor="whiteAlpha.100" h="full">
-      <Box px={5} pt={5} pb={3}>
-        <Flex align="center" gap={2}>
-          <Text fontWeight="300" fontSize="18px" color="white">Resumen</Text>
-          <Badge bg={esObra ? 'blue.700' : 'green.700'} color="white" fontSize="8px" rounded="full" px={2}>
-            {esObra ? 'OBRA' : 'COMERCIAL'}
-          </Badge>
-        </Flex>
-        <Text fontSize="9px" color="whiteAlpha.400" letterSpacing="wider" textTransform="uppercase">
-          {cotConfig.numero || 'Sin número'} · {fmtDate(cotConfig.fecha)}
-        </Text>
-      </Box>
-      <Box h="1px" bg="whiteAlpha.100" mx={5} />
-      <Box px={5} py={3}>
-        <Text fontSize="9px" color="whiteAlpha.400" letterSpacing="wider" textTransform="uppercase" mb={1}>Para</Text>
-        <Text fontSize="14px" color="white" fontWeight="500" noOfLines={1}>
-          {cliente.nombre || <Text as="span" color="whiteAlpha.300" fontStyle="italic" fontSize="13px">Sin cliente</Text>}
-        </Text>
-        {cliente.empresa && <Text fontSize="11px" color="whiteAlpha.500" noOfLines={1}>{cliente.empresa}</Text>}
-      </Box>
-      <Box h="1px" bg="whiteAlpha.100" mx={5} />
-      <Box flex={1} overflowY="auto" px={5} py={3}
-        sx={{ '&::-webkit-scrollbar': { w: '3px' }, '&::-webkit-scrollbar-thumb': { bg: 'whiteAlpha.200' } }}>
-        {/* Sin animación de layout: se repinta con cada tecla y medir cada
-            renglón en el DOM era otro freno al escribir. */}
-        {visibles.length === 0
-          ? <Text fontSize="11px" color="whiteAlpha.300" fontStyle="italic">Agrega productos →</Text>
-          : visibles.map(r => (
-            <Flex key={r.id} justify="space-between" align="flex-start" py={2}
-              borderBottom="1px solid" borderColor="whiteAlpha.100" gap={2}>
-              <Box flex={1} minW={0}>
-                <Text fontSize="12px" color="whiteAlpha.800" noOfLines={1}>{r.desc || 'Sin nombre'}</Text>
-                <Text fontSize="10px" color="whiteAlpha.400">
-                  {r.qty} {r.unit}{parseFloat(r.disc) > 0 ? ` · ${r.disc}% desc.` : ''}
-                </Text>
-              </Box>
-              <Text fontSize="12px" fontWeight="700" color={FY} whiteSpace="nowrap">
-                {money(calcRow(r), cotConfig.moneda)}
-              </Text>
-            </Flex>
-          ))
-        }
-        {ocultos > 0 && (
-          <Text fontSize="11px" color="whiteAlpha.400" fontStyle="italic" py={2}>
-            y {ocultos} producto{ocultos === 1 ? '' : 's'} más — el total de abajo los incluye todos
-          </Text>
-        )}
-      </Box>
-      <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
-      {/* Aire abajo: el botón redondo de ayuda flota en esta esquina y le
-          caía justo encima a "Guardar". */}
-      <Box px={5} pt={4} pb={{ base: 4, xl: "76px" }}>
-        {/* Lo que sigue después de cotizar: mandarla. Antes el botón grande
-            era «Ver cotización» y «Guardar» repetía el de arriba. */}
-        <Button w="full" bg="#25D366" color="white" rounded="lg" fontWeight="800" mb={2}
-          leftIcon={<FaWhatsapp size={18} />} isLoading={enviando} loadingText="Preparando…"
-          onClick={onEnviar} _hover={{ bg: '#1ebe5b' }}>
-          Enviar por WhatsApp
-        </Button>
-        <Flex gap={2}>
-          <Button flex={1} bg="whiteAlpha.200" color="white" rounded="lg" leftIcon={<FiEye />}
-            onClick={() => safeNavigate('preview')} _hover={{ bg: 'whiteAlpha.300' }}>
-            Ver
-          </Button>
-          <Button flex={1} bg={hasChanges ? FY : 'whiteAlpha.100'} color={hasChanges ? DARK : 'whiteAlpha.700'}
-            rounded="lg" leftIcon={<FiSave />} isLoading={isSaving} onClick={handleSave}
-            _hover={{ bg: hasChanges ? '#e0b010' : 'whiteAlpha.200' }}>
-            {hasChanges ? 'Guardar' : 'Guardado'}
-          </Button>
-        </Flex>
-      </Box>
+    <Box minW={0}>
+      <Text fontSize="9px" color={labelColor} textTransform="uppercase" letterSpacing="0.08em"
+        whiteSpace="nowrap">{label}</Text>
+      <Text fontSize="13px" fontWeight="700" color={color} whiteSpace="nowrap"
+        sx={{ fontVariantNumeric: 'tabular-nums' }}>{valor}</Text>
     </Box>
+  );
+}
+
+const PieTotales = memo(function PieTotales({ totals, cotConfig, descGNum, aiuConfig, nItems, onEnviar, onTexto, enviando }) {
+  const esObra = cotConfig.tipo === 'obra';
+  const mon = cotConfig.moneda;
+  const aiu = aiuConfig || DEFAULT_AIU;
+  return (
+    <Flex bg={DARK} px={4} py={3} gap={4} align="center" flexShrink={0} flexWrap="wrap"
+      borderTop="1px solid" borderColor="whiteAlpha.100">
+      <Flex gap={{ base: 4, xl: 6 }} flex={1} minW={0} flexWrap="wrap" rowGap={2}>
+        <Cifra label="Productos" valor={nItems} />
+        {esObra ? (
+          <>
+            <Cifra label="Costo directo" valor={money(totals.costoDirecto ?? 0, mon)} />
+            {descGNum > 0 && <Cifra label={`Desc. ${descGNum}%`} valor={`− ${money(totals.descGAmt, mon)}`} color="red.300" />}
+            {(aiu.admin > 0 || aiu.imprevistos > 0) && (
+              <Cifra label={`Adm. ${aiu.admin}% + Imp. ${aiu.imprevistos}%`}
+                valor={money((totals.adminAmt ?? 0) + (totals.impAmt ?? 0), mon)} />
+            )}
+            {aiu.utilidad > 0 && <Cifra label={`Utilidad ${aiu.utilidad}%`} valor={money(totals.utilAmt ?? 0, mon)} />}
+            {aiu.utilidad > 0 && <Cifra label="IVA s/ utilidad" valor={money(totals.ivaUtilidad ?? 0, mon)} />}
+            {aiu.anticipo > 0 && (
+              <Cifra label={`Anticipo ${aiu.anticipo}%`} valor={money(totals.totalPagar * aiu.anticipo / 100, mon)}
+                color="yellow.300" labelColor="yellow.500" />
+            )}
+          </>
+        ) : (
+          <>
+            <Cifra label="Subtotal sin IVA" valor={money(totals.totalBruto, mon)} />
+            {(totals.exento || 0) > 0 && <Cifra label="Transporte (sin IVA)" valor={money(totals.exento, mon)} labelColor="blue.200" />}
+            <Cifra label={`IVA ${cotConfig.iva}%`} valor={money(totals.ivaTotal, mon)} />
+            {descGNum > 0 && <Cifra label={`Desc. ${descGNum}%`} valor={`− ${money(totals.descGAmt, mon)}`} color="red.300" />}
+          </>
+        )}
+      </Flex>
+      <Flex align="center" gap={4} flexShrink={0} ml="auto">
+        <Box textAlign="right">
+          <Text fontSize="9px" color="whiteAlpha.600" textTransform="uppercase" letterSpacing="0.1em">Total a pagar</Text>
+          <Text fontSize="24px" fontWeight="900" color={FY} lineHeight="1.1" whiteSpace="nowrap"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {money(totals.totalPagar, mon)}
+          </Text>
+        </Box>
+        <ButtonGroup isAttached>
+          <Button bg="#25D366" color="white" rounded="lg" fontWeight="800" h="44px" px={{ base: 3, xl: 5 }}
+            leftIcon={<FaWhatsapp size={18} />} isLoading={enviando} loadingText="Preparando…"
+            onClick={onEnviar} _hover={{ bg: '#1ebe5b' }}>
+            Enviar<Text as="span" display={{ base: 'none', xl: 'inline' }}>&nbsp;por WhatsApp</Text>
+          </Button>
+          <Menu isLazy placement="top-end">
+            <MenuButton as={IconButton} h="44px" minW="36px" bg="#1fb85a" color="white" rounded="lg"
+              _hover={{ bg: '#18a84f' }} _active={{ bg: '#18a84f' }} aria-label="Otras formas de enviar"
+              icon={<FiChevronDown />} borderLeft="1px solid" borderColor="whiteAlpha.400" />
+            <MenuList fontSize="13px" zIndex={400} color="gray.800" _dark={{ color: 'gray.100' }}>
+              <MenuItem icon={<FaWhatsapp />} onClick={onEnviar}>Enviar el PDF</MenuItem>
+              <MenuItem icon={<FiMessageSquare />} onClick={onTexto} command="sin PDF">
+                Enviar la lista como texto
+              </MenuItem>
+            </MenuList>
+          </Menu>
+        </ButtonGroup>
+      </Flex>
+    </Flex>
   );
 });
 
@@ -1090,7 +1002,8 @@ export default function CotizadorPage() {
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
   /* Debajo de la tira de pestañas Y de la navegación principal */
   const topOffset = useOffsetSuperior(tabs.length > 0);
-  const { downloadPDF, archivoPDF, printDoc, loading: pdfLoading } = usePDF('cotizacion-pdf');
+  const { downloadPDF, archivoPDF, loading: pdfLoading } = usePDF('cotizacion-pdf');
+  const { imprimiendo, imprimir } = useImpresion();
   const { exportar: exportarExcel, loading: xlsxLoading } = useExcel();
   const { plantillas, guardarPlantilla, eliminarPlantilla, renombrarPlantilla } = usePlantillas();
   const { getSugerencias } = useProductosFrecuentes();
@@ -1121,7 +1034,9 @@ export default function CotizadorPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [descLocal, setDescLocal] = useState('0');
   const [pendingNav, setPendingNav] = useState(null);
-  const [mobileStep, setMobileStep] = useState(location.state?.modoExpress ? 1 : 0);
+  /* Una cotización ya guardada abre en «Productos»: al volver a una, casi
+     siempre es para revisar o cambiar lo pedido, no los datos del cliente. */
+  const [mobileStep, setMobileStep] = useState(location.state?.modoExpress || id ? 1 : 0);
   /* Al cambiar de paso se vuelve arriba. Antes se conservaba el scroll del
      paso anterior: al tocar «Productos» al final del formulario del
      cliente se aterrizaba en mitad de la lista, sin ver el comienzo. */
@@ -1140,8 +1055,6 @@ export default function CotizadorPage() {
   const [showPlantillas, setShowPlantillas] = useState(false);
   const [plantillasMode, setPlantillasMode] = useState("usar"); // "usar" | "guardar"
   const [showFirma, setShowFirma] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
-  const [scanTargetRow, setScanTargetRow] = useState(null);
   const [showSiigo, setShowSiigo]       = useState(false);
   const [firma, setFirma] = useState(null); // { dataURL, firmante, fecha }
   const [expressTrabajador, setExpressTrabajador] = useState('');
@@ -1175,18 +1088,32 @@ export default function CotizadorPage() {
      Ahora se monta solo la que corresponde. Además de ir más rápido,
      esto elimina de raíz los errores por campos duplicados (el cursor
      saltaba a una casilla invisible). */
-  const [esEscritorio] = useMediaQuery('(min-width: 80em)', { ssr: false });
+  /* Computador desde 1024 px: tabla completa a dos columnas. Antes lo
+     era desde 1280, y un portátil con la pantalla al 125 % (1093 px)
+     caía en la vista de tablet, con los botones montados encima. */
+  const [esEscritorio] = useMediaQuery('(min-width: 64em)', { ssr: false });
   const [esCelular]    = useMediaQuery('(max-width: 47.99em)', { ssr: false });
-  const esTablet = !esEscritorio && !esCelular;
+  /* Celular y tablet trabajan por pasos: Cliente → Productos → Enviar */
+  const porPasos = !esEscritorio;
 
-  const setEmpresa = useCallback(updater => {
-    setEmpresaState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveEmpresaLocal(next);
-      pushEmpresaDebounced(next);
-      return next;
-    });
-  }, []);
+  /* ¿Está abierto el teclado del teléfono? Mientras se escribe, la barra
+     fija de abajo se esconde: con el teclado arriba tapaba justo la
+     casilla en la que se estaba escribiendo. */
+  const [tecleando, setTecleando] = useState(false);
+  useEffect(() => {
+    if (!porPasos) return;
+    const tactil = window.matchMedia?.('(pointer: coarse)').matches;
+    if (!tactil) return;
+    const esCampo = (el) => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' ||
+      (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'file'].includes(el.type)));
+    let t;
+    const alEntrar = (e) => { if (esCampo(e.target)) { clearTimeout(t); setTecleando(true); } };
+    const alSalir = () => { clearTimeout(t); t = setTimeout(() => setTecleando(esCampo(document.activeElement)), 120); };
+    document.addEventListener('focusin', alEntrar);
+    document.addEventListener('focusout', alSalir);
+    return () => { clearTimeout(t); document.removeEventListener('focusin', alEntrar); document.removeEventListener('focusout', alSalir); };
+  }, [porPasos]);
+
 
   /* ¿Hay cambios sin guardar?
      Antes cualquier cambio de estado marcaba "Sin guardar", incluida la
@@ -1198,7 +1125,7 @@ export default function CotizadorPage() {
     if (editingId && sigRef.current) {
       const actual = firmaDe({
         cliente, cotConfig, items, descG: parseFloat(descLocal) || 0,
-        notas, observaciones, aiuConfig,
+        notas, observaciones, aiuConfig, firma,
       });
       setHasChanges(actual !== sigRef.current);
     } else {
@@ -1207,12 +1134,12 @@ export default function CotizadorPage() {
         || !!String(cliente.nombre || '').trim()
       );
     }
-  }, [cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig, editingId]);
+  }, [cliente, cotConfig, items, notas, observaciones, descLocal, aiuConfig, firma, editingId]);
 
   const stRef = useRef({});
   const itemsRef = useRef(items);   // lectura estable para los atajos de teclado
   useEffect(() => {
-    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, observaciones, editingId, aiuConfig };
+    stRef.current = { empresa, cliente, cotConfig, items, descG: parseFloat(descLocal) || 0, notas, observaciones, editingId, aiuConfig, firma };
     itemsRef.current = items;
   });
 
@@ -1247,6 +1174,7 @@ export default function CotizadorPage() {
     setNotas(cot.notas || DEFAULT_NOTAS);
     setObservaciones(cot.observaciones || '');
     setAiuConfig(cot.aiuConfig || DEFAULT_AIU);
+    setFirma(cot.firma || null);
     setEditingId(id);
     setHasChanges(false);
     setShowTipoModal(false);
@@ -1259,6 +1187,7 @@ export default function CotizadorPage() {
       notas:     cot.notas || DEFAULT_NOTAS,
       observaciones: cot.observaciones || '',
       aiuConfig: cot.aiuConfig || DEFAULT_AIU,
+      firma:     cot.firma || null,
     });
   }, [id]); // eslint-disable-line
 
@@ -1455,7 +1384,9 @@ export default function CotizadorPage() {
   const upItem = useCallback((rid, k, v) => {
     if ((k === 'price' || k === 'disc') && parseFloat(v) < 0) v = '0';
     if (k === 'disc' && parseFloat(v) > 100) v = '100';
-    if (k === 'qty' && parseFloat(v) <= 0) v = '1';
+    /* La cantidad puede quedar vacía o en 0 MIENTRAS se escribe ("0,5"):
+       forzarla a 1 en cada tecla convertía 0,5 en 1,5. Al salir de la
+       casilla se corrige si quedó vacía (ver la casilla de cantidad). */
     setItems(p => p.map(r => {
       if (r.id !== rid) return r;
       const next = { ...r, [k]: v };
@@ -1579,17 +1510,18 @@ export default function CotizadorPage() {
     }
 
     const get = (row, col) => col > 0 ? (row[col - 1] || "").trim() : "";
-    const toNum = (s) => parseFloat(s.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+    /* Antes se quitaban todos los puntos: "2.5" de cantidad quedaba 25 */
+    const toNum = (s, tipo = "precio") => parseFloat(parseNumeroCO(s, { tipo, decimales: tipo === "cantidad" ? 3 : 2 })) || 0;
 
     const nuevas = dataRows
       .filter(row => row.some(c => c.trim()))
       .map(row => ({
         ...blankRow(),
         desc:  get(row, colMap.desc),
-        qty:   Math.max(0.001, toNum(get(row, colMap.qty)) || 1),
+        qty:   String(toNum(get(row, colMap.qty), "cantidad") || 1),
         unit:  get(row, colMap.unit) || "Und",
         price: String(toNum(get(row, colMap.price)) || ""),
-        disc:  toNum(get(row, colMap.disc)),
+        disc:  Math.min(100, toNum(get(row, colMap.disc), "porcentaje")),
       }))
       .filter(r => r.desc || r.price);
 
@@ -1842,7 +1774,7 @@ export default function CotizadorPage() {
 
   /* ── Guardado ── */
   const autoSave = useCallback(async () => {
-    const { empresa, cliente, cotConfig, items, descG, notas, observaciones, editingId, aiuConfig } = stRef.current;
+    const { empresa, cliente, cotConfig, items, descG, notas, observaciones, editingId, aiuConfig, firma } = stRef.current;
     if (!items.some(r => r.desc?.trim())) return null;
     /* Sin cambios reales no se reguarda: así saltar entre pestañas no
        reordena el historial ni genera escrituras en la nube. */
@@ -1854,7 +1786,7 @@ export default function CotizadorPage() {
       ? calcTotalsObra(items, descG, aiuConfig)
       : calcTotals(items, descG, cfg.iva);
     try {
-      const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, observaciones, totals: tot, aiuConfig });
+      const saved = await saveCotizacion({ id: editingId, empresa, cliente, config: cfg, items, descG, notas, observaciones, totals: tot, aiuConfig, firma });
       clearDraft();
       sigRef.current = sig;
       /* Si era la pestaña "Nueva", pasa a ser su COT-XXX sin moverse de sitio */
@@ -1883,7 +1815,7 @@ export default function CotizadorPage() {
     const descG = parseFloat(descLocal) || 0;
     try {
       const cfgGuardar = extra ? { ...cotConfig, ...extra } : cotConfig;
-      const payload = { id: editingId, empresa, cliente, config: cfgGuardar, items, descG, notas, observaciones, totals, aiuConfig };
+      const payload = { id: editingId, empresa, cliente, config: cfgGuardar, items, descG, notas, observaciones, totals, aiuConfig, firma };
       const saved = await saveCotizacion(payload);
       if (extra && editingId) setCotConfig(cfgGuardar);
       aprenderProductos(items);
@@ -1914,7 +1846,7 @@ export default function CotizadorPage() {
       toast({ title: 'Error al guardar', description: e.message, status: 'error', duration: 4000 });
       return null;
     } finally { setIsSaving(false); }
-  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, observaciones, totals, aiuConfig,
+  }, [editingId, empresa, cliente, cotConfig, descLocal, items, notas, observaciones, totals, aiuConfig, firma,
     saveCotizacion, navigate, toast, replaceTab]);
 
   useEffect(() => { saveRef.current = handleSave; }, [handleSave]);
@@ -1948,6 +1880,7 @@ export default function CotizadorPage() {
     setNotas(DEFAULT_NOTAS);
     setObservaciones('');
     setDescLocal('0');
+    setFirma(null);
     setEditingId(null);
     setHasChanges(false);
     setMobileStep(0);
@@ -2037,11 +1970,13 @@ export default function CotizadorPage() {
     setEnviando(true);
     try {
       let numero = cotConfig.numero;
+      let idActual = editingId;
       const marcar = (cotConfig.estado || 'borrador') === 'borrador' ? { estado: 'enviada' } : null;
       if (!editingId || hasChanges || marcar) {
         const saved = await handleSave(marcar || undefined);
         if (!saved) return;
         numero = saved.numero || saved.config?.numero || numero;
+        idActual = saved.id || idActual;
       }
       setPdfReady(true);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -2074,9 +2009,8 @@ export default function CotizadorPage() {
         toast({ title: 'Enviada ✓', description: 'La marqué como «Enviada» en el listado.', status: 'success', duration: 3000, ...AVISO_LATERAL });
       }
       // Trazabilidad: registrar envío por WhatsApp
-      if (r === 'compartido' || r === 'descargado') {
-        const idActual = editingId || content?.id;
-        if (idActual) addEvento(idActual, 'enviada_whatsapp', cliente.nombre || 'cliente');
+      if ((r === 'compartido' || r === 'descargado') && idActual) {
+        addEvento(idActual, 'enviada_whatsapp', cliente.nombre || 'cliente');
       }
     } finally {
       setEnviando(false);
@@ -2093,11 +2027,12 @@ export default function CotizadorPage() {
     const lineas = items
       .filter(r => r.desc?.trim())
       .map(r => {
-        const qty = parseFloat(r.qty) || 1;
-        const qtyStr = qty === Math.floor(qty) ? String(qty) : qty.toFixed(2);
+        const qtyStr = fmtCantidad(parseFloat(r.qty) || 1);
         const unit  = r.unit && r.unit !== 'Und' ? ` ${r.unit}` : '';
+        /* calcRow devuelve un número; antes se leía «.total» de ese número
+           y el mensaje salía SIN ningún precio por producto. */
         const total = calcRow(r);
-        const precio = total?.total ? ` ━ ${money(total.total, cotConfig.moneda)}` : '';
+        const precio = total > 0 ? ` ━ ${money(total, cotConfig.moneda)}` : '';
         const disc  = parseFloat(r.disc) > 0 ? ` (-${r.disc}%)` : '';
         return `• ${qtyStr}${unit}  ${r.desc.trim()}${disc}${precio}`;
       });
@@ -2116,12 +2051,13 @@ export default function CotizadorPage() {
 
     /* Express → siempre al número de la ferre; normal → al del cliente */
     const NUM_FERRE = '3028043116';
-    const telDestino = modoExpress
-      ? NUM_FERRE
-      : (cliente?.tel || '').replace(/\D/g, '');
+    /* telWhatsApp deja el número listo (57 + 10 cifras). Antes se le
+       pegaba un 57 a ciegas: si el cliente estaba guardado con +57, el
+       número quedaba 5757… y WhatsApp no lo encontraba. */
+    const telDestino = telWhatsApp(modoExpress ? NUM_FERRE : cliente?.tel);
 
     const url = telDestino
-      ? `https://wa.me/57${telDestino}?text=${encodeURIComponent(partes)}`
+      ? `https://wa.me/${telDestino}?text=${encodeURIComponent(partes)}`
       : `https://wa.me/?text=${encodeURIComponent(partes)}`;
 
     window.open(url, '_blank', 'noopener');
@@ -2179,6 +2115,41 @@ export default function CotizadorPage() {
     });
   }, [cotConfig.numero, toast]);
 
+  /* Imprimir: se dibuja el documento fuera de la app y se abre el cuadro
+     de impresión (ver ZonaImpresion). */
+  const imprimirDoc = useCallback(() => {
+    imprimir();
+    if (editingId) addEvento(editingId, 'impresa');
+  }, [imprimir, editingId, addEvento]);
+
+  const exportarExcelDoc = useCallback(async () => {
+    const ok = await exportarExcel({ items, cotConfig, cliente, empresa, aiuConfig, notas, descG: descGNum });
+    if (ok && editingId) addEvento(editingId, 'excel_exportado');
+    if (!ok) toast({ title: 'Error generando Excel', status: 'error', duration: 3000 });
+  }, [exportarExcel, items, cotConfig, cliente, empresa, aiuConfig, notas, descGNum, editingId, addEvento, toast]);
+
+  /* Código escaneado con la cámara (lista rápida): va al renglón vacío
+     del final si lo hay, o a uno nuevo, y el cursor queda en el nombre.
+     Antes se buscaba una casilla de referencia que esa lista no dibuja,
+     y el código leído se perdía sin aviso. */
+  const agregarConCodigo = useCallback((codigo) => {
+    marcarHist('Código escaneado');
+    let destino = null;
+    setItems(p => {
+      const ult = p[p.length - 1];
+      if (ult && !ult.desc?.trim() && !(parseFloat(ult.price) > 0)) {
+        destino = ult.id;
+        return p.map(r => r.id === ult.id ? { ...r, ref: codigo } : r);
+      }
+      const row = { ...blankRow(), ref: codigo };
+      destino = row.id;
+      return [...p, row];
+    });
+    /* Se espera a que cierre la ventana del escáner antes de mover el cursor */
+    setTimeout(() => { if (destino) focusInput(tableRef.current, destino, 'desc'); }, 320);
+    toast({ title: `Código ${codigo} agregado`, description: 'Escribe el nombre del producto.', status: 'success', duration: 2500, ...AVISO_LATERAL });
+  }, [marcarHist, toast]);
+
   /* ── Colores ── */
   const bg = useColorModeValue('gray.50', 'gray.900');
   const border = useColorModeValue('gray.200', 'whiteAlpha.200');
@@ -2188,12 +2159,11 @@ export default function CotizadorPage() {
   const tableBg = useColorModeValue('white', 'gray.800');
   const stripeBg = useColorModeValue('gray.50', 'gray.750');
   const tabActive = useColorModeValue('gray.800', 'white');
-  const totalColor = useColorModeValue('gray.700', 'gray.300');
-  const yellowHover = useColorModeValue('yellow.50', 'whiteAlpha.100');
+  const totalColor = useColorModeValue('gray.800', FY);
   const previewBg = useColorModeValue('gray.100', 'gray.900');
 
   const ivaRate = esObra ? 0 : (parseFloat(cotConfig.iva) || 0) / 100;
-  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, observaciones, aiu: aiuConfig };
+  const docProps = { empresa, cot: cotConfig, cli: cliente, items, descG: descGNum, totals, notas, observaciones, aiu: aiuConfig, firma };
   const tablaProps = {
     items, tableRef, handleTableKeyDown, handlePasteExcel, esObra,
     border, mutedL, inputBg, tableBg, stripeBg,
@@ -2209,77 +2179,167 @@ export default function CotizadorPage() {
     upItem, removeItem, duplicateItem, toggleSinIva,
     addItem, addItemSilencioso, addTransporte,
     getSugerencias, handleAcceptSugerencia, startRowDrag, dragId,
+    onCodigoEscaneado: agregarConCodigo,
   };
+  const nItems = items.filter(r => r.desc || r.price).length;
+  const textoGuardar = hasChanges || !editingId ? 'Guardar' : 'Guardado';
+
+  /* Documento oculto para el PDF y la impresión. El del PDF se monta solo
+     al exportar: dibujarlo en cada tecla frenaba la escritura. */
+  const docOculto = (
+    <>
+      {(pdfReady || isPreview) && (
+        <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w={`${PAGE_W}px`} bg="white"
+          aria-hidden="true">
+          <DocContent {...docProps} />
+        </Box>
+      )}
+      <ZonaImpresion activo={imprimiendo}><DocContent {...docProps} /></ZonaImpresion>
+    </>
+  );
+
+  /* Botón partido de WhatsApp: el envío normal (con el PDF) y, al lado,
+     la flecha con la alternativa rápida (solo texto). */
+  const botonWhatsApp = ({ h = '32px', size = 'sm', texto = 'Enviar' } = {}) => (
+    <ButtonGroup isAttached size={size}>
+      <Button data-tour="enviar" bg="#25D366" color="white" h={h} rounded="md" fontWeight="800"
+        leftIcon={<FaWhatsapp size={16} />} isLoading={enviando} loadingText="Preparando…"
+        _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>
+        {texto}
+      </Button>
+      <Menu isLazy placement="top-end">
+        <MenuButton as={IconButton} h={h} minW="32px" bg="#1fb85a" color="white" rounded="md"
+          _hover={{ bg: '#18a84f' }} _active={{ bg: '#18a84f' }}
+          aria-label="Otras formas de enviar" icon={<FiChevronDown />}
+          borderLeft="1px solid" borderColor="whiteAlpha.400" />
+        <MenuList fontSize="13px" zIndex={400}>
+          <MenuItem icon={<FaWhatsapp />} onClick={enviarCliente}>
+            Enviar el PDF
+          </MenuItem>
+          <MenuItem icon={<FiMessageSquare />} onClick={enviarComoTexto}
+            command="sin PDF">
+            Enviar la lista como texto
+          </MenuItem>
+        </MenuList>
+      </Menu>
+    </ButtonGroup>
+  );
 
   /* ════════════════════════════════════════════════
-     VISTA PREVIA PDF
+     VISTA PREVIA DEL DOCUMENTO
   ════════════════════════════════════════════════ */
   if (isPreview) return (
-    <Box minH="100vh" bg={previewBg}>
-      <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w={`${PAGE_W}px`} bg="white">
-        <DocContent {...docProps} />
-      </Box>
+    <Box minH="100vh" bg={previewBg}
+      pb={{ base: 'calc(76px + env(safe-area-inset-bottom))', md: 0 }}>
+      {docOculto}
       <Box bg={barBg} borderBottom="1px solid" borderColor={border}
-        px={{ base: 3, md: 6 }} py={3} position="sticky" top={0} zIndex={10}>
-        <Flex justify="space-between" align="center" gap={2} flexWrap="wrap">
-          <HStack>
-            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiArrowLeft />}
-              onClick={() => setIsPreview(false)}>Volver</Button>
-            {cotConfig.numero && <Badge bg={FY} color={DARK} rounded="full" px={3} fontWeight="700">{cotConfig.numero}</Badge>}
-            <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'} rounded="full" px={2} fontSize="9px">
-              {esObra ? 'Obra' : 'Comercial'}
-            </Badge>
-          </HStack>
-          <HStack>
-            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiPrinter />}
-              onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }}
-              title="Imprimir directamente sin descargar el PDF">Imprimir</Button>
-            <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiGrid />}
-              isLoading={xlsxLoading}
-              onClick={async () => {
-                const ok = await exportarExcel({ items, cotConfig, cliente, empresa, aiuConfig, notas });
-                if (ok && editingId) addEvento(editingId, 'excel_exportado');
-                if (!ok) toast({ title: 'Error generando Excel', status: 'error', duration: 3000 });
-              }}
-              title="Exportar tabla de productos a Excel">Excel</Button>
-            <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
-              isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>PDF</Button>
-            <Button size="sm" variant="outline" colorScheme="whatsapp" rounded="md" leftIcon={<FaWhatsapp />}
-              onClick={enviarComoTexto} title="Enviar como texto (sin PDF)">Texto</Button>
-            <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
-              isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>PDF</Button>
-            <Button size="sm" bg={FY} color={DARK} rounded="md" fontWeight="700" leftIcon={<FiSave />}
-              isLoading={isSaving} _hover={{ bg: '#e0b010' }} onClick={handleSave}>
-              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
-            </Button>
-          </HStack>
+        position="sticky" top={topOffset} zIndex={100}>
+        <Flex maxW="1100px" mx="auto" px={{ base: 3, md: 5 }} h="56px" align="center" gap={2}>
+          <Button size="sm" h="38px" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiArrowLeft />}
+            onClick={() => setIsPreview(false)} flexShrink={0}>
+            Volver<Text as="span" display={{ base: 'none', md: 'inline' }}>&nbsp;a editar</Text>
+          </Button>
+          {cotConfig.numero
+            ? <Badge bg={FY} color={DARK} rounded="full" px={3} fontWeight="700" flexShrink={0}>{cotConfig.numero}</Badge>
+            : <Tag size="sm" rounded="full" flexShrink={0}>Sin número</Tag>}
+          <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'} rounded="full"
+            px={2} fontSize="9px" display={{ base: 'none', sm: 'inline-block' }}>
+            {esObra ? 'Obra' : 'Comercial'}
+          </Badge>
+          <Box flex={1} />
+          {esCelular ? (
+            <Menu isLazy placement="bottom-end">
+              <MenuButton as={IconButton} size="sm" h="38px" w="38px" variant="outline" rounded="md"
+                aria-label="Más opciones" icon={<FiMoreVertical />} />
+              <MenuList fontSize="14px" zIndex={400}>
+                <MenuItem icon={<FiSave />} onClick={handleSave}>{textoGuardar}</MenuItem>
+                <MenuItem icon={<FiGrid />} onClick={exportarExcelDoc}>Exportar a Excel</MenuItem>
+                <MenuItem icon={<FiMessageSquare />} onClick={enviarComoTexto}>Enviar lista como texto</MenuItem>
+              </MenuList>
+            </Menu>
+          ) : (
+            <HStack spacing={2} flexShrink={0}>
+              <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiPrinter />}
+                onClick={imprimirDoc} title="Imprimir sin descargar el PDF">Imprimir</Button>
+              <Button size="sm" variant="outline" colorScheme="gray" rounded="md" leftIcon={<FiGrid />}
+                isLoading={xlsxLoading} onClick={exportarExcelDoc} title="Exportar la tabla de productos a Excel"
+                display={{ base: 'none', lg: 'inline-flex' }}>Excel</Button>
+              <Button size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
+                isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>Descargar PDF</Button>
+              {botonWhatsApp()}
+              <Button size="sm" bg={hasChanges || !editingId ? FY : 'gray.200'} color={hasChanges || !editingId ? DARK : 'gray.600'}
+                rounded="md" fontWeight="700" leftIcon={<FiSave />}
+                isLoading={isSaving} _hover={{ bg: hasChanges || !editingId ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
+                {textoGuardar}
+              </Button>
+            </HStack>
+          )}
         </Flex>
       </Box>
-      <Box maxW="900px" mx="auto" py={6} px={{ base: 2, md: 4 }}>
+      <Box maxW="900px" mx="auto" py={{ base: 3, md: 6 }} px={{ base: 2, md: 4 }}>
         <GlassCard rounded="lg" overflow="hidden" boxShadow="0 4px 32px rgba(0,0,0,0.12)">
           <DocEscalado><DocContent {...docProps} /></DocEscalado>
         </GlassCard>
-        <Flex justify="center" gap={3} mt={5} pb={8} flexWrap="wrap">
-          <Button size="lg" variant="outline" colorScheme="gray" rounded="full" px={8}
-            leftIcon={<FiPrinter />} onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }}>Imprimir</Button>
-          <Button size="lg" bg={DARK} color={FY} rounded="full" px={10} leftIcon={<FiDownload />}
-            isLoading={pdfLoading} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>Descargar PDF</Button>
-        </Flex>
+        {esCelular && (
+          <Text fontSize="11px" color={mutedL} textAlign="center" mt={2}>
+            Junta dos dedos sobre la hoja para ampliarla.
+          </Text>
+        )}
       </Box>
+      {esCelular && (
+        <Box position="fixed" bottom={0} left={0} right={0} zIndex={200} bg={barBg}
+          borderTop="1px solid" borderColor={border} boxShadow="0 -4px 16px rgba(0,0,0,0.08)"
+          pb="env(safe-area-inset-bottom)">
+          <Flex px={3} py={2.5} gap={2}>
+            <Button flex={1} h="46px" variant="outline" rounded="xl" leftIcon={<FiPrinter />} onClick={imprimirDoc}>
+              Imprimir
+            </Button>
+            <Button flex={1} h="46px" bg={DARK} color={FY} rounded="xl" leftIcon={<FiDownload />}
+              isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
+              PDF
+            </Button>
+            <Button flex={1.3} h="46px" bg="#25D366" color="white" rounded="xl" fontWeight="800"
+              leftIcon={<FaWhatsapp size={18} />} isLoading={enviando} _hover={{ bg: '#1ebe5b' }}
+              onClick={enviarCliente}>
+              Enviar
+            </Button>
+          </Flex>
+        </Box>
+      )}
     </Box>
   );
 
   /* ════════════════════════════════════════════════
      EDITOR
   ════════════════════════════════════════════════ */
+  const panelIzquierdo = (
+    <Tabs variant="unstyled" size="sm" isLazy
+      index={panelTab} onChange={setPanelTab}
+      display="flex" flexDirection="column" h="full">
+      <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5} flexShrink={0}>
+        {[{ l: 'Cliente', i: FiUser, t: 'cliente' }, { l: 'Condiciones', i: FiFileText, t: 'config' }].map(({ l, i: Ic, t }) => (
+          <Tab key={l} data-tour={`tab-${t}`} flex={1} fontSize="10px" fontWeight="700" letterSpacing="0.1em"
+            textTransform="uppercase" color={mutedL} pb={2.5}
+            _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
+            <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
+          </Tab>
+        ))}
+      </TabList>
+      <TabPanels flex={1} minH={0} overflow="hidden">
+        {[<PanelCliente key="c" {...panelClienteProps} />,
+          <PanelCotizacion key="q" {...panelCotizProps} />].map((panel, i) => (
+          <TabPanel key={i} h="full" overflowY="auto" p={0}
+            sx={{ '&::-webkit-scrollbar': { w: '4px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' } }}>
+            {panel}
+          </TabPanel>
+        ))}
+      </TabPanels>
+    </Tabs>
+  );
+
   return (
     <Box minH="100vh" bg={bg}>
-      {/* PDF oculto — se monta solo al exportar para no re-renderizar en cada tecla */}
-      {pdfReady && (
-        <Box id="cotizacion-pdf" position="fixed" top="-9999px" left="-9999px" zIndex={-1} w={`${PAGE_W}px`} bg="white">
-          <DocContent {...docProps} />
-        </Box>
-      )}
+      {docOculto}
 
       {/* Modales */}
       <ModalTipo isOpen={showTipoModal && !draftFound} onCancel={editingId ? () => setShowTipoModal(false) : undefined} onSelect={tipo => {
@@ -2322,7 +2382,8 @@ export default function CotizadorPage() {
         onGuardar={(nombre) => guardarPlantilla({ nombre, items, cotConfig, notas, aiuConfig })}
         onUsar={(p) => {
           // Cargar plantilla: items + config base (no sobreescribe cliente ni número)
-          const newItems = p.items.map(r => ({ ...r, id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2) }));
+          marcarHist('Plantilla cargada');
+          const newItems = (p.items || []).map(r => ({ ...r, id: blankRow().id }));
           setItems(newItems.length > 0 ? newItems : items);
           if (p.config) {
             setCotConfig(prev => ({ ...prev, tipo: p.config.tipo, iva: p.config.iva, moneda: p.config.moneda, formaPago: p.config.formaPago }));
@@ -2356,30 +2417,11 @@ export default function CotizadorPage() {
         }}
       />
 
-      <EscanerCodigo
-        isOpen={showScanner}
-        onClose={() => setShowScanner(false)}
-        onDetected={(codigo) => {
-          if (scanTargetRow) {
-            /* Código escaneado para una fila existente */
-            upItem(scanTargetRow, 'ref', codigo);
-          } else {
-            /* Nueva fila: creamos la fila, luego asignamos el código */
-            const row = blankRow();
-            setItems(p => [...p, { ...row, ref: codigo }]);
-            requestAnimationFrame(() => requestAnimationFrame(() =>
-              focusInput(tableRef.current, row.id, 'desc')
-            ));
-          }
-          setScanTargetRow(null);
-        }}
-      />
-
       {/* Aviso: faltan datos de entrega */}
       <AlertDialog isOpen={showFaltantes} leastDestructiveRef={cancelRef}
         onClose={() => setShowFaltantes(false)} isCentered>
         <AlertDialogOverlay>
-          <AlertDialogContent rounded="xl">
+          <AlertDialogContent rounded="xl" mx={4}>
             <AlertDialogHeader fontWeight="900" fontSize="16px">
               Faltan datos de entrega
             </AlertDialogHeader>
@@ -2397,8 +2439,9 @@ export default function CotizadorPage() {
               <Button ref={cancelRef} size="sm" rounded="md"
                 onClick={() => {
                   setShowFaltantes(false);
-                  setMobileStep(0);   // celular: paso "Cliente"
-                  setPanelTab(0);     // computador y tablet: pestaña "CLIENTE"
+                  setIsPreview(false);
+                  setMobileStep(0);   // celular y tablet: paso "Cliente"
+                  setPanelTab(0);     // computador: pestaña "CLIENTE"
                 }}>
                 Completar datos
               </Button>
@@ -2424,146 +2467,133 @@ export default function CotizadorPage() {
         />
       )}
 
-      {/* ═══ TOPBAR ═══ */}
+      {/* ═══ BARRA DE LA COTIZACIÓN ═══
+          Una sola fila que NUNCA se parte en dos. Antes, entre 768 y 1279 px
+          los botones bajaban a una segunda línea y quedaban montados encima
+          del contenido. Ahora, cuando falta ancho, los rótulos se recogen
+          y lo que se usa poco se va al menú ⋮. */}
       <Box bg={barBg} borderBottom="1px solid" borderColor={border}
         position="sticky" top={topOffset} zIndex={100}>
-        <Flex maxW="1600px" mx="auto" px={{ base: 3, md: 5 }}
-          h={{ base: 'auto', md: '54px' }} py={{ base: 2, md: 0 }}
-          align="center" justify="space-between" flexWrap="wrap" gap={2}>
-          {/* ── IZQUIERDA: DÓNDE ESTOY Y CÓMO SALGO ──
-              Lo único que devolvía al listado era la «×» de la pestaña,
-              rotulada «Cerrar Nueva»: se lee como «botar lo que llevo»,
-              no como «volver». Quien entraba a una cotización se quedaba
-              ahí. Ahora la salida está de primera, escrita con todas sus
-              letras, y guarda antes de salir. */}
-          <HStack spacing={2} minW={0}>
-            {/* La marca va primero, como en las demás pantallas. En el
-                celular la barra de navegación está abajo y no la lleva,
-                así que sin esto el cotizador era la única pantalla sin
-                logo — justo donde más rato se pasa. */}
-            <AppLogo variante="marca" h="26px" />
+        <Flex maxW="1600px" mx="auto" px={{ base: 2, sm: 3, md: 5 }}
+          h={{ base: '52px', md: '54px' }} align="center" gap={2}>
+
+          {/* ── IZQUIERDA: dónde estoy y cómo salgo ── */}
+          <HStack spacing={{ base: 1.5, md: 2 }} minW={0} flex="1 1 auto" overflow="hidden">
+            {/* En el celular no hay barra de navegación arriba: el logo va aquí */}
+            {esCelular && <AppLogo variante="marca" h="24px" flexShrink={0} />}
             <Tooltip label="Volver al listado de cotizaciones (se guarda lo que llevas)" hasArrow openDelay={500}>
-              <Button size="sm" variant="ghost" colorScheme="gray" rounded="md"
-                h={{ base: '38px', md: '32px' }} px={2}
-                leftIcon={<FiArrowLeft />} onClick={() => safeNavigate('/historial')}
+              <Button size="sm" variant="ghost" colorScheme="gray" rounded="md" flexShrink={0}
+                h={{ base: '40px', md: '34px' }} minW={{ base: '40px', md: '34px' }} px={{ base: 0, lg: 2 }}
+                leftIcon={<FiArrowLeft />} iconSpacing={{ base: 0, lg: 2 }}
+                onClick={() => safeNavigate('/historial')}
                 aria-label="Volver a cotizaciones">
-                {/* En el celular solo la flecha: con el texto, deshacer/rehacer
-                    se caían a una segunda fila y la barra medía el doble. */}
-                <Text fontSize="13px" display={{ base: 'none', sm: 'inline' }}>Cotizaciones</Text>
+                <Text as="span" fontSize="13px" display={{ base: 'none', lg: 'inline' }}>Cotizaciones</Text>
               </Button>
             </Tooltip>
-            <Box h="20px" w="1px" bg={border} display={{ base: 'none', sm: 'block' }} />
+            <Box h="20px" w="1px" bg={border} display={{ base: 'none', lg: 'block' }} flexShrink={0} />
             {cotConfig.numero
-              ? <Badge bg={FY} color={DARK} rounded="full" fontSize="10px" px={3} fontWeight="700">{cotConfig.numero}</Badge>
-              : <Tag size="sm" colorScheme="gray" rounded="full">Nueva</Tag>}
+              ? <Badge bg={FY} color={DARK} rounded="full" fontSize="11px" px={2.5} fontWeight="800" flexShrink={0}>{cotConfig.numero}</Badge>
+              : <Tag size="sm" colorScheme="gray" rounded="full" flexShrink={0}>Nueva</Tag>}
             <Tooltip label={`Convertir a ${esObra ? 'Comercial' : 'Obra'}`} hasArrow>
-              <Badge bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'}
-                rounded="full" fontSize="8px" px={2} cursor="pointer"
+              <Badge as="button" type="button" bg={esObra ? 'blue.100' : 'green.100'} color={esObra ? 'blue.700' : 'green.700'}
+                rounded="full" fontSize="9px" px={2} py={{ base: '6px', lg: '2px' }} cursor="pointer" flexShrink={0}
                 _hover={{ opacity: 0.75 }} onClick={() => setShowConvertir(true)}
-                display={{ base: 'none', sm: 'block' }}>
+                display={{ base: 'none', sm: 'inline-block' }}>
                 {esObra ? 'OBRA' : 'COMERCIAL'} ⇄
               </Badge>
             </Tooltip>
-            {/* ── SELECTOR DE ESTADO RÁPIDO ──
-                El vendedor puede cambiar el estado sin ir al historial.
-                Muestra el estado actual como badge clickeable que abre un menú. */}
+            {/* ── ESTADO: se cambia sin ir al listado ── */}
             {editingId && (() => {
               const estadoActual = cotConfig.estado || 'borrador';
               const meta = ESTADO_META[estadoActual] || ESTADO_META.borrador;
               return (
-                <Menu isLazy placement="bottom-start">
-                  <Tooltip label={`Estado: ${meta.desc}`} hasArrow openDelay={600}>
-                    <MenuButton as={Badge}
-                      cursor="pointer"
-                      colorScheme={meta.color}
-                      rounded="full" px={2.5} py={0.5}
-                      fontSize="9px" fontWeight="700"
-                      _hover={{ opacity: 0.8 }}
-                      display={{ base: 'none', md: 'inline-flex' }}>
+                <Box display={{ base: 'none', md: 'block' }} flexShrink={0}>
+                  <Menu isLazy placement="bottom-start">
+                    <MenuButton as={Button} size="xs" h={{ base: '32px', lg: '24px' }} variant="solid" colorScheme={meta.color}
+                      rounded="full" px={2.5} fontSize="10px" fontWeight="700" title={`Estado: ${meta.desc}`}
+                      rightIcon={<FiChevronDown size={11} />}>
                       {meta.icon} {meta.label}
                     </MenuButton>
-                  </Tooltip>
-                  <MenuList fontSize="13px" zIndex={300} minW="220px">
-                    {ESTADOS.map(e => {
-                      const m = ESTADO_META[e];
-                      const activo = e === estadoActual;
-                      return (
-                        <MenuItem key={e}
-                          isDisabled={activo}
-                          icon={<Text fontSize="14px">{m.icon}</Text>}
-                          onClick={() => {
-                            const prev = cotConfig.estado || 'borrador';
-                            setCotConfig(p => ({ ...p, estado: e }));
-                            setHasChanges(true);
-                            if (editingId) addEvento(editingId, 'estado_cambiado', `${prev} → ${e}`);
-                          }}>
-                          <Box>
-                            <Text fontWeight={activo ? '700' : '500'}>{m.label}{activo ? ' ← actual' : ''}</Text>
-                            <Text fontSize="11px" color="gray.500" mt={0.5}>{m.hint}</Text>
-                          </Box>
-                        </MenuItem>
-                      );
-                    })}
-                  </MenuList>
-                </Menu>
+                    <MenuList fontSize="13px" zIndex={300} minW="230px">
+                      {ESTADOS.map(e => {
+                        const m = ESTADO_META[e];
+                        const activo = e === estadoActual;
+                        return (
+                          <MenuItem key={e}
+                            isDisabled={activo}
+                            icon={<Text fontSize="14px">{m.icon}</Text>}
+                            onClick={() => {
+                              const prev = cotConfig.estado || 'borrador';
+                              setCotConfig(p => ({ ...p, estado: e }));
+                              setHasChanges(true);
+                              if (editingId) addEvento(editingId, 'estado_cambiado', `${prev} → ${e}`);
+                            }}>
+                            <Box>
+                              <Text fontWeight={activo ? '700' : '500'}>{m.label}{activo ? ' ← actual' : ''}</Text>
+                              <Text fontSize="11px" color="gray.500" mt={0.5}>{m.hint}</Text>
+                            </Box>
+                          </MenuItem>
+                        );
+                      })}
+                    </MenuList>
+                  </Menu>
+                </Box>
               );
             })()}
 
-            {/* Estado de guardado, SIEMPRE visible — antes solo aparecía el
-                aviso naranja y nunca la confirmación de que ya estaba a
-                salvo, así que la duda quedaba sin resolver. */}
+            {/* Estado de guardado, SIEMPRE visible */}
             {hasChanges ? (
-              <HStack spacing={1} title="Hay cambios sin guardar">
-                <Icon as={FiAlertCircle} color="orange.400" boxSize={3} />
-                <Text fontSize="10px" color="orange.500" fontWeight="700">Sin guardar</Text>
+              <HStack spacing={1} title="Hay cambios sin guardar" flexShrink={0}>
+                <Icon as={FiAlertCircle} color="orange.400" boxSize={3.5} />
+                <Text fontSize="11px" color="orange.500" fontWeight="700" whiteSpace="nowrap">Sin guardar</Text>
               </HStack>
             ) : (editingId && (
-              <HStack spacing={1} title="Todo lo que hiciste está guardado">
-                <Icon as={FiCheckCircle} color="green.400" boxSize={3} />
-                <Text fontSize="10px" color="green.500" fontWeight="700">Guardado</Text>
+              <HStack spacing={1} title="Todo lo que hiciste está guardado" flexShrink={0}>
+                <Icon as={FiCheckCircle} color="green.400" boxSize={3.5} />
+                <Text fontSize="11px" color="green.500" fontWeight="700" whiteSpace="nowrap">Guardado</Text>
               </HStack>
             ))}
           </HStack>
-          <HStack spacing={1} flexWrap="wrap">
-            <Text fontSize="12px" fontWeight="700" color={totalColor}
-              display={{ base: 'none', lg: 'block' }} mr={1}>
-              {money(totals.totalPagar, cotConfig.moneda)}
-            </Text>
-            {/* ── DESHACER / REHACER, JUNTOS Y PEGADOS ──
-                Son un par: se leen como una sola cosa cuando comparten
-                borde. Sueltos entre otros cinco botones grises iguales,
-                había que acertar cuál era cuál. */}
+
+          {/* ── DERECHA: deshacer, menú y acciones ── */}
+          <HStack spacing={{ base: 1, md: 1.5 }} flexShrink={0}>
             <HStack spacing={0} border="1px solid" borderColor={border} rounded="md" overflow="hidden">
               <Tooltip label={<HStack><Text>Deshacer</Text><Kbd fontSize="10px">Ctrl+Z</Kbd></HStack>} hasArrow>
-                <IconButton size="sm" variant="ghost" colorScheme="gray" rounded="none"
+                <IconButton size="sm" h={{ base: '38px', md: '32px' }} variant="ghost" colorScheme="gray" rounded="none"
                   aria-label="Deshacer el último cambio"
                   icon={<FiCornerUpLeft />} isDisabled={!hist.puedeDeshacer}
                   onClick={() => hist.deshacer()} />
               </Tooltip>
               <Box w="1px" h="20px" bg={border} />
               <Tooltip label={<HStack><Text>Rehacer</Text><Kbd fontSize="10px">Ctrl+Shift+Z</Kbd></HStack>} hasArrow>
-                <IconButton size="sm" variant="ghost" colorScheme="gray" rounded="none"
+                <IconButton size="sm" h={{ base: '38px', md: '32px' }} variant="ghost" colorScheme="gray" rounded="none"
                   aria-label="Rehacer el cambio deshecho"
                   icon={<FiCornerUpRight />} isDisabled={!hist.puedeRehacer}
                   onClick={() => hist.rehacer()} />
               </Tooltip>
             </HStack>
 
-            {/* ── TODO LO DEMÁS, CON SU NOMBRE ESCRITO ──
-                Aquí había cinco botones grises idénticos sin una letra:
-                Importar, Historial, Duplicar, Nueva y Eliminar. Dos de
-                ellos hacían cosas irreversibles, y el del ícono de
-                recargar (↻) rotulado «Nueva» en realidad BORRABA lo que
-                estabas escribiendo. Ahora todos viven en un menú donde
-                cada uno dice lo que hace, y los que destruyen trabajo
-                están abajo, separados y en rojo. */}
+            {/* Todo lo demás, cada cosa con su nombre escrito */}
             <Menu isLazy placement="bottom-end">
-              <Tooltip label="Más acciones de esta cotización" hasArrow>
-                <MenuButton as={IconButton} size="sm" variant="outline" colorScheme="gray"
-                  rounded="md" aria-label="Más acciones de esta cotización"
-                  icon={<FiMoreVertical />} />
-              </Tooltip>
-              <MenuList fontSize="13px" zIndex={300}>
+              <MenuButton as={IconButton} size="sm" h={{ base: '38px', md: '32px' }} w={{ base: '38px', md: '32px' }}
+                variant="outline" colorScheme="gray" rounded="md" aria-label="Más acciones de esta cotización"
+                title="Más acciones" icon={<FiMoreVertical />} />
+              <MenuList fontSize="13px" zIndex={300} maxH="75vh" overflowY="auto">
+                {porPasos && (<>
+                  <MenuItem icon={<FiEye size={13} />} onClick={() => safeNavigate('preview')}>
+                    Ver el documento
+                  </MenuItem>
+                  <MenuItem icon={<FiPrinter size={13} />} onClick={imprimirDoc}>
+                    Imprimir
+                  </MenuItem>
+                  <MenuItem icon={<FiDownload size={13} />} onClick={handlePDF}>
+                    Descargar PDF
+                  </MenuItem>
+                  <MenuItem icon={<FiMessageSquare size={13} />} onClick={enviarComoTexto} command="sin PDF">
+                    Enviar lista como texto
+                  </MenuItem>
+                  <MenuDivider />
+                </>)}
                 <MenuItem icon={<FiUpload size={13} />} onClick={() => setShowImport(true)}
                   command="PDF · foto · Excel">
                   Importar productos
@@ -2576,6 +2606,9 @@ export default function CotizadorPage() {
                 <MenuItem icon={<FiBookmark size={13} />}
                   onClick={() => { setPlantillasMode("guardar"); setShowPlantillas(true); }}>
                   Guardar como plantilla
+                </MenuItem>
+                <MenuItem icon={<FiGrid size={13} />} onClick={exportarExcelDoc}>
+                  Exportar a Excel
                 </MenuItem>
                 <MenuDivider />
                 <MenuItem icon={esObra ? <FiShoppingCart size={13} /> : <FiTool size={13} />}
@@ -2600,6 +2633,11 @@ export default function CotizadorPage() {
                     <Badge ml={2} colorScheme="teal" fontSize="9px">Cajero</Badge>
                   </MenuItem>
                 )}
+                {esEscritorio && (
+                  <MenuItem icon={<FiHelpCircle size={13} />} onClick={() => setShowAtajos(true)} command="?">
+                    Atajos de teclado
+                  </MenuItem>
+                )}
                 <MenuDivider />
                 <MenuItem icon={<FiRefreshCw size={13} />} onClick={handleClear}>
                   Vaciar y empezar otra en blanco
@@ -2611,42 +2649,31 @@ export default function CotizadorPage() {
                 )}
               </MenuList>
             </Menu>
-            {/* En el celular estos tres no van aquí: están abajo, en la
-                barra fija, donde llega el pulgar. Repetirlos arriba no
-                daba una opción más — le quitaba sitio al nombre de la
-                salida, que es lo que de verdad hacía falta ver. */}
-            {!esCelular && (<>
-              <Button data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray"
-                rounded="md" leftIcon={<FiEye />}
-                onClick={() => safeNavigate('preview')}>
-                Vista previa
-              </Button>
-              <Tooltip label="Imprimir directamente sin descargar el PDF" hasArrow openDelay={400}>
+
+            {/* En celular y tablet estas acciones van abajo, donde llega el pulgar */}
+            {esEscritorio && (<>
+              <Tooltip label="Ver el documento como va a salir" hasArrow openDelay={400}>
+                <Button data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray"
+                  rounded="md" leftIcon={<FiEye />} iconSpacing={{ base: 0, xl: 2 }} px={{ base: 2.5, xl: 3 }}
+                  aria-label="Vista previa" onClick={() => safeNavigate('preview')}>
+                  <Text as="span" display={{ base: 'none', xl: 'inline' }}>Vista previa</Text>
+                </Button>
+              </Tooltip>
+              <Tooltip label="Imprimir directamente, sin descargar el PDF" hasArrow openDelay={400}>
                 <IconButton size="sm" variant="outline" colorScheme="gray" rounded="md"
-                  aria-label="Imprimir cotización" icon={<FiPrinter />}
-                  onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
+                  aria-label="Imprimir cotización" icon={<FiPrinter />} onClick={imprimirDoc} />
               </Tooltip>
               <Button data-tour="pdf" size="sm" bg={DARK} color={FY} rounded="md" leftIcon={<FiDownload />}
                 isLoading={pdfLoading && !enviando} _hover={{ bg: '#2a2a28' }} onClick={handlePDF}>
                 PDF
               </Button>
-              <Tooltip label="Envía la lista como texto a WhatsApp — instantáneo, sin PDF" hasArrow openDelay={400}>
-                <Button size="sm" variant="outline" colorScheme="whatsapp" rounded="md" leftIcon={<FaWhatsapp />}
-                  onClick={enviarComoTexto}>
-                  Texto
-                </Button>
-              </Tooltip>
-              <Tooltip label="Guarda, arma el PDF y lo comparte (WhatsApp, correo…)" hasArrow openDelay={400}>
-                <Button size="sm" bg="#25D366" color="white" rounded="md" leftIcon={<FaWhatsapp />}
-                  isLoading={enviando} _hover={{ bg: '#1ebe5b' }} onClick={enviarCliente}>
-                  PDF
-                </Button>
-              </Tooltip>
               <Tooltip label={<HStack><Text>Guardar</Text><Kbd fontSize="10px">Ctrl+S</Kbd></HStack>} hasArrow>
-                <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
-                  rounded="md" fontWeight="700" leftIcon={<FiSave />} isLoading={isSaving}
-                  _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
-                  {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
+                <Button data-tour="guardar" size="sm" minW="104px"
+                  bg={hasChanges || !editingId ? FY : 'gray.200'} color={hasChanges || !editingId ? DARK : 'gray.600'}
+                  rounded="md" fontWeight="700" leftIcon={hasChanges || !editingId ? <FiSave /> : <FiCheckCircle />}
+                  isLoading={isSaving}
+                  _hover={{ bg: hasChanges || !editingId ? '#e0b010' : 'gray.300' }} onClick={handleSave}>
+                  {textoGuardar}
                 </Button>
               </Tooltip>
             </>)}
@@ -2654,169 +2681,60 @@ export default function CotizadorPage() {
         </Flex>
       </Box>
 
-      {/* ─── Indicador de etapa del proceso (solo escritorio) ─── */}
-      <Box display={{ base: 'none', md: 'block' }}>
-        <ProcesoIndicador
-          items={items}
-          cliente={cliente}
-          estado={cotConfig.estado || 'borrador'}
-          eventos={[]}
-        />
-      </Box>
-
-      <Box maxW="1600px" mx="auto" px={{ base: 3, md: 5 }} py={4}>
-
-        {/* ═══ COMPUTADOR (xl+) ═══ */}
-        {esEscritorio && (
-        <Box display="grid"
-          gridTemplateColumns="272px 1fr 276px" gap={4}
-          /* Se descuenta lo que ocupan las barras fijas de arriba: la de
-             navegación, la tira de pestañas (si hay) y la de la propia
-             cotización. Sin esto la columna del resumen se salía por
-             abajo y «Guardar» quedaba debajo del botón de ayuda. */
-          h={`calc(100vh - 80px - ${topOffset})`} overflow="hidden">
-
-          {/* Col 1: Formularios */}
-          <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column">
-            {/* isLazy: solo se dibuja la pestaña visible. Antes se renderizaban
-                los tres paneles en cada tecla, aunque solo vieras uno. */}
-            <Tabs variant="unstyled" size="sm" isLazy
-              index={panelTab} onChange={setPanelTab}
-              display="flex" flexDirection="column" h="full">
-              <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Cliente', i: FiUser, t: 'cliente' }, { l: 'Condiciones', i: FiFileText, t: 'config' }].map(({ l, i: Ic, t }) => (
-                  <Tab key={l} data-tour={`tab-${t}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
-                    textTransform="uppercase" color={mutedL} pb={2.5}
-                    _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
-                    <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
-                  </Tab>
-                ))}
-              </TabList>
-              <TabPanels flex={1} overflow="hidden">
-                {[<PanelCliente {...panelClienteProps} />,
-                <PanelCotizacion {...panelCotizProps} />].map((panel, i) => (
-                  <TabPanel key={i} h="full" overflowY="auto" p={0}
-                    sx={{ '&::-webkit-scrollbar': { w: '4px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: '2px' } }}>
-                    {panel}
-                  </TabPanel>
-                ))}
-              </TabPanels>
-            </Tabs>
+      {/* ═══ COMPUTADOR (desde 1024 px): datos a la izquierda, productos y
+          totales a la derecha, todo en el alto de la pantalla ═══ */}
+      {esEscritorio && (
+        <Box maxW="1600px" mx="auto" px={5} py={4}
+          h={`calc(100vh - ${topOffset} - 54px)`} minH="480px"
+          display="grid" gridTemplateColumns={{ base: '248px minmax(0, 1fr)', xl: '300px minmax(0, 1fr)' }}
+          gap={4}>
+          <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column" minH={0}>
+            {panelIzquierdo}
           </GlassCard>
 
-          {/* Col 2: Tabla (scroll interno) */}
-          <Box display="flex" flexDirection="column" gap={3} minW={0} minH={0} overflow="hidden">
-            <Flex align="center" justify="space-between" flexShrink={0}>
-              <HStack spacing={2}>
+          <GlassCard rounded="xl" overflow="hidden" display="flex" flexDirection="column" minH={0}>
+            <Flex align="center" justify="space-between" px={4} py={2.5} flexShrink={0}
+              borderBottom="1px solid" borderColor={border} gap={2}>
+              <HStack spacing={2} minW={0}>
                 <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                <Text fontWeight="700" fontSize="15px">
+                <Text fontWeight="800" fontSize="15px" noOfLines={1}>
                   {esObra ? 'Actividades / Materiales' : 'Productos y servicios'}
                 </Text>
                 <Tag size="sm" borderRadius="full" colorScheme="gray">
-                  {items.filter(r => r.desc || r.price).length} ítem{items.filter(r => r.desc || r.price).length !== 1 ? 's' : ''}
+                  {nItems} ítem{nItems !== 1 ? 's' : ''}
                 </Tag>
               </HStack>
-              <Button size="xs" variant="ghost" leftIcon={<FiUpload size={11} />} color={mutedL}
-                onClick={() => setShowImport(true)}>
-                Importar
-              </Button>
-            </Flex>
-            <GlassCard rounded="xl" flex={1} overflow="hidden" display="flex" flexDirection="column" minH={0}>
-              <TablaProductos {...tablaProps} />
-            </GlassCard>
-          </Box>
-
-          {/* Col 3: Resumen */}
-          <ResumenDesktop
-            items={items} cotConfig={cotConfig} totals={totals} descGNum={descGNum}
-            aiuConfig={aiuConfig} cliente={cliente} safeNavigate={safeNavigate}
-            handleSave={handleSave} isSaving={isSaving} hasChanges={hasChanges}
-            onEnviar={enviarCliente} enviando={enviando} />
-        </Box>
-        )}
-
-        {/* ═══ TABLET (md–xl) ═══ */}
-        {esTablet && (
-        <Box display="flex" flexDirection="column" gap={4}>
-          <GlassCard rounded="xl" overflow="hidden">
-            <Tabs variant="unstyled" size="sm" isLazy index={panelTab} onChange={setPanelTab}>
-              <TabList borderBottom="1px solid" borderColor={border} px={1} pt={1} gap={0.5}>
-                {[{ l: 'Cliente', i: FiUser, t: 'cliente' }, { l: 'Condiciones', i: FiFileText, t: 'config' }].map(({ l, i: Ic, t }) => (
-                  <Tab key={l} data-tour={`tab-${t}`} flex={1} fontSize="9px" fontWeight="700" letterSpacing="0.1em"
-                    textTransform="uppercase" color={mutedL} pb={2.5}
-                    _selected={{ color: tabActive, borderBottom: `2px solid ${FY}`, mb: '-1px' }}>
-                    <VStack spacing={1}><Icon as={Ic} boxSize={3.5} /><Text>{l}</Text></VStack>
-                  </Tab>
-                ))}
-              </TabList>
-              <TabPanels>
-                <TabPanel p={0}><PanelCliente {...panelClienteProps} /></TabPanel>
-                <TabPanel p={0}><PanelCotizacion {...panelCotizProps} /></TabPanel>
-              </TabPanels>
-            </Tabs>
-          </GlassCard>
-          <GlassCard rounded="xl" overflow="hidden">
-            <Flex align="center" px={4} py={3} justify="space-between" borderBottom="1px solid" borderColor={border} gap={2}>
-              <HStack>
-                <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                <Text fontWeight="700">{esObra ? 'Actividades' : 'Productos'}</Text>
-                <Tag size="sm" colorScheme="gray" rounded="full">{items.filter(r => r.desc || r.price).length}</Tag>
-              </HStack>
-              <HStack spacing={2}>
-                {/* En tablet la tabla de 10 columnas queda muy apretada para
-                    el dedo. Por eso el modo rápido manda por defecto, y quien
-                    prefiera la tabla la tiene a un toque (se recuerda). */}
-                <Flex rounded="md" border="1px solid" borderColor={border} overflow="hidden">
-                  {[
-                    { k: false, txt: 'Rápido' },
-                    { k: true,  txt: 'Tabla'  },
-                  ].map(({ k, txt }) => (
-                    <Box key={txt} as="button" px={2.5} py={1} fontSize="11px" fontWeight="700"
-                      bg={modoTabla === k ? FY : 'transparent'}
-                      color={modoTabla === k ? DARK : mutedL}
-                      onClick={() => setModoTabla(k)}>
-                      {txt}
-                    </Box>
-                  ))}
-                </Flex>
-                <Button size="xs" variant="outline" leftIcon={<FiUpload size={11} />} rounded="md"
-                  onClick={() => setShowImport(true)}>Importar</Button>
+              <HStack spacing={1}>
+                <Button size="xs" variant="ghost" leftIcon={<FiPlus size={12} />} color="gray.600" fontWeight="700"
+                  onClick={addItem}>
+                  Producto
+                </Button>
+                <Button size="xs" variant="ghost" leftIcon={<FiBookmark size={11} />} color="gray.500"
+                  onClick={() => { setPlantillasMode("usar"); setShowPlantillas(true); }}>
+                  Plantillas
+                </Button>
+                <Button size="xs" variant="ghost" leftIcon={<FiUpload size={11} />} color="gray.500"
+                  onClick={() => setShowImport(true)}>
+                  Importar
+                </Button>
               </HStack>
             </Flex>
-            {modoTabla
-              ? <TablaProductos {...tablaProps} />
-              : <ListaRapidaProductos {...listaRapidaProps} />}
+            <TablaProductos {...tablaProps} />
+            <PieTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig}
+              nItems={nItems} onEnviar={enviarCliente} onTexto={enviarComoTexto} enviando={enviando} />
           </GlassCard>
-          <Box bg={DARK} rounded="xl" border="1px solid" borderColor="whiteAlpha.100">
-            <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="md" />
-          </Box>
-          <Flex gap={2} pb={4}>
-            <Button flex={1} bg="#25D366" color="white" rounded="lg" fontWeight="700" leftIcon={<FaWhatsapp />}
-              isLoading={enviando} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>
-              Enviar
-            </Button>
-            <Button flex={1} variant="outline" rounded="lg" leftIcon={<FiEye />}
-              onClick={() => safeNavigate('preview')}>
-              Ver
-            </Button>
-            <Button flex={1} bg={DARK} color="white" rounded="lg" leftIcon={<FiSave />}
-              isLoading={isSaving} onClick={handleSave} _hover={{ bg: '#2a2a28' }}>
-              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
-            </Button>
-          </Flex>
         </Box>
-        )}
+      )}
 
-        {/* ═══ CELULAR (<md) — PASOS + LISTA RÁPIDA ═══ */}
-        {esCelular && (
-        /* Sitio para las dos barras fijas de abajo: la del total con
-           Ver/PDF/Guardar y, debajo, la de navegación. */
-        <Box display="flex" flexDirection="column" pb={`calc(${NAV_MOVIL_H} + 120px)`}>
+      {/* ═══ CELULAR Y TABLET — POR PASOS ═══ */}
+      {porPasos && (
+        <Box maxW={{ base: '100%', md: '760px' }} mx="auto" px={{ base: 3, md: 5 }} pt={3}
+          pb="calc(96px + env(safe-area-inset-bottom))">
 
-          {/* Tab bar mobile — en modo Express solo la barra naranja, sin pasos */}
+          {/* Pasos — en Express solo la franja naranja */}
           {modoExpress ? (
             <Flex bg="orange.100" _dark={{ bg: 'orange.900', borderColor: 'orange.600' }} border="1px solid" borderColor="orange.300"
-              rounded="2xl" mb={4} px={4} py={2.5} align="center" justify="space-between">
+              rounded="2xl" mb={3} px={4} py={2.5} align="center" justify="space-between">
               <HStack spacing={2}>
                 <Text fontSize="16px">⚡</Text>
                 <Text fontWeight="900" fontSize="13px" color="orange.700" _dark={{ color: 'orange.200' }}>
@@ -2826,132 +2744,101 @@ export default function CotizadorPage() {
               <Badge colorScheme="orange" rounded="full" fontSize="9px" fontWeight="800">Remisión interna</Badge>
             </Flex>
           ) : (
-          <Flex bg={barBg} border="1px solid" borderColor={border}
-            rounded="2xl" mb={4} overflow="hidden">
-            {STEPS.map((label, idx) => (
-              <Box key={label} data-tour={`paso-${label.toLowerCase()}`} flex={1} as="button" py={3}
-                minH="44px" display="flex" alignItems="center" justifyContent="center"
-                bg={mobileStep === idx ? FY : 'transparent'}
-                onClick={() => setMobileStep(idx)}
-                transition="all 0.15s">
-                <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="wider"
-                  color={mobileStep === idx ? DARK : mutedL}>
-                  {label}
-                </Text>
-              </Box>
-            ))}
-          </Flex>
+            <Flex bg={barBg} border="1px solid" borderColor={border} rounded="2xl" mb={3} overflow="hidden" p="3px" gap="3px"
+              role="tablist" aria-label="Pasos de la cotización">
+              {STEPS.map((label, idx) => {
+                const activo = mobileStep === idx;
+                return (
+                  <Box key={label} data-tour={`paso-${label.toLowerCase()}`} flex={1} as="button" type="button"
+                    role="tab" aria-selected={activo}
+                    minH="44px" display="flex" alignItems="center" justifyContent="center" gap={1.5}
+                    rounded="xl" bg={activo ? FY : 'transparent'}
+                    onClick={() => setMobileStep(idx)} transition="background 0.15s">
+                    <Flex w="18px" h="18px" rounded="full" align="center" justify="center" fontSize="10px" fontWeight="800"
+                      bg={activo ? DARK : 'transparent'} color={activo ? FY : mutedL}
+                      border={activo ? 'none' : '1px solid'} borderColor={border}>
+                      {idx + 1}
+                    </Flex>
+                    <Text fontSize="12px" fontWeight="800" color={activo ? DARK : mutedL}>
+                      {label}
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Flex>
           )}
 
           <GlassCard rounded="xl" overflow="hidden" mb={3}>
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="wait" initial={false}>
               <MotionBox key={mobileStep}
-                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }} transition={{ duration: rm ? 0 : 0.15 }}>
+                initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }} transition={{ duration: rm ? 0 : 0.14 }}>
                 {mobileStep === 0 && <PanelCliente {...panelClienteProps} />}
                 {mobileStep === 1 && (
                   <Box>
-                    {/* Header: Express unificado vs normal */}
                     {modoExpress ? (
-                      /* ── Express: todo en una sola barra naranja ── */
+                      /* Express: quién saca la mercancía */
                       <Box px={4} pt={3} pb={3} bg="orange.50" borderBottom="2px solid" borderColor="orange.300"
                         _dark={{ bg: 'orange.900', borderColor: 'orange.600' }}>
-                        <Flex align="center" justify="space-between" mb={2.5}>
-                          <HStack spacing={2}>
-                            <Text fontSize="16px" lineHeight="1">⚡</Text>
-                            <Text fontWeight="900" fontSize="14px" color="orange.700" _dark={{ color: 'orange.200' }}>
-                              Despacho Express
-                            </Text>
-                            <Tag size="sm" colorScheme="orange" rounded="full">
-                              {items.filter(r => r.desc || r.price).length} prod.
-                            </Tag>
-                          </HStack>
-                        </Flex>
+                        <HStack spacing={2} mb={2.5}>
+                          <Text fontWeight="900" fontSize="14px" color="orange.700" _dark={{ color: 'orange.200' }}>
+                            ¿Quién saca la mercancía?
+                          </Text>
+                          <Tag size="sm" colorScheme="orange" rounded="full">{nItems} prod.</Tag>
+                        </HStack>
                         <Input
-                          placeholder="¿Quién saca la mercancía? (nombre del trabajador)"
+                          placeholder="Nombre del trabajador"
                           value={expressTrabajador}
                           onChange={e => {
                             setExpressTrabajador(e.target.value);
                             setCliente(p => ({ ...p, nombre: e.target.value }));
                           }}
-                          rounded="lg" fontWeight="600" fontSize="14px" h="44px"
+                          rounded="lg" fontWeight="600" fontSize="16px" h="44px"
                           bg="white" _dark={{ bg: 'gray.700' }}
                           borderColor="orange.300" focusBorderColor="orange.500"
                         />
                       </Box>
                     ) : (
-                      /* ── Normal: header con importar ── */
-                      <Flex px={4} py={3} align="center" justify="space-between"
+                      <Flex px={4} py={3} align="center" justify="space-between" gap={2}
                         borderBottom="1px solid" borderColor={border}>
-                        <HStack>
+                        <HStack minW={0}>
                           <Icon as={FiPackage} color={mutedL} boxSize={4} />
-                          <Text fontWeight="700">{esObra ? 'Actividades' : 'Productos'}</Text>
-                          <Tag size="sm" colorScheme="gray" rounded="full">
-                            {items.filter(r => r.desc || r.price).length}
-                          </Tag>
+                          <Text fontWeight="800">{esObra ? 'Actividades' : 'Productos'}</Text>
+                          <Tag size="sm" colorScheme="gray" rounded="full">{nItems}</Tag>
                         </HStack>
-                        <Button size="xs" variant="outline" rounded="md" leftIcon={<FiUpload size={11} />}
-                          onClick={() => setShowImport(true)}>Importar</Button>
+                        <HStack spacing={2}>
+                          {/* En tablet se puede pasar a la tabla clásica (se recuerda) */}
+                          {!esCelular && (
+                            <Flex rounded="md" border="1px solid" borderColor={border} overflow="hidden">
+                              {[{ k: false, txt: 'Rápido' }, { k: true, txt: 'Tabla' }].map(({ k, txt }) => (
+                                <Box key={txt} as="button" type="button" px={3} h="32px" fontSize="12px" fontWeight="700"
+                                  bg={modoTabla === k ? FY : 'transparent'}
+                                  color={modoTabla === k ? DARK : mutedL}
+                                  onClick={() => setModoTabla(k)}>
+                                  {txt}
+                                </Box>
+                              ))}
+                            </Flex>
+                          )}
+                          <Button size="sm" h="32px" variant="outline" rounded="md" leftIcon={<FiUpload size={12} />}
+                            onClick={() => setShowImport(true)}>Importar</Button>
+                        </HStack>
                       </Flex>
                     )}
 
-                    {/* Captura rápida: sin abrir ni cerrar tarjetas */}
-                    <ListaRapidaProductos {...listaRapidaProps} />
+                    {modoTabla && !esCelular
+                      ? <TablaProductos {...tablaProps} alto="calc(100vh - 330px)" />
+                      : <ListaRapidaProductos {...listaRapidaProps} />}
 
-                    {/* Mini resumen */}
-                    <Box bg={DARK} px={4} py={3} mt={2}>
-                      <Stack spacing={1}>
-                        {esObra ? (
-                          <>
-                            <Flex justify="space-between">
-                              <Text fontSize="10px" color="whiteAlpha.500">Costo Directo</Text>
-                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.costoDirecto ?? 0, cotConfig.moneda)}</Text>
-                            </Flex>
-                            <Flex justify="space-between">
-                              <Text fontSize="10px" color="whiteAlpha.500">AIU + IVA</Text>
-                              <Text fontSize="11px" color="whiteAlpha.700">
-                                {money((totals.totalPagar ?? 0) - (totals.costoDirecto ?? 0), cotConfig.moneda)}
-                              </Text>
-                            </Flex>
-                          </>
-                        ) : (
-                          <>
-                            <Flex justify="space-between">
-                              <Text fontSize="10px" color="whiteAlpha.500">Subtotal s/IVA</Text>
-                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.totalBruto ?? 0, cotConfig.moneda)}</Text>
-                            </Flex>
-                            {(totals.exento ?? 0) > 0 && (
-                              <Flex justify="space-between">
-                                <Text fontSize="10px" color="blue.200">Transporte s/IVA</Text>
-                                <Text fontSize="11px" color="whiteAlpha.700">{money(totals.exento, cotConfig.moneda)}</Text>
-                              </Flex>
-                            )}
-                            <Flex justify="space-between">
-                              <Text fontSize="10px" color="whiteAlpha.500">IVA {cotConfig.iva}%</Text>
-                              <Text fontSize="11px" color="whiteAlpha.700">{money(totals.ivaTotal ?? 0, cotConfig.moneda)}</Text>
-                            </Flex>
-                          </>
-                        )}
-                        {descGNum > 0 && (
-                          <Flex justify="space-between">
-                            <Text fontSize="10px" color="whiteAlpha.500">Desc. {descGNum}%</Text>
-                            <Text fontSize="11px" color="red.300">− {money(totals.descGAmt ?? 0, cotConfig.moneda)}</Text>
-                          </Flex>
-                        )}
-                        <Box h="1px" bg={`${FY}33`} my={1} />
-                        <Flex justify="space-between" align="center">
-                          <Text fontSize="11px" color="whiteAlpha.600">Total</Text>
-                          <Text fontSize="20px" fontWeight="900" color={FY}>
-                            {money(totals.totalPagar, cotConfig.moneda)}
-                          </Text>
-                        </Flex>
-                      </Stack>
+                    {/* Resumen de cuentas */}
+                    <Box bg={DARK} mt={1}>
+                      <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} />
                     </Box>
                   </Box>
                 )}
                 {mobileStep === 2 && (
                   <Box p={4}>
-                    {/* Resumen de lo que se va a mandar */}
+                    {/* Lo que se va a mandar */}
                     <Text fontSize="10px" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={mutedL}>
                       Para
                     </Text>
@@ -2963,20 +2850,15 @@ export default function CotizadorPage() {
                         {[cliente.empresa, cliente.nit].filter(Boolean).join(' · ')}
                       </Text>
                     )}
-                    <Flex mt={3} p={3} rounded="lg" bg={DARK} justify="space-between" align="center">
-                      <Box>
-                        <Text fontSize="11px" color="whiteAlpha.700">
-                          {items.filter(r => r.desc?.trim()).length} producto{items.filter(r => r.desc?.trim()).length !== 1 ? 's' : ''}
-                          {' · '}{esObra ? 'Obra' : 'Comercial'}
-                        </Text>
-                        <Text fontSize="11px" color="whiteAlpha.600">
-                          {cotConfig.numero || 'Se numera al guardar'}
-                        </Text>
-                      </Box>
-                      <Text fontSize="22px" fontWeight="900" color={FY}>{money(totals.totalPagar, cotConfig.moneda)}</Text>
-                    </Flex>
+                    <Box mt={3} rounded="lg" overflow="hidden" bg={DARK}>
+                      <Flex px={5} pt={3} justify="space-between" fontSize="11px" color="whiteAlpha.700">
+                        <Text>{nItems} producto{nItems !== 1 ? 's' : ''} · {esObra ? 'Obra' : 'Comercial'}</Text>
+                        <Text>{cotConfig.numero || 'Se numera al guardar'}</Text>
+                      </Flex>
+                      <ResumenTotales totals={totals} cotConfig={cotConfig} descGNum={descGNum} aiuConfig={aiuConfig} size="lg" />
+                    </Box>
 
-                    {!items.some(r => r.desc?.trim()) && (
+                    {nItems === 0 && (
                       <Button mt={3} w="full" size="sm" variant="outline" onClick={() => setMobileStep(1)}>
                         Todavía no hay productos — agregar
                       </Button>
@@ -2989,16 +2871,24 @@ export default function CotizadorPage() {
                         isLoading={enviando} loadingText="Preparando PDF…" onClick={enviarCliente}>
                         Enviar por WhatsApp
                       </Button>
-                      <Flex gap={2.5}>
-                        <Button flex={1} h="46px" bg={DARK} color={FY} rounded="xl" leftIcon={<FiDownload />}
+                      <SimpleGrid columns={2} spacing={2.5}>
+                        <Button h="46px" bg={DARK} color={FY} rounded="xl" leftIcon={<FiDownload />}
                           _hover={{ bg: '#2a2a28' }} isLoading={pdfLoading && !enviando} onClick={handlePDF}>
                           Descargar PDF
                         </Button>
-                        <Button flex={1} h="46px" variant="outline" rounded="xl" leftIcon={<FiEye />}
+                        <Button h="46px" variant="outline" rounded="xl" leftIcon={<FiEye />}
                           onClick={() => safeNavigate('preview')}>
                           Ver documento
                         </Button>
-                      </Flex>
+                        <Button h="46px" variant="outline" rounded="xl" leftIcon={<FiPrinter />}
+                          onClick={imprimirDoc}>
+                          Imprimir
+                        </Button>
+                        <Button h="46px" variant="outline" colorScheme="whatsapp" rounded="xl" leftIcon={<FiMessageSquare />}
+                          onClick={enviarComoTexto}>
+                          Solo texto
+                        </Button>
+                      </SimpleGrid>
                       <Text fontSize="11px" color={mutedL} textAlign="center">
                         Al enviar o descargar se guarda sola.
                       </Text>
@@ -3008,7 +2898,7 @@ export default function CotizadorPage() {
                     <Box mt={4} border="1px solid" borderColor={border} rounded="xl" overflow="hidden">
                       <Flex as="button" type="button" w="full" px={4} py={3} align="center" justify="space-between"
                         onClick={() => setVerCondiciones(v => !v)} aria-expanded={verCondiciones}>
-                        <Box textAlign="left">
+                        <Box textAlign="left" minW={0}>
                           <Text fontSize="14px" fontWeight="700">Condiciones del documento</Text>
                           <Text fontSize="11px" color={mutedL}>
                             {cotConfig.formaPago} · {esObra ? 'sin discriminar IVA' : `IVA ${cotConfig.iva}%`}
@@ -3029,82 +2919,80 @@ export default function CotizadorPage() {
             </AnimatePresence>
           </GlassCard>
 
-          {/* Navegación pasos — oculta en express (solo botón único en barra fija) */}
+          {/* Anterior / siguiente */}
           {!modoExpress && (
-          <Flex gap={2}>
-            {mobileStep > 0 && (
-              <Button flex={1} variant="outline" rounded="xl" leftIcon={<FiChevronLeft />}
-                onClick={() => setMobileStep(s => s - 1)}>
-                {STEPS[mobileStep - 1]}
-              </Button>
-            )}
-            {mobileStep < STEPS.length - 1 && (
-              <Button flex={1} bg={FY} color={DARK} rounded="xl" fontWeight="700"
-                rightIcon={<FiChevronRight />}
-                onClick={() => setMobileStep(s => s + 1)}>
-                {mobileStep === 1 ? 'Revisar y enviar' : STEPS[mobileStep + 1]}
-              </Button>
-            )}
-          </Flex>
+            <Flex gap={2}>
+              {mobileStep > 0 && (
+                <Button flex={1} h="46px" variant="outline" rounded="xl" leftIcon={<FiChevronLeft />}
+                  onClick={() => setMobileStep(s => s - 1)}>
+                  {STEPS[mobileStep - 1]}
+                </Button>
+              )}
+              {mobileStep < STEPS.length - 1 && (
+                <Button flex={1} h="46px" bg={FY} color={DARK} rounded="xl" fontWeight="800"
+                  rightIcon={<FiChevronRight />} _hover={{ bg: '#e0b010' }}
+                  onClick={() => setMobileStep(s => s + 1)}>
+                  {mobileStep === 1 ? 'Revisar y enviar' : STEPS[mobileStep + 1]}
+                </Button>
+              )}
+            </Flex>
           )}
         </Box>
-        )}
-      </Box>
-
-      {/* ═══ BARRA FIJA DE ABAJO (celular) ═══
-          Se apoya SOBRE la barra de navegación, no encima de ella: son
-          dos cosas distintas y las dos tienen que poder tocarse. Esta es
-          para trabajar en la cotización; la de abajo, para irse a otra
-          parte. El «Importar» salió de aquí al menú de arriba: se usa una
-          vez cada tanto y le estaba quitando ancho a Guardar. */}
-      {esCelular && (
-      <Box display="flex" position="fixed" bottom={NAV_MOVIL_H} left={0} right={0}
-        bg={barBg} borderTop="1px solid" borderColor={border}
-        px={3} py={2.5} gap={2} zIndex={200} boxShadow="0 -4px 16px rgba(0,0,0,0.08)">
-        <Box flex={1} minW={0}>
-          <Text fontSize="9px" color={mutedL} textTransform="uppercase" letterSpacing="wider">Total</Text>
-          <Text fontSize="16px" fontWeight="900" color={FY} lineHeight="1.2" noOfLines={1}>
-            {money(totals.totalPagar, cotConfig.moneda)}
-          </Text>
-        </Box>
-        {/* Eye + Print: solo en modo normal (express no los necesita) */}
-        {!modoExpress && (<>
-        <IconButton data-tour="vista-previa" size="sm" variant="outline" colorScheme="gray" rounded="lg"
-          aria-label="Ver el documento" icon={<FiEye size={16} />}
-          onClick={() => safeNavigate('preview')} />
-        <IconButton size="sm" variant="outline" colorScheme="gray" rounded="lg"
-          aria-label="Imprimir" icon={<FiPrinter size={16} />}
-          onClick={() => { printDoc(); if (editingId) addEvento(editingId, 'impresa'); }} />
-        </>)}
-        {/* Express: botón único grande «Guardar Remisión». Normal: WhatsApp + Guardar */}
-        {modoExpress ? (
-          /* Un solo toque: guarda Y abre WhatsApp en la ferre */
-          <Button size="sm" bg="orange.400" color="white" rounded="lg" fontWeight="800"
-            flex={2} leftIcon={<FaWhatsapp size={16} />}
-            isLoading={isSaving}
-            onClick={async () => { await handleSave(); enviarComoTexto(); }}
-            _hover={{ bg: 'orange.500' }}>
-            {hasChanges || !editingId ? 'Enviar a la ferre' : '✓ Enviada'}
-          </Button>
-        ) : (
-          <>
-            <Button data-tour="pdf" size="sm" bg="#25D366" color="white" rounded="lg" leftIcon={<FaWhatsapp size={15} />}
-              isLoading={enviando || pdfLoading} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>Enviar</Button>
-            <Button data-tour="guardar" size="sm" bg={hasChanges ? FY : 'gray.200'} color={hasChanges ? DARK : 'gray.500'}
-              rounded="lg" fontWeight="700" leftIcon={<FiSave size={14} />}
-              isLoading={isSaving} onClick={handleSave}
-              _hover={{ bg: hasChanges ? '#e0b010' : 'gray.300' }}>
-              {hasChanges || !editingId ? 'Guardar' : 'Guardado'}
-            </Button>
-          </>
-        )}
-      </Box>
       )}
 
-      {/* Dialogo recuperar borrador */}
-      <AlertDialog isOpen={!!draftFound} leastDestructiveRef={cancelRef} onClose={descartarBorrador}>
+      {/* ═══ BARRA FIJA DE ABAJO (celular y tablet) ═══
+          Una sola barra: en el editor del celular la navegación general se
+          oculta (aquí se trabaja; para salir está la flecha de arriba).
+          Antes eran dos barras apiladas que se comían un cuarto de pantalla
+          y el total salía cortado («$ 3.85…»). Mientras el teclado está
+          abierto se esconde, para no tapar la casilla que se escribe. */}
+      {porPasos && !tecleando && (
+        <Box position="fixed" bottom={0} left={0} right={0} zIndex={200}
+          bg={barBg} borderTop="1px solid" borderColor={border} boxShadow="0 -4px 16px rgba(0,0,0,0.08)"
+          pb="env(safe-area-inset-bottom)" sx={{ '@media print': { display: 'none' } }}>
+          <Flex maxW={{ base: '100%', md: '760px' }} mx="auto" px={3} py={2} gap={2} align="center">
+            <Box flex="1 1 auto" minW={0}>
+              <Text fontSize="10px" color={mutedL} textTransform="uppercase" letterSpacing="wider" lineHeight="1.2">
+                Total{nItems ? ` · ${nItems} prod.` : ''}
+              </Text>
+              <Text fontSize={{ base: '18px', md: '20px' }} fontWeight="900" color={totalColor} lineHeight="1.2"
+                whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {money(totals.totalPagar, cotConfig.moneda)}
+              </Text>
+            </Box>
+            {modoExpress ? (
+              <Button h="46px" bg="orange.400" color="white" rounded="xl" fontWeight="800" px={4}
+                leftIcon={<FaWhatsapp size={17} />} isLoading={isSaving}
+                onClick={async () => { const ok = await handleSave(); if (ok) enviarComoTexto(); }}
+                _hover={{ bg: 'orange.500' }}>
+                {hasChanges || !editingId ? 'Enviar a la ferre' : '✓ Enviada'}
+              </Button>
+            ) : (
+              <>
+                <IconButton data-tour="vista-previa" h="46px" w="46px" variant="outline" colorScheme="gray" rounded="xl"
+                  display={{ base: 'none', sm: 'inline-flex' }}
+                  aria-label="Ver el documento" icon={<FiEye size={18} />}
+                  onClick={() => safeNavigate('preview')} />
+                <Button data-tour="pdf" h="46px" px={4} bg="#25D366" color="white" rounded="xl" fontWeight="800"
+                  leftIcon={<FaWhatsapp size={18} />}
+                  isLoading={enviando} onClick={enviarCliente} _hover={{ bg: '#1ebe5b' }}>Enviar</Button>
+                <Button data-tour="guardar" h="46px" px={4} rounded="xl" fontWeight="800"
+                  bg={hasChanges || !editingId ? FY : 'gray.100'} color={hasChanges || !editingId ? DARK : 'gray.600'}
+                  leftIcon={hasChanges || !editingId ? <FiSave size={16} /> : <FiCheckCircle size={16} />}
+                  isLoading={isSaving} onClick={handleSave}
+                  _hover={{ bg: hasChanges || !editingId ? '#e0b010' : 'gray.200' }}>
+                  {textoGuardar}
+                </Button>
+              </>
+            )}
+          </Flex>
+        </Box>
+      )}
+
+      {/* Diálogo: recuperar borrador */}
+      <AlertDialog isOpen={!!draftFound} leastDestructiveRef={cancelRef} onClose={descartarBorrador} isCentered>
         <AlertDialogOverlay>
-          <AlertDialogContent rounded="xl">
+          <AlertDialogContent rounded="xl" mx={4}>
             <AlertDialogHeader fontWeight="900">
               <HStack><Icon as={FiRefreshCw} color={FY} /><Text>Recuperar trabajo sin guardar</Text></HStack>
             </AlertDialogHeader>
@@ -3125,10 +3013,10 @@ export default function CotizadorPage() {
         </AlertDialogOverlay>
       </AlertDialog>
 
-      {/* Dialogo eliminar */}
-      <AlertDialog isOpen={isDelOpen} leastDestructiveRef={cancelRef} onClose={onDelClose}>
+      {/* Diálogo: eliminar */}
+      <AlertDialog isOpen={isDelOpen} leastDestructiveRef={cancelRef} onClose={onDelClose} isCentered>
         <AlertDialogOverlay>
-          <AlertDialogContent rounded="xl">
+          <AlertDialogContent rounded="xl" mx={4}>
             <AlertDialogHeader fontWeight="900">¿Eliminar cotización?</AlertDialogHeader>
             <AlertDialogBody>
               {cliente.nombre
@@ -3137,17 +3025,15 @@ export default function CotizadorPage() {
             </AlertDialogBody>
             <AlertDialogFooter>
               <Button ref={cancelRef} onClick={onDelClose} rounded="md">Cancelar</Button>
-              <Button bg={RED} color="white" ml={3} rounded="md"
+              <Button bg={RED} color="white" ml={3} rounded="md" _hover={{ bg: '#c00f15' }}
                 onClick={() => { onDelClose(); handleDelete(); }}>Eliminar</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
 
-      {/* Dialogo cambios sin guardar */}
-      {/* En celular los tres botones no caben en fila: se apilan, con la
-          acción recomendada (guardar) arriba y a lo ancho. Antes los tres
-          eran del mismo amarillo y "Quedarme aquí" parecía la principal. */}
+      {/* Diálogo: cambios sin guardar. En celular los botones se apilan,
+          con la acción recomendada (guardar) arriba y a lo ancho. */}
       <AlertDialog isOpen={isExitOpen} leastDestructiveRef={cancelRef} onClose={onExitClose} isCentered>
         <AlertDialogOverlay>
           <AlertDialogContent rounded="xl" mx={4}>

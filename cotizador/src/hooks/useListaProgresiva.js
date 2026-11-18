@@ -31,11 +31,15 @@ export function useListaProgresiva(lista, { primeros = 30, paso = 40, clave = ""
   }, [clave, primeros]);
 
   /* Si la lista se acortó (se borró una fila), el tope se ajusta;
-     si creció (se agregó una fila), se incluye de una para que quien
-     la acaba de agregar la vea aparecer sin espera. */
-  useEffect(() => {
-    setTope((t) => (t > total ? total : (t >= total - 1 ? total : t)));
-  }, [total]);
+     si creció (se agregó una fila) y ya estaba completa, la fila nueva
+     entra EN EL MISMO repintado. Antes se ajustaba en un efecto, un
+     cuadro después: la fila recién agregada aún no existía cuando se le
+     quería poner el cursor, y a veces el cursor se quedaba en el botón. */
+  const [totalPrevio, setTotalPrevio] = useState(total);
+  if (total !== totalPrevio) {
+    setTotalPrevio(total);
+    setTope((t) => (t > total ? total : (t >= totalPrevio ? total : t)));
+  }
 
   useEffect(() => {
     if (tope >= total) return;

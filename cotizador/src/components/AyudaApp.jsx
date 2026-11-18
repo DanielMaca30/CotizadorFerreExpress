@@ -22,8 +22,8 @@ import {
 } from "react-icons/fi";
 import AsistenteAyuda from "./AsistenteAyuda";
 import AppLogo from "./AppLogo";
-import { NAV_MOVIL_H } from "./NavegacionPrincipal";
-import { iniciarRecorrido } from "./RecorridoGuiado";
+import { NAV_MOVIL_H } from "../lib/disposicion";
+import { iniciarRecorrido } from "../lib/recorrido";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -56,9 +56,10 @@ export default function AyudaApp() {
      de /ayuda: React se queja si un hook no se llama siempre igual. */
   const avisoBg = useColorModeValue("orange.50", "whiteAlpha.100");
 
-  // En la propia guía el botón sobra
-  if (location.pathname === "/ayuda") return null;
-  const enCotizador = location.pathname.startsWith("/cotizador");
+  // En la propia guía el botón sobra. En la cotización también: se montaba
+  // encima de «Enviar» y «Guardar»; ahí la ayuda está en el menú de arriba
+  // y en la barra de navegación.
+  if (location.pathname === "/ayuda" || location.pathname.startsWith("/cotizador")) return null;
 
   const irA = (ruta) => { onClose(); navigate(ruta); };
 
@@ -75,7 +76,7 @@ export default function AyudaApp() {
              navegación (siempre) y, dentro del cotizador, la del total
              con Ver/PDF/Guardar. El botón se sube por encima de las dos;
              sin esto se le monta justo al botón de Guardar. */
-          bottom={{ base: enCotizador ? `calc(${NAV_MOVIL_H} + 104px)` : `calc(${NAV_MOVIL_H} + 12px)`, md: 6 }}
+          bottom={{ base: `calc(${NAV_MOVIL_H} + 12px)`, md: 6 }}
           right={{ base: 4, md: 6 }}
           /* En el celular no va: la barra de abajo ya tiene «Ayuda» y el
              botón flotante tapaba precios, casillas y la última tarjeta

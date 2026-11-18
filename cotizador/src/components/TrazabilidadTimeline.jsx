@@ -81,7 +81,6 @@ function EventoItem({ evento, isLast }) {
 
 export default function TrazabilidadTimeline({ eventos = [], maxVisible = 4 }) {
   const [expanded, setExpanded] = useState(false);
-  const borderColor = useColorModeValue("gray.100", "gray.700");
   const headerColor = useColorModeValue("gray.600", "gray.300");
 
   if (!eventos || eventos.length === 0) {

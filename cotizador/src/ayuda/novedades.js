@@ -14,6 +14,38 @@
  */
 export const NOVEDADES = [
   {
+    id: "2026-11-17",
+    fecha: "17 de noviembre de 2026",
+    titulo: "Precios bien escritos, imprimir de verdad y pantallas ordenadas",
+    puntos: [
+      {
+        icono: "rapido",
+        titulo: "Decimales y miles sin sorpresas",
+        texto: "Escribe 1,5 de cantidad o precios como 1.250.000 o 85,50, en el celular o en el computador: quedan tal cual. Antes algunos se cambiaban solos (1,5 quedaba 15).",
+      },
+      {
+        icono: "imprimir",
+        titulo: "«Imprimir» ya imprime la cotización",
+        texto: "Sale solo el documento, en hoja carta y a color. Está arriba en el computador y en el paso «Enviar» del celular.",
+      },
+      {
+        icono: "celular",
+        titulo: "En el celular, una sola barra abajo",
+        texto: "Dentro de la cotización ves el total completo, «Enviar» y «Guardar». Mientras escribes se esconde para no tapar la casilla. Para salir, la flecha de arriba.",
+      },
+      {
+        icono: "tabla",
+        titulo: "En el computador, la tabla más ancha",
+        texto: "Los totales y el botón de WhatsApp quedaron al pie de la tabla, y el nombre de cada producto se lee completo, también en portátiles pequeños y tablets.",
+      },
+      {
+        icono: "nuevo",
+        titulo: "La firma del cliente sale en el documento",
+        texto: "Captúrala desde el menú ⋮ de la cotización: queda guardada y aparece sobre «Recibí conforme», con el nombre y la fecha.",
+      },
+    ],
+  },
+  {
     id: "2026-10-15",
     fecha: "15 de octubre de 2026",
     titulo: "Más rápido de mandar, más claro de leer",

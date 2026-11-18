@@ -161,14 +161,14 @@ export default function ModalConvertirTipo({
               <Flex gap={3}>
                 <Box flex={1} bg={cardBg} rounded="lg" p={3} border="1px solid" borderColor={border}>
                   <Text fontSize="9px" color={muted} fontWeight="700" mb={1}>AHORA</Text>
-                  <Text fontSize="15px" fontWeight="800" fontVariantNumeric="tabular-nums">
+                  <Text fontSize="15px" fontWeight="800" sx={{ fontVariantNumeric: "tabular-nums" }}>
                     {money(totalActual, moneda)}
                   </Text>
                 </Box>
                 <Flex align="center"><Icon as={FiArrowRight} color={muted} /></Flex>
                 <Box flex={1} rounded="lg" p={3} border="2px solid" borderColor={FY} bg={destacaBg}>
                   <Text fontSize="9px" color={muted} fontWeight="700" mb={1}>DESPUÉS</Text>
-                  <Text fontSize="15px" fontWeight="900" fontVariantNumeric="tabular-nums">
+                  <Text fontSize="15px" fontWeight="900" sx={{ fontVariantNumeric: "tabular-nums" }}>
                     {money(totalNuevo, moneda)}
                   </Text>
                 </Box>

@@ -41,6 +41,20 @@ const fmtMoney = (mon) => {
 
 export const money = (n, mon = "COP") => fmtMoney(mon).format(n || 0);
 
+/* Precio unitario: muestra los centavos SOLO si los tiene (1.500,50).
+   Con money() a secas un precio de 1.500,50 salía como 1.501. */
+const _moneyDec = new Map();
+export const moneyUnit = (n, mon = "COP") => {
+  const v = Number(n) || 0;
+  if (Math.abs(v - Math.round(v)) < 0.005) return money(v, mon);
+  let f = _moneyDec.get(mon);
+  if (!f) {
+    f = new Intl.NumberFormat("es-CO", { style: "currency", currency: mon, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    _moneyDec.set(mon, f);
+  }
+  return f.format(v);
+};
+
 const fLarga = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "long", year: "numeric" });
 const fCorta = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -107,12 +121,70 @@ export const parsePriceCO = (formatted) => {
 
 /* ── Fechas automáticas ──────────────────────────────────────── */
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+/* Fecha LOCAL (no UTC). Con toISOString() la fecha salía en hora de
+   Greenwich: en Colombia (UTC-5), toda cotización hecha después de las
+   7 de la noche quedaba con la fecha del día siguiente. */
+const isoLocal = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+export const todayISO = () => isoLocal(new Date());
 
-const plusDaysISO = (days) => {
+export const plusDaysISO = (days) => {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return isoLocal(d);
+};
+
+/* ── Números escritos a la colombiana ────────────────────────
+   Una sola regla para precios, cantidades y porcentajes, en celular y
+   en computador. Antes cada casilla tenía la suya y fallaban:
+     · en el celular "1500,5" quedaba 15.005 (se perdía la coma);
+     · en el computador "1.250.000" quedaba 1,25;
+     · la cantidad "1,5" quedaba 15.
+   Reglas:
+     · La coma siempre es decimal; los puntos que la acompañan son miles.
+     · Varios puntos → son miles ("1.250.000").
+     · Un solo punto: en PRECIOS, si lleva exactamente 3 cifras detrás es
+       de miles ("1.250" = 1250); si lleva 1 o 2, es decimal ("1500.5",
+       teclado del iPhone). En CANTIDADES un punto solo es decimal.
+   Devuelve texto numérico con punto decimal ("1500.5") o "" si no hay número. */
+export const parseNumeroCO = (texto, { tipo = "precio", decimales = 2 } = {}) => {
+  let s = String(texto ?? "").trim().replace(/[\s$]/g, "");
+  if (!s) return "";
+  s = s.replace(/[^\d.,]/g, "");
+  if (!s) return "";
+  let ent, dec;
+  if (s.includes(",")) {
+    const i = s.lastIndexOf(",");
+    ent = s.slice(0, i).replace(/[.,]/g, "");
+    dec = s.slice(i + 1).replace(/[.,]/g, "");
+  } else {
+    const puntos = s.split(".").length - 1;
+    if (puntos === 0) { ent = s; dec = undefined; }
+    else if (puntos > 1) { ent = s.replace(/\./g, ""); dec = undefined; }
+    else {
+      const [a, b] = s.split(".");
+      if (tipo === "precio" && b.length === 3) { ent = a + b; dec = undefined; }
+      else { ent = a; dec = b; }
+    }
+  }
+  ent = ent.replace(/^0+(?=\d)/, "");
+  if (dec !== undefined) dec = dec.slice(0, decimales);
+  if (!ent && !dec) return "";
+  if (dec === undefined || dec === "") return ent || "0";
+  return `${ent || "0"}.${dec}`;
+};
+
+/** Cantidad para mostrar: 1.5 → "1,5"; 3 → "3" */
+export const fmtCantidad = (q) => {
+  const n = parseFloat(q);
+  if (!Number.isFinite(n)) return String(q ?? "");
+  return Number.isInteger(n)
+    ? String(n)
+    : String(Math.round(n * 1000) / 1000).replace(".", ",");
 };
 
 /* ── IDs ─────────────────────────────────────────────────────── */
@@ -406,14 +478,19 @@ export const datosFacturacion = (cli = {}) => {
 
 export const DEFAULT_CONFIG = {
   numero:    "",
-  fecha:     todayISO(),
-  vigencia:  plusDaysISO(30),
+  /* Se recalculan al abrir una cotización nueva (ver configNueva): si la
+     app quedaba abierta de un día para otro, salía con la fecha de ayer. */
+  get fecha()    { return todayISO(); },
+  get vigencia() { return plusDaysISO(30); },
   formaPago: "Efectivo",
   moneda:    "COP",
   iva:       19,
   estado:    "borrador",
   tipo:      "comercial",  // 'comercial' | 'obra'
 };
+
+/** Configuración de una cotización nueva, con las fechas de HOY */
+export const configNueva = (extra = {}) => ({ ...DEFAULT_CONFIG, ...extra });
 
 /* AIU en cero por defecto.
    Una cotización de obra es, ante todo, los mismos precios sin discriminar IVA:

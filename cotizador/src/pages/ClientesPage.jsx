@@ -24,9 +24,8 @@ import {
   FiSearch, FiUsers, FiPhone, FiFilePlus, FiChevronRight, FiX,
 } from "react-icons/fi";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
-import { TABS_BAR_H } from "../components/TabsBar";
 import AppLogo from "../components/AppLogo";
-import { NAV_MOVIL_H, useOffsetSuperior } from "../components/NavegacionPrincipal";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
 import { useListaProgresiva } from "../hooks/useListaProgresiva";
 import { money, fmtDateShort } from "../utils";
 

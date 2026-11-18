@@ -30,7 +30,7 @@ export default function EscanerCodigo({ isOpen, onClose, onDetected }) {
   const [estado, setEstado] = useState('idle'); // idle | iniciando | escaneando | error | manual
   const [errorMsg, setErrorMsg] = useState('');
   const [manualCod, setManualCod] = useState('');
-  const [ultimoCod, setUltimoCod] = useState('');
+
 
   /* ── Detener cámara ── */
   const detener = useCallback(() => {
@@ -41,36 +41,40 @@ export default function EscanerCodigo({ isOpen, onClose, onDetected }) {
     setEstado('idle');
   }, []);
 
-  /* ── Loop de detección ── */
-  const loopDeteccion = useCallback(async () => {
-    const video    = videoRef.current;
-    const detector = detectorRef.current;
-    if (!video || !detector || video.readyState < 2) {
-      rafRef.current = requestAnimationFrame(loopDeteccion);
-      return;
-    }
-    try {
-      const codigos = await detector.detect(video);
-      if (codigos.length > 0) {
-        const cod = codigos[0].rawValue;
-        if (cod && cod !== ultimoCod) {
-          setUltimoCod(cod);
+  /* ── Loop de detección ──
+     Las funciones de afuera se leen de una referencia: el bucle se llama
+     a sí mismo en cada cuadro y no puede depender de valores que cambian. */
+  const externos = useRef({ onDetected, onClose, detener });
+  useEffect(() => { externos.current = { onDetected, onClose, detener }; });
+  const loopRef = useRef(null);
+  useEffect(() => {
+    loopRef.current = async () => {
+      const video    = videoRef.current;
+      const detector = detectorRef.current;
+      if (!streamRef.current) return;                 // ya se cerró
+      if (!video || !detector || video.readyState < 2) {
+        rafRef.current = requestAnimationFrame(() => loopRef.current?.());
+        return;
+      }
+      try {
+        const codigos = await detector.detect(video);
+        const cod = codigos[0]?.rawValue;
+        if (cod) {
           if (navigator.vibrate) navigator.vibrate([80, 30, 80]);
-          detener();
-          onDetected(cod);
-          onClose();
+          externos.current.detener();
+          externos.current.onDetected(cod);
+          externos.current.onClose();
           return;
         }
-      }
-    } catch { /* frame descartado, seguir */ }
-    rafRef.current = requestAnimationFrame(loopDeteccion);
-  }, [ultimoCod, detener, onDetected, onClose]);
+      } catch { /* cuadro descartado, seguir */ }
+      rafRef.current = requestAnimationFrame(() => loopRef.current?.());
+    };
+  }, []);
 
   /* ── Iniciar cámara ── */
   const iniciar = useCallback(async () => {
     setEstado('iniciando');
     setErrorMsg('');
-    setUltimoCod('');
 
     /* Verificar soporte */
     if (!('BarcodeDetector' in window)) {
@@ -101,7 +105,7 @@ export default function EscanerCodigo({ isOpen, onClose, onDetected }) {
         await videoRef.current.play();
       }
       setEstado('escaneando');
-      rafRef.current = requestAnimationFrame(loopDeteccion);
+      rafRef.current = requestAnimationFrame(() => loopRef.current?.());
 
     } catch (e) {
       const permisos = e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError';
@@ -110,18 +114,18 @@ export default function EscanerCodigo({ isOpen, onClose, onDetected }) {
         : 'No se pudo acceder a la cámara. ¿Estás en una página segura (https)?');
       setEstado('error');
     }
-  }, [loopDeteccion]);
+  }, []);
 
   /* Iniciar cuando se abre el modal */
   useEffect(() => {
-    if (isOpen) {
-      iniciar();
-    } else {
-      detener();
-      setManualCod('');
-    }
-    return () => detener();
+    if (!isOpen) return;
+    const t = setTimeout(iniciar, 0);   // después de pintar la ventana (y el <video>)
+    return () => { clearTimeout(t); detener(); };
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* El código escrito a mano se borra al cerrar */
+  const [abiertoAntes, setAbiertoAntes] = useState(isOpen);
+  if (abiertoAntes !== isOpen) { setAbiertoAntes(isOpen); if (!isOpen) setManualCod(''); }
 
   const confirmarManual = () => {
     const cod = manualCod.trim();
@@ -134,7 +138,9 @@ export default function EscanerCodigo({ isOpen, onClose, onDetected }) {
   const cerrar = () => { detener(); onClose(); };
 
   return (
-    <Modal isOpen={isOpen} onClose={cerrar} isCentered size="sm" motionPreset="slideInBottom">
+    /* returnFocusOnClose=false: al cerrar, el cursor debe quedar en el
+       renglón del código leído, no volver al botón de la cámara. */
+    <Modal isOpen={isOpen} onClose={cerrar} isCentered size="sm" motionPreset="slideInBottom" returnFocusOnClose={false}>
       <ModalOverlay backdropFilter="blur(6px)" bg="blackAlpha.700" />
       <ModalContent rounded="2xl" mx={4} overflow="hidden" bg={DARK}>
 

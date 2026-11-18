@@ -22,10 +22,11 @@
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Box, Flex, HStack, Text, Input, Select, Icon, IconButton, Button,
+  Box, Flex, HStack, Text, Input, Icon, IconButton, Button,
   Menu, MenuButton, MenuList, MenuItem, MenuDivider, Badge,
   useColorModeValue, Divider,
 } from "@chakra-ui/react";
+import CampoNumero from "./CampoNumero";
 import {
   FiPlus, FiTruck, FiCopy, FiTrash2, FiMoreVertical, FiTag, FiPercent, FiCamera,
 } from "react-icons/fi";
@@ -33,7 +34,7 @@ import EscanerCodigo from "./EscanerCodigo";
 import { MdDragIndicator } from "react-icons/md";
 import AutocompleteInput from "./AutocompleteInput";
 import SelectUnidad from "./SelectUnidad";
-import { money, calcRow, UNITS, formatPriceCO, parsePriceCO } from "../utils";
+import { money, calcRow } from "../utils";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
@@ -56,44 +57,29 @@ function enfocar(rowId, campo) {
   return true;
 }
 
-/* ─── Precio con puntos de miles, para dedo y teclado numérico ─── */
+/* ─── Precio con puntos de miles, para dedo y teclado numérico ───
+   La casilla es CampoNumero: acepta 1500,5 · 1.250.000 · 1500.5 y los
+   deja bien. Antes la coma se perdía y 1500,5 quedaba 15.005. */
 const PrecioRapido = memo(function PrecioRapido({ rowId, value, onChange, onSiguiente, inputBg, border, sinIva }) {
-  const ref = useRef(null);
-  const [focused, setFocused] = useState(false);
   const muted = useColorModeValue("gray.400", "gray.500");
-
-  /* Al enfocar mostramos el valor sin puntos de miles ("1500,50") para que el
-     teclado decimal de iOS/Android pueda escribir normalmente. Al perder
-     el foco volvemos al formato colombiano con puntos ("1.500,50"). */
-  const display = focused
-    ? (() => { const r = parsePriceCO(formatPriceCO(value)); return r ? r.replace('.', ',') : ''; })()
-    : formatPriceCO(value);
-
   return (
-    <Flex align="center" flex={1} minW={0} bg={inputBg} rounded="lg"
-      border="1px solid" borderColor={border} px={2.5} h="44px"
+    <Flex align="center" flex={1} minW="96px" bg={inputBg} rounded="lg"
+      border="1px solid" borderColor={border} px={{ base: 2, sm: 2.5 }} h="44px"
       _focusWithin={{ borderColor: FY, boxShadow: `0 0 0 1px ${FY}` }}>
-      <Text fontSize="13px" color={muted} mr={1} flexShrink={0}>$</Text>
-      <Input
-        ref={ref}
+      <Text fontSize="13px" color={muted} mr={1} flexShrink={0} display={{ base: "none", sm: "block" }}>$</Text>
+      <CampoNumero
+        tipo="precio"
         data-rapida={`${rowId}-price`}
         data-row-id={rowId}
         data-field="price"
         variant="unstyled"
-        value={display}
-        onChange={(e) => {
-          const raw = parsePriceCO(e.target.value);
-          /* Permitir enteros Y decimales (hasta 2 cifras) */
-          if (raw === "" || /^\d*\.?\d{0,2}$/.test(raw)) onChange(raw);
-        }}
-        onFocus={(e) => { setFocused(true); setTimeout(() => e.target.select(), 0); }}
-        onBlur={() => setFocused(false)}
+        value={value}
+        onChange={onChange}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSiguiente(); } }}
-        inputMode="decimal"   /* teclado con coma/punto en iOS y Android */
         enterKeyHint="next"
         placeholder={sinIva ? "Precio sin IVA" : "Precio"}
-        fontSize="15px" fontWeight="700" textAlign="right"
-        h="44px"
+        fontSize="16px" fontWeight="700" textAlign="right"
+        h="44px" minW={0}
       />
     </Flex>
   );
@@ -114,6 +100,7 @@ const FilaRapida = memo(function FilaRapida({
   const cardBg = useColorModeValue("white", "gray.800");
   const muted = useColorModeValue("gray.500", "gray.400");
   const totalC = useColorModeValue("gray.700", "whiteAlpha.900");
+  const asaC = useColorModeValue("gray.300", "gray.600");
 
   return (
     <Box
@@ -137,7 +124,7 @@ const FilaRapida = memo(function FilaRapida({
           title="Arrastrar para reordenar"
           flexShrink={0}
           style={{ touchAction: "none", display: "flex", alignItems: "center", padding: "6px 2px" }}
-          color={useColorModeValue("gray.300", "gray.600")}
+          color={asaC}
         >
           <Icon as={MdDragIndicator} boxSize={4} />
         </Box>
@@ -174,7 +161,7 @@ const FilaRapida = memo(function FilaRapida({
             rounded="lg"
             px={3}
             h="44px"
-            fontSize="15px"
+            fontSize="16px"
             fontWeight="600"
             enterKeyHint="next"
           />
@@ -190,7 +177,7 @@ const FilaRapida = memo(function FilaRapida({
               <Text fontSize="10px" fontWeight="800" color={muted} letterSpacing="0.06em" mb={1.5}>
                 CÓDIGO / REFERENCIA
               </Text>
-              <Input size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
+              <Input size="sm" rounded="md" bg={inputBg} focusBorderColor={FY} fontSize="16px"
                 value={r.ref || ""} placeholder="—"
                 onChange={(e) => upItem(r.id, "ref", e.target.value)} />
             </Box>
@@ -198,9 +185,9 @@ const FilaRapida = memo(function FilaRapida({
               <Text fontSize="10px" fontWeight="800" color={muted} letterSpacing="0.06em" mb={1.5}>
                 DESCUENTO DE ESTE PRODUCTO (%)
               </Text>
-              <Input size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
-                type="number" min="0" max="100" inputMode="numeric"
-                value={r.disc} onChange={(e) => upItem(r.id, "disc", e.target.value)} />
+              <CampoNumero tipo="porcentaje" max={100} size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
+                fontSize="16px" placeholder="0"
+                value={r.disc} onChange={(v) => upItem(r.id, "disc", v)} />
             </Box>
             <MenuDivider />
             {!esObra && (
@@ -216,24 +203,30 @@ const FilaRapida = memo(function FilaRapida({
       </Flex>
 
       {/* Línea 2 — cuántos y a cómo */}
-      <Flex align="center" gap={2} mt={2} pl={{ base: "30px", sm: "30px" }}>
-        <Input
+      {/* En pantallas angostas la segunda línea usa todo el ancho: con la
+          sangría, en un celular de 360 px la casilla del precio quedaba de
+          21 px y no se veía lo que se escribía. */}
+      <Flex align="center" gap={{ base: 1.5, sm: 2 }} mt={2} pl={{ base: 0, sm: "30px" }}>
+        {/* Cantidad con coma decimal: 1,5 m³ de arena. Con type="number"
+            el iPhone botaba la coma y 1,5 quedaba 15. */}
+        <CampoNumero
+          tipo="cantidad"
           data-rapida={`${r.id}-qty`}
           data-row-id={r.id}
           data-field="qty"
           value={r.qty}
-          onChange={(e) => upItem(r.id, "qty", e.target.value)}
-          onFocus={(e) => e.target.select()}
+          onChange={(v) => upItem(r.id, "qty", v)}
+          onBlur={() => { if (!(parseFloat(r.qty) > 0)) upItem(r.id, "qty", "1"); }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); enfocar(r.id, "price"); } }}
-          type="number" min="0.001" step="any" inputMode="decimal" enterKeyHint="next"
-          w="66px" flexShrink={0} h="44px" rounded="lg" bg={inputBg}
+          enterKeyHint="next" aria-label="Cantidad"
+          w={{ base: "54px", sm: "62px" }} flexShrink={0} h="44px" rounded="lg" bg={inputBg}
           border="1px solid" borderColor={border} focusBorderColor={FY}
-          textAlign="center" fontSize="15px" fontWeight="700" px={1}
+          textAlign="center" fontSize="16px" fontWeight="700" px={1}
         />
         <SelectUnidad
           value={r.unit}
           onChange={(e) => upItem(r.id, "unit", e.target.value)}
-          w="82px" flexShrink={0} h="44px" rounded="lg" bg={inputBg}
+          w={{ base: "74px", sm: "82px" }} flexShrink={0} h="44px" rounded="lg" bg={inputBg}
           border="1px solid" borderColor={border} focusBorderColor={FY}
           fontSize="13px"
         />
@@ -256,7 +249,7 @@ const FilaRapida = memo(function FilaRapida({
             Ahora está en el renglón, y el aviso que sale trae "Deshacer"
             por si el dedo se fue donde no era. */}
         <IconButton variant="ghost" rounded="lg" flexShrink={0}
-          h="44px" minW="40px" w="40px" color="red.400"
+          h="44px" minW="38px" w="38px" color="red.400"
           _hover={{ bg: "red.50", color: "red.500" }}
           _active={{ bg: "red.100" }}
           aria-label={r.desc ? `Eliminar ${r.desc}` : "Eliminar este renglón"}
@@ -269,7 +262,7 @@ const FilaRapida = memo(function FilaRapida({
 
       {/* Línea 3 — el total de este renglón, solo cuando ya hay precio */}
       {(parseFloat(r.price) > 0 || r.sinIva || parseFloat(r.disc) > 0) && (
-        <Flex align="center" justify="space-between" mt={2} pl="30px" gap={2}>
+        <Flex align="center" justify="space-between" mt={2} pl={{ base: 0, sm: "30px" }} gap={2}>
           <HStack spacing={1.5} flexWrap="wrap">
             {r.sinIva && !esObra && (
               <Badge colorScheme="blue" rounded="full" fontSize="9px" px={2}>
@@ -288,7 +281,7 @@ const FilaRapida = memo(function FilaRapida({
             )}
           </HStack>
           <Text fontSize="14px" fontWeight="800" color={totalC} whiteSpace="nowrap"
-            fontVariantNumeric="tabular-nums">
+            sx={{ fontVariantNumeric: "tabular-nums" }}>
             {money(total, cotConfig.moneda)}
           </Text>
         </Flex>
@@ -303,35 +296,12 @@ export default function ListaRapidaProductos({
   items, esObra, cotConfig, inputBg, border,
   upItem, removeItem, duplicateItem, toggleSinIva,
   addItem, addItemSilencioso, addTransporte, getSugerencias, handleAcceptSugerencia,
-  startRowDrag, dragId,
+  startRowDrag, dragId, onCodigoEscaneado,
 }) {
   const muted = useColorModeValue("gray.500", "gray.400");
   const [showScanner, setShowScanner] = useState(false);
-  /* rowId al que se asignará el código escaneado (null = nueva fila) */
-  const scanTargetRef = useRef(null);
-
-  /* Cuando el escáner detecta un código:
-     · Crea una fila nueva con ese código en el campo ref
-     · Enfoca la descripción para que el vendedor escriba el nombre */
-  const handleEscaneo = useCallback((codigo) => {
-    addItem(); // crea fila nueva y la deja al final
-    /* Esperar un tick para que addItem haga el setState y el DOM aparezca */
-    setTimeout(() => {
-      const lista = document.querySelectorAll('[data-field="ref"]');
-      /* La fila nueva es la última; filtrar las visibles */
-      const visible = [...lista].filter(el => el.offsetParent !== null);
-      const ultima = visible[visible.length - 1];
-      if (ultima) {
-        /* Encontrar el id de esa fila y actualizar su ref */
-        const rowId = ultima.closest('[data-drag-row]')?.getAttribute('data-drag-row');
-        if (rowId) {
-          upItem(rowId, 'ref', codigo);
-          /* Enfocar descripción */
-          setTimeout(() => enfocar(rowId, 'desc'), 50);
-        }
-      }
-    }, 80);
-  }, [addItem, upItem]);
+  /* ¿Hay cámara? (solo en conexiones seguras y con el permiso del sistema) */
+  const [hayCamara] = useState(() => typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
 
   /* Enter en el precio: pasa al producto siguiente y, si era el
      último, crea uno nuevo y salta a él. Es el gesto que encadena
@@ -341,7 +311,7 @@ export default function ListaRapidaProductos({
      como va a parar a cada renglón, rompería su memoización: escribir una
      letra repintaría los 45 productos en vez de uno. */
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useEffect(() => { itemsRef.current = items; }, [items]);
   const onSiguienteFila = useCallback((rowId) => {
     const lista = itemsRef.current;
     const idx = lista.findIndex((r) => r.id === rowId);
@@ -398,7 +368,7 @@ export default function ListaRapidaProductos({
           si no se reserva, le tapa la esquina al botón de Domicilio. */}
       <Flex px={2.5} py={2.5} gap={2} align="center" pr={{ base: "62px", md: 2.5 }}>
         {/* Botón escanear — solo si hay cámara disponible (MediaDevices existe en https) */}
-        {typeof navigator !== 'undefined' && navigator.mediaDevices && (
+        {hayCamara && onCodigoEscaneado && (
           <IconButton
             size="md" h="44px" w="44px" flexShrink={0}
             variant="outline" rounded="xl"
@@ -425,7 +395,7 @@ export default function ListaRapidaProductos({
       <EscanerCodigo
         isOpen={showScanner}
         onClose={() => setShowScanner(false)}
-        onDetected={handleEscaneo}
+        onDetected={(codigo) => onCodigoEscaneado?.(codigo)}
       />
 
       <Text fontSize="10.5px" color={muted} px={4} pb={3} textAlign="center">

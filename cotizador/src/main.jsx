@@ -1,15 +1,27 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import "./index.css";
 
-/* Fuente DM Sans desde Google Fonts */
-const link = document.createElement("link");
-link.rel   = "stylesheet";
-link.href  = "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900;1,9..40,400&display=swap";
-document.head.appendChild(link);
+/* La fuente DM Sans se carga en index.html (antes se pedía dos veces:
+   allí y aquí, con pesos distintos). */
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
+
+/* Service worker solo en producción. En desarrollo guardaba en caché los
+   archivos del código y se veían cambios viejos al recargar. */
+if ("serviceWorker" in navigator) {
+  if (import.meta.env.PROD) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* opcional */ });
+    });
+  } else {
+    navigator.serviceWorker.getRegistrations?.()
+      .then((rs) => rs.forEach((r) => r.unregister()))
+      .catch(() => { /* noop */ });
+  }
+}

@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────
  */
 import { useCallback, useState } from "react";
-import { money, calcTotals, calcTotalsObra, DEFAULT_AIU } from "../utils";
+import { calcTotals, calcTotalsObra, DEFAULT_AIU } from "../utils";
 
 /* Carga SheetJS una sola vez. Intenta el bundle npm primero;
    si falla (aún no instalado) lo toma del CDN de SheetJS. */
@@ -39,7 +39,7 @@ export function useExcel() {
    */
   const exportar = useCallback(async ({
     items = [], cotConfig = {}, cliente = {}, empresa = {},
-    aiuConfig = DEFAULT_AIU, notas = "",
+    aiuConfig = DEFAULT_AIU, notas = "", descG = 0,
   }) => {
     setLoading(true);
     try {
@@ -49,9 +49,11 @@ export function useExcel() {
       const esObra  = cotConfig.tipo === "obra";
       const iva     = parseFloat(cotConfig.iva) || 0;
       const moneda  = cotConfig.moneda || "COP";
+      /* El descuento global es descG (antes se leía un campo que no existe
+         y el Excel salía con un total distinto al del PDF). */
       const totals  = esObra
-        ? calcTotalsObra(items, cotConfig.descuento || 0, aiuConfig)
-        : calcTotals(items, cotConfig.descuento || 0, iva);
+        ? calcTotalsObra(items, descG || 0, aiuConfig)
+        : calcTotals(items, descG || 0, iva);
 
       /* ── Encabezado (hoja principal) ── */
       const encabezado = [
@@ -78,8 +80,9 @@ export function useExcel() {
           const qty   = parseFloat(r.qty) || 1;
           const disc  = parseFloat(r.disc) || 0;
           const rate  = iva / 100;
-          const pSin  = esObra ? p : p / (1 + rate);
-          const pIva  = esObra ? 0 : p - pSin;
+          /* El transporte va sin IVA: su precio es todo base */
+          const pSin  = esObra || r.sinIva ? p : p / (1 + rate);
+          const pIva  = esObra || r.sinIva ? 0 : p - pSin;
           const total = p * qty * (1 - disc / 100);
 
           return esObra
@@ -91,6 +94,7 @@ export function useExcel() {
       const resumen = esObra ? [
         [],
         ["", "", "", "", "", "", "Costo Directo:", totals.costoDirecto],
+        ...(totals.descGAmt > 0 ? [["", "", "", "", "", "", `Descuento ${descG}%:`, -totals.descGAmt]] : []),
         ["", "", "", "", "", "", "Administración:", totals.adminAmt],
         ["", "", "", "", "", "", "Imprevistos:",    totals.impAmt],
         ["", "", "", "", "", "", "Utilidad:",       totals.utilAmt],
@@ -99,8 +103,10 @@ export function useExcel() {
         ["", "", "", "", "", "", "TOTAL A PAGAR:",  totals.totalPagar],
       ] : [
         [],
-        ["", "", "", "", "", "", "", "", "Total Bruto:", totals.totalBruto],
-        ["", "", "", "", "", "", "", "", "IVA:",         totals.ivaTotal],
+        ["", "", "", "", "", "", "", "", "Subtotal sin IVA:", totals.totalBruto],
+        ...(totals.exento > 0 ? [["", "", "", "", "", "", "", "", "Transporte (sin IVA):", totals.exento]] : []),
+        ["", "", "", "", "", "", "", "", `IVA ${iva}%:`, totals.ivaTotal],
+        ...(totals.descGAmt > 0 ? [["", "", "", "", "", "", "", "", `Descuento ${descG}%:`, -totals.descGAmt]] : []),
         ["", "", "", "", "", "", "", "", "TOTAL PAGAR:", totals.totalPagar],
       ];
 

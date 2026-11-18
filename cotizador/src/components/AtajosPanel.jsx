@@ -57,15 +57,17 @@ const SECCIONES = [
 
 function AtajoRow({ teclas, desc }) {
   const textColor = useColorModeValue("gray.700", "gray.200");
+  const linea = useColorModeValue("gray.50", "whiteAlpha.50");
+  const kbdBg = useColorModeValue("gray.100", "gray.700");
   return (
     <HStack justify="space-between" spacing={3} py={1.5}
-      borderBottom="1px solid" borderColor={useColorModeValue("gray.50", "whiteAlpha.50")}>
+      borderBottom="1px solid" borderColor={linea}>
       <Text fontSize="13px" color={textColor} flex="1">{desc}</Text>
       <HStack spacing={1} flexShrink={0}>
         {teclas.map((t, i) => (
           <HStack key={i} spacing={0.5}>
             {i > 0 && <Text fontSize="11px" color="gray.400">+</Text>}
-            <Kbd fontSize="11px" bg={useColorModeValue("gray.100", "gray.700")} rounded="md" px={1.5}>
+            <Kbd fontSize="11px" bg={kbdBg} rounded="md" px={1.5}>
               {t}
             </Kbd>
           </HStack>
@@ -77,6 +79,8 @@ function AtajoRow({ teclas, desc }) {
 
 export default function AtajosPanel({ isOpen, onClose }) {
   const bg       = useColorModeValue("white", "gray.800");
+  const borde    = useColorModeValue("gray.100", "whiteAlpha.100");
+  const consejoBg = useColorModeValue("yellow.50", "yellow.900");
   const headerBg = DARK;
 
   return (
@@ -101,7 +105,7 @@ export default function AtajosPanel({ isOpen, onClose }) {
               <GridItem key={sec.titulo}>
                 <Box
                   border="1px solid"
-                  borderColor={useColorModeValue("gray.100", "whiteAlpha.100")}
+                  borderColor={borde}
                   rounded="xl" p={3}>
                   <HStack mb={2}>
                     <Badge colorScheme={sec.color} rounded="full" fontSize="9px" px={2}>
@@ -119,7 +123,7 @@ export default function AtajosPanel({ isOpen, onClose }) {
           </Grid>
 
           {/* Consejo extra */}
-          <Box mt={4} p={3} bg={useColorModeValue("yellow.50", "yellow.900")}
+          <Box mt={4} p={3} bg={consejoBg}
             rounded="xl" borderLeft="4px solid" borderColor={FY}>
             <Text fontSize="12px" fontWeight="600">💡 Consejo</Text>
             <Text fontSize="12px" mt={1}>

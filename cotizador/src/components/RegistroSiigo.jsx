@@ -17,17 +17,24 @@ import {
   Progress, Divider, useColorModeValue, Circle,
 } from '@chakra-ui/react';
 import { FiCheck, FiX, FiRefreshCw, FiCheckCircle } from 'react-icons/fi';
-import { calcRow, money } from '../utils';
+import { calcRow, money, fmtCantidad } from '../utils';
 
 const FY   = '#F9BF20';
 const DARK = '#3A3A38';
 
 function ItemCard({ r, checked, onToggle, moneda }) {
-  const total = calcRow(r)?.total || 0;
+  /* calcRow devuelve el número directamente (antes se leía «.total» y
+     todos los productos salían en $0). */
+  const total = calcRow(r) || 0;
   const qty   = parseFloat(r.qty) || 1;
   const unit  = r.unit || '';
+  /* Los colores se piden SIEMPRE, marcado o no. Antes uno se pedía solo
+     sin marcar: al tocar un producto cambiaba el número de hooks y la
+     ventana del cajero se caía. */
   const bg        = useColorModeValue(checked ? '#f0fdf4' : 'white', checked ? '#14532d22' : 'gray.800');
-  const borderCol = checked ? '#22c55e' : useColorModeValue('gray.200', 'whiteAlpha.200');
+  const bordeNormal = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const circuloNormal = useColorModeValue('gray.100', 'gray.700');
+  const borderCol = checked ? '#22c55e' : bordeNormal;
   const textCol   = useColorModeValue(checked ? 'gray.400' : 'gray.800', checked ? 'gray.500' : 'gray.100');
 
   return (
@@ -39,7 +46,7 @@ function ItemCard({ r, checked, onToggle, moneda }) {
       opacity={checked ? 0.7 : 1}>
       <Flex align="center" gap={3}>
         {/* Checkbox visual grande */}
-        <Circle size="36px" bg={checked ? '#22c55e' : useColorModeValue('gray.100', 'gray.700')}
+        <Circle size="36px" bg={checked ? '#22c55e' : circuloNormal}
           border={checked ? 'none' : '2px solid'} borderColor="gray.300" flexShrink={0}
           transition="all 0.15s">
           {checked && <FiCheck color="white" size={18} />}
@@ -54,7 +61,7 @@ function ItemCard({ r, checked, onToggle, moneda }) {
           </Text>
           <HStack spacing={2} mt={0.5} flexWrap="wrap">
             <Badge colorScheme="gray" rounded="full" fontSize="11px" fontWeight="600">
-              {qty === Math.floor(qty) ? qty : qty.toFixed(2)} {unit}
+              {fmtCantidad(qty)} {unit}
             </Badge>
             {r.ref && (
               <Text fontSize="11px" color="gray.400">Ref: {r.ref}</Text>

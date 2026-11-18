@@ -34,42 +34,24 @@ import {
 } from "@chakra-ui/react";
 import { FiFileText, FiPlus, FiUsers, FiHelpCircle, FiSettings } from "react-icons/fi";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
-import { TABS_BAR_H } from "./TabsBar";
+import { TABS_BAR_H, NAV_MOVIL_H, MEDIA_PESTANAS } from "../lib/disposicion";
 import AppLogo from "./AppLogo";
 
 const FY = "#F9BF20";
 const DARK = "#3A3A38";
 
-/** Alto de la barra de abajo en celular. Las páginas reservan este
- *  espacio al final para que la barra no les tape el contenido. */
-export const NAV_MOVIL_H = "60px";
-
-/** Alto de la barra de arriba en computador y tablet. */
-export const NAV_ARRIBA_H = 46;
-
-/**
- * A qué altura tiene que pegarse la barra propia de cada pantalla.
- * Encima puede haber dos cosas fijas: la tira de cotizaciones abiertas
- * (solo si hay alguna) y esta navegación (solo en pantalla grande, que
- * en el teléfono va abajo). Sin este cálculo compartido, cada pantalla
- * lo adivinaba por su cuenta y las barras se montaban una encima de
- * otra. Devuelve un valor en px listo para `top`.
- */
-export function useOffsetSuperior(hayPestanas) {
-  const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
-  /* En el celular la tira de pestañas no se muestra (ver TabsBar) */
-  const pestanas = hayPestanas && !esCelular ? parseInt(TABS_BAR_H, 10) : 0;
-  return `${pestanas + (esCelular ? 0 : NAV_ARRIBA_H)}px`;
-}
-
 /* Los destinos de trabajo. Son cuatro y no más a propósito: con seis o
    siete, en un teléfono cada uno queda tan angosto que el rótulo se
    corta y hay que adivinar por el dibujo. */
+/* «Nueva» solo se marca en una cotización NUEVA. Abriendo una ya
+   guardada (/cotizador/ID) antes también se marcaba «Nueva», y quien
+   editaba la COT-034 creía estar haciendo otra. Una guardada vive en
+   «Cotizaciones». */
 const DESTINOS = [
   { ruta: "/historial", etq: "Cotizaciones", icono: FiFileText,
-    activo: (p) => p === "/historial" || p === "/" },
+    activo: (p) => p === "/historial" || p === "/" || p.startsWith("/cotizador/") },
   { ruta: "/cotizador", etq: "Nueva", icono: FiPlus, destacado: true,
-    activo: (p) => p.startsWith("/cotizador") },
+    activo: (p) => p === "/cotizador" },
   { ruta: "/clientes", etq: "Clientes", icono: FiUsers,
     activo: (p) => p === "/clientes" || p.startsWith("/cliente/") },
   { ruta: "/ayuda", etq: "Ayuda", icono: FiHelpCircle,
@@ -89,6 +71,7 @@ const BarraAbajo = memo(function BarraAbajo({ pathname, ir }) {
   const bg     = useColorModeValue("white", "gray.800");
   const border = useColorModeValue("gray.200", "whiteAlpha.200");
   const muted  = useColorModeValue("gray.500", "gray.400");
+  const activoBg = useColorModeValue("gray.50", "whiteAlpha.100");
 
   return (
     <Box as="nav" aria-label="Navegación principal"
@@ -109,18 +92,18 @@ const BarraAbajo = memo(function BarraAbajo({ pathname, ir }) {
               aria-label={d.etq}
               color={on ? DARK : muted}
               position="relative"
-              _active={{ bg: useColorModeValue("gray.50", "whiteAlpha.100") }}>
+              _active={{ bg: activoBg }}>
               {/* La marca de «estás aquí»: una barrita arriba del
                   destino activo. Un color distinto solo no basta —
                   quien no distingue bien los colores no lo vería. */}
               <Box position="absolute" top={0} left="18%" right="18%" h="3px"
                 bg={on ? FY : "transparent"} roundedBottom="full" />
-              <Icon as={d.icono} boxSize={d.destacado ? "22px" : "19px"}
+              <Icon as={d.icono} boxSize="20px"
                 color={on ? DARK : muted}
                 strokeWidth={on ? 2.5 : 2} />
               {/* El rótulo NO se corta ni se abrevia: un ícono sin nombre
                   obliga a adivinar, que es lo que se vino a quitar. */}
-              <Text fontSize="9.5px" fontWeight={on ? "800" : "600"} lineHeight="1"
+              <Text fontSize="10.5px" fontWeight={on ? "800" : "600"} lineHeight="1"
                 letterSpacing="-0.01em" whiteSpace="nowrap">
                 {d.etq}
               </Text>
@@ -198,8 +181,9 @@ export default function NavegacionPrincipal() {
   const { pathname } = useLocation();
   const { openTab, tabs, flushAutoSave } = useCotizaciones();
   const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
-  /* Se pega justo debajo de la tira de cotizaciones abiertas */
-  const topOffset = tabs.length ? TABS_BAR_H : 0;
+  /* Se pega justo debajo de la tira de cotizaciones abiertas (si se ve) */
+  const [conPestanas] = useMediaQuery(MEDIA_PESTANAS, { ssr: false });
+  const topOffset = tabs.length && conPestanas ? TABS_BAR_H : 0;
 
   const ir = useCallback(async (ruta) => {
     if (pathname === ruta) return;
@@ -221,11 +205,11 @@ export default function NavegacionPrincipal() {
     navigate(ruta);
   }, [navigate, openTab, pathname, flushAutoSave]);
 
-  /* En la guía a pantalla completa la barra estorba: esa pantalla es
-     para leer, y ya trae su propio «Volver». */
-  if (pathname === "/ayuda" && !esCelular) {
-    return <BarraArriba pathname={pathname} ir={ir} topOffset={topOffset} />;
-  }
+  /* En el celular, dentro de una cotización la barra se oculta: ahí se
+     trabaja, y la cotización trae su propia barra de abajo (total,
+     enviar, guardar) y la flecha para volver. Dos barras fijas apiladas
+     se comían un cuarto de la pantalla. */
+  if (esCelular && pathname.startsWith("/cotizador")) return null;
 
   return esCelular
     ? <BarraAbajo pathname={pathname} ir={ir} />

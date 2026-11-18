@@ -25,7 +25,7 @@
  */
 
 import React from "react";
-import { money, fmtDate, calcRow, datosFacturacion } from "../utils";
+import { money, moneyUnit, fmtCantidad, fmtDate, fmtDateShort, calcRow, datosFacturacion } from "../utils";
 import { PAGE_W, PAGE_H, repartirEnHojas } from "../lib/hojas";
 
 const FY    = "#F9BF20";
@@ -167,7 +167,7 @@ function BloqueCliente({ cli }) {
    que una hoja suelta se pueda identificar.
 ═══════════════════════════════════════════════════════════════ */
 function Hoja({
-  empresa, cot, cli, items, descG, totals, notas, observaciones, aiuData,
+  empresa, cot, cli, items, descG, totals, notas, observaciones, aiuData, firma,
   esObra, hayAIU, moneda, hayDesc, desde, esPrimera, esUltima, pag, total,
 }) {
   const fact = datosFacturacion(cli);
@@ -191,7 +191,7 @@ function Hoja({
   };
 
   return (
-    <div style={st.page}>
+    <div className="hoja-doc" style={st.page}>
 
       {/* ═══ ENCABEZADO ═══ */}
       <div style={{
@@ -302,9 +302,9 @@ function Hoja({
                   {r.desc || "—"}
                   {r.ref && <span style={{ color: MUTED, fontWeight: 400, fontSize: 9 }}>  ({r.ref})</span>}
                 </td>
-                <td style={{ ...st.td, textAlign: "center", fontWeight: 700 }}>{r.qty || 1}</td>
+                <td style={{ ...st.td, textAlign: "center", fontWeight: 700 }}>{fmtCantidad(r.qty || 1)}</td>
                 <td style={{ ...st.td, textAlign: "center", color: MUTED, fontSize: 9.5 }}>{r.unit || "Und"}</td>
-                <td style={{ ...st.td, textAlign: "right" }}>{money(parseFloat(r.price) || 0, moneda)}</td>
+                <td style={{ ...st.td, textAlign: "right" }}>{moneyUnit(parseFloat(r.price) || 0, moneda)}</td>
                 {hayDesc && (
                   <td style={{ ...st.td, textAlign: "right", color: MUTED, fontSize: 9.5 }}>
                     {parseFloat(r.disc) > 0 ? `${r.disc}%` : "—"}
@@ -460,17 +460,29 @@ function Hoja({
             </div>
           )}
 
+          {/* Firma de recibido. Si se capturó en la app («Capturar firma
+              del cliente»), sale estampada; antes se pedía y se perdía:
+              no se guardaba ni se imprimía en ninguna parte. */}
           <div style={{ display: "flex", gap: 30, padding: "18px 26px 12px", flex: "0 0 auto" }}>
             <div style={{ flex: 1 }}>
-              <div style={st.firma} />
+              <div style={{ ...st.firma, position: "relative" }}>
+                {firma?.dataURL && (
+                  <img src={firma.dataURL} alt="Firma del cliente"
+                    style={{ position: "absolute", left: 0, bottom: 1, height: 48, maxWidth: "100%", objectFit: "contain" }} />
+                )}
+              </div>
               <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Recibí conforme · firma</Lbl>
             </div>
             <div style={{ flex: 0.9 }}>
-              <div style={st.firma} />
+              <div style={{ ...st.firma, display: "flex", alignItems: "flex-end", fontSize: 10, fontWeight: 700 }}>
+                {firma?.dataURL ? (firma.firmante || "") : ""}
+              </div>
               <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Nombre y C.C.</Lbl>
             </div>
             <div style={{ flex: 0.55 }}>
-              <div style={st.firma} />
+              <div style={{ ...st.firma, display: "flex", alignItems: "flex-end", fontSize: 10, fontWeight: 700 }}>
+                {firma?.dataURL && firma.fecha ? fmtDateShort(String(firma.fecha).slice(0, 10)) : ""}
+              </div>
               <Lbl style={{ marginTop: 4, fontSize: 7.5 }}>Fecha entrega</Lbl>
             </div>
           </div>
@@ -499,7 +511,7 @@ function Hoja({
    DOCUMENTO COMPLETO — una o varias hojas apiladas
 ═══════════════════════════════════════════════════════════════ */
 export default function DocContent({
-  empresa, cot, cli, items, descG, totals, notas, observaciones, aiu,
+  empresa, cot, cli, items, descG, totals, notas, observaciones, aiu, firma,
 }) {
   const tipo   = cot?.tipo || "comercial";
   const esObra = tipo === "obra";
@@ -526,7 +538,7 @@ export default function DocContent({
         return (
           <Hoja key={i}
             empresa={empresa} cot={cot} cli={cli} items={hoja} descG={descG}
-            totals={totals} notas={notas} observaciones={observaciones}
+            totals={totals} notas={notas} observaciones={observaciones} firma={firma}
             aiuData={aiuData} esObra={esObra} hayAIU={hayAIU} moneda={moneda}
             hayDesc={hayDesc} desde={desde}
             esPrimera={i === 0} esUltima={i === hojas.length - 1}

@@ -39,8 +39,7 @@ import TrazabilidadTimeline from "../components/TrazabilidadTimeline";
 import { PAGE_W }          from "../lib/hojas";
 import Paginacion, { TODAS } from "../components/Paginacion";
 import { useListaProgresiva } from "../hooks/useListaProgresiva";
-import { TABS_BAR_H }        from "../components/TabsBar";
-import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
 import ModalConvertirTipo    from "../components/ModalConvertirTipo";
 import AppLogo              from "../components/AppLogo";
 import RegistroSiigo        from "../components/RegistroSiigo";
@@ -130,14 +129,16 @@ function KpiCard({ label, value, sub, icon, accent, onClick, active }) {
       _hover={onClick ? { boxShadow: active ? `0 0 0 2px ${FY}` : "0 4px 20px rgba(0,0,0,0.10)", transform: "translateY(-1px)" } : undefined}
       transition="all 0.15s"
       title={onClick ? "Clic para filtrar" : undefined}>
-      <Flex justify="space-between" align="flex-start">
-        <Box>
+      <Flex justify="space-between" align="flex-start" gap={2}>
+        <Box minW={0}>
           <Text fontSize="9px" fontWeight="700" letterSpacing="0.12em"
             textTransform="uppercase" color={muted} mb={1}>{label}</Text>
-          <Text fontSize="2xl" fontWeight="900" lineHeight="1">{value}</Text>
+          {/* La cifra nunca se parte ni se sale de la tarjeta */}
+          <Text fontSize={{ base: "xl", xl: "2xl" }} fontWeight="900" lineHeight="1" whiteSpace="nowrap"
+            sx={{ fontVariantNumeric: "tabular-nums" }}>{value}</Text>
           {sub && <Text fontSize="10px" color={muted} mt={1}>{sub}</Text>}
         </Box>
-        <Box bg={bc} rounded="xl" p={2.5}>
+        <Box bg={bc} rounded="xl" p={2.5} flexShrink={0} display={{ base: "none", xl: "block" }}>
           <Icon as={icon} color={accent} boxSize={5} />
         </Box>
       </Flex>
@@ -201,6 +202,7 @@ function EstadoSelect({ cot, onCambiar, grande }) {
     borrador:  "gray",
     enviada:   "blue",
     aceptada:  "green",
+    entregada: "teal",
     rechazada: "red",
   };
 
@@ -305,6 +307,7 @@ const CotizacionCard = memo(function CotizacionCard({
       transition="all 0.15s">
       <Box h="3px" bg={
         estado === "aceptada"  ? "green.400" :
+        estado === "entregada" ? "teal.400"  :
         estado === "enviada"   ? "blue.400"  :
         estado === "rechazada" ? "red.400"   : "gray.300"
       } />
@@ -409,6 +412,7 @@ const TarjetaMovil = memo(function TarjetaMovil({
   const nItems   = cot.items?.filter((i) => i.desc || i.price).length || 0;
   const tel      = (cot.cliente?.tel || "").replace(/[^\d+]/g, "");
   const franja   = estado === "aceptada"  ? "green.400"
+                 : estado === "entregada" ? "teal.400"
                  : estado === "enviada"   ? "blue.400"
                  : estado === "rechazada" ? "red.400" : "gray.300";
 
@@ -502,7 +506,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
       <Td borderColor={border} onClick={(e) => e.stopPropagation()}>
         {cot.cliente?.nombre ? (
           /* Al cliente se llega desde su nombre: es donde uno lo busca */
-          <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer"
+          <Text fontSize="13px" fontWeight="600" noOfLines={1} cursor="pointer" wordBreak="break-all"
             title={`Ver todo de ${cot.cliente.nombre}`}
             _hover={{ color: "#B8860B", textDecoration: "underline" }}
             onClick={() => onVerCliente(cot.cliente.nombre)}>
@@ -528,7 +532,7 @@ const FilaCotizacion = memo(function FilaCotizacion({
         <EstadoSelect cot={cot} onCambiar={onCambiarEstado} />
       </Td>
       <Td borderColor={border} isNumeric>
-        <Text fontWeight="800" fontSize="14px" fontVariantNumeric="tabular-nums">
+        <Text fontWeight="800" fontSize="14px" sx={{ fontVariantNumeric: "tabular-nums" }}>
           {money(getTotal(cot), cot.config?.moneda || "COP")}
         </Text>
       </Td>
@@ -568,7 +572,7 @@ export default function HistorialPage() {
   const cancelRef = useRef();
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, addEvento, stats,
+  const { cotizaciones, deleteCotizacion, duplicarCotizacion, cambiarEstado, addEvento,
     convertirCotizacion, openTab, tabs, nubeActiva, syncing, sync } = useCotizaciones();
 
   /* La barra de pestañas va encima: el topbar se apoya debajo cuando hay alguna */
@@ -603,7 +607,10 @@ export default function HistorialPage() {
      el teléfono siempre manda la vista de tarjetas, sin tocar lo que la
      persona eligió para el computador. */
   const [esCelular] = useMediaQuery("(max-width: 47.99em)", { ssr: false });
-  const vistaEfectiva = esCelular ? "tarjetas" : viewMode;
+  /* La tabla necesita 1024 px. En una tablet (768–1023) ESTADO, TOTAL y
+     ACCIONES quedaban fuera de la pantalla: ahí también mandan las tarjetas. */
+  const [esAncho] = useMediaQuery("(min-width: 64em)", { ssr: false });
+  const vistaEfectiva = esAncho ? viewMode : "tarjetas";
   /* Los filtros arrancan plegados en el teléfono: ocupaban media pantalla
      antes de que apareciera la primera cotización. */
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
@@ -735,11 +742,11 @@ export default function HistorialPage() {
   const pageSegura = Math.min(page, totalPages);
 
   const paged = useMemo(() => {
-    if (esCelular) return filtered.slice(0, tandaMovil);
+    if (!esAncho) return filtered.slice(0, tandaMovil);
     if (pageSize === TODAS) return filtered;
     const ini = (pageSegura - 1) * pageSize;
     return filtered.slice(ini, ini + pageSize);
-  }, [filtered, pageSegura, pageSize, esCelular, tandaMovil]);
+  }, [filtered, pageSegura, pageSize, esAncho, tandaMovil]);
 
   /* Pintado progresivo: las primeras filas salen ya, el resto se va
      agregando entre repintados. Sin esto, elegir "Todas" con cientos de
@@ -782,7 +789,10 @@ export default function HistorialPage() {
   const cambiarEstadoF  = useCallback((v) => { setEstado(v);   setPage(1); }, []);
   const [siigoData, setSiigoData] = useState(null); // { items, numero, cliente, moneda, totalPagar, id }
   const cambiarPageSize = useCallback((v) => { setPageSize(v); setPage(1); }, []);
-  useEffect(() => { setTandaMovil(8); }, [debSearch, estado, tipo, rangoDesde, sortBy, sortDir]);
+  /* Al cambiar búsqueda, filtros u orden, la lista del celular vuelve a 8 */
+  const claveTanda = `${debSearch}|${estado}|${tipo}|${rangoDesde}|${sortBy}|${sortDir}`;
+  const [claveTandaPrev, setClaveTandaPrev] = useState(claveTanda);
+  if (claveTanda !== claveTandaPrev) { setClaveTandaPrev(claveTanda); setTandaMovil(8); }
 
   /* Fecha: calcula el umbral en el manejador (fuera del render puro) */
   const onRango = useCallback((v) => {
@@ -953,6 +963,7 @@ export default function HistorialPage() {
             notas={pdfCot.notas || ""}
             observaciones={pdfCot.observaciones || ""}
             aiu={pdfCot.aiuConfig || DEFAULT_AIU}
+            firma={pdfCot.firma || null}
           />
         </Box>
       )}
@@ -978,7 +989,8 @@ export default function HistorialPage() {
           h={{ base: "auto", md: "54px" }} py={{ base: 2, md: 0 }}
           align="center" justify="space-between" flexWrap="wrap" gap={2}>
           <HStack spacing={2}>
-            <AppLogo variante="marca" h="28px" />
+            {/* En computador y tablet el logo ya está en la barra de navegación */}
+            <AppLogo variante="marca" h="28px" display={{ base: "block", md: "none" }} />
             <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }}
               display={{ base: "none", sm: "block" }}>Cotizaciones</Text>
             <Tag size="sm" colorScheme="gray" rounded="full">{cotizaciones.length}</Tag>
@@ -998,7 +1010,7 @@ export default function HistorialPage() {
                 escrito y desde cualquier pantalla. Dos caminos al mismo
                 sitio, uno con letras y otro sin ellas, es la clase de
                 duda que hace dudar antes de tocar. */}
-            {!esCelular && (
+            {esAncho && (
               <Tooltip label={viewMode === "tabla" ? "Vista tarjetas" : "Vista tabla"} hasArrow>
                 <IconButton size="sm" variant="outline" rounded="md"
                   icon={viewMode === "tabla" ? <FiGrid /> : <FiList />}
@@ -1036,7 +1048,7 @@ export default function HistorialPage() {
               total={!hayFiltro} />
           </Box>
         ) : (
-        <SimpleGrid data-tour="kpis" columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+        <SimpleGrid data-tour="kpis" columns={{ base: 2, lg: 4 }} spacing={4} mb={6}>
           <KpiCard label={hayFiltro ? "En pantalla" : "Total"} value={cifras.total} icon={FiFileText} accent={mutedL}
             sub={hayFiltro ? `de ${cotizaciones.length} en total` : undefined}
             onClick={() => cambiarEstadoF("todos")} active={estado === "todos"} />
@@ -1089,11 +1101,12 @@ export default function HistorialPage() {
               <option value="obra">Obra</option>
             </Select>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
-              w={{ base: "48%", sm: "150px" }} value={estado} onChange={(e) => cambiarEstadoF(e.target.value)}>
+              w={{ base: "48%", sm: "168px" }} value={estado} onChange={(e) => cambiarEstadoF(e.target.value)}>
               <option value="todos">Todos los estados</option>
               <option value="borrador">Borrador</option>
               <option value="enviada">Enviada</option>
               <option value="aceptada">Aceptada</option>
+              <option value="entregada">Entregada</option>
               <option value="rechazada">Rechazada</option>
             </Select>
             <Select size="sm" rounded="md" bg={inputBg} focusBorderColor={FY}
@@ -1150,8 +1163,10 @@ export default function HistorialPage() {
             ? <EmptyState cotizaciones={cotizaciones} navigate={navigate} />
             : (
               <Box ref={listTopRef}>
-                {esCelular ? (
-                  <VStack spacing={2.5} align="stretch">
+                {/* Celular y tablet: la tarjeta táctil (botones de 44 px), en una
+                    o dos columnas. La de computador tenía botones de 24 px. */}
+                {!esAncho ? (
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 2.5, md: 3 }}>
                     {aPintar.map((cot) => (
                       <TarjetaMovil
                         key={cot.id}
@@ -1169,7 +1184,7 @@ export default function HistorialPage() {
                         busqueda={debSearch}
                       />
                     ))}
-                  </VStack>
+                  </SimpleGrid>
                 ) : (
                 <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
                   {aPintar.map((cot) => (
@@ -1196,12 +1211,12 @@ export default function HistorialPage() {
                 )}
                 <GlassCard rounded="xl" mt={{ base: 2.5, md: 4 }}>
                   <Paginacion
-                    page={esCelular ? 1 : pageSegura}
-                    pageSize={esCelular ? tandaMovil : pageSize}
+                    page={!esAncho ? 1 : pageSegura}
+                    pageSize={!esAncho ? tandaMovil : pageSize}
                     total={filtered.length}
                     onPage={irAPagina}
-                    onPageSize={esCelular ? setTandaMovil : cambiarPageSize}
-                    movil={esCelular} />
+                    onPageSize={!esAncho ? setTandaMovil : cambiarPageSize}
+                    movil={!esAncho} />
                 </GlassCard>
               </Box>
             )
@@ -1217,7 +1232,10 @@ export default function HistorialPage() {
                 <>
                 <TableContainer overflowX="auto"
                   sx={{ "&::-webkit-scrollbar": { h: "4px" }, "&::-webkit-scrollbar-thumb": { bg: "gray.200", borderRadius: "2px" } }}>
-                  <Table size="sm" variant="simple">
+                  {/* Anchos fijos: un nombre de cliente largo ya no empuja ACCIONES
+                      fuera de la pantalla; se recorta con «…» y el nombre
+                      completo sale al pasar el ratón. */}
+                  <Table size="sm" variant="simple" sx={{ tableLayout: "fixed" }}>
                     <Thead position="sticky" top={0} zIndex={1}>
                       <Tr bg={theadBg}>
                         <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider"
@@ -1234,14 +1252,14 @@ export default function HistorialPage() {
                             {sortBy === "cliente" && <Text opacity={0.6}>{sortDir === "asc" ? "↑" : "↓"}</Text>}
                           </HStack>
                         </Th>
-                        <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" w="110px"
+                        <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" w="124px"
                           cursor="pointer" onClick={() => toggleSort("updatedAt")}>
                           <HStack spacing={1}>
                             <Text>Fecha</Text>
                             {sortBy === "updatedAt" && <Text opacity={0.6}>{sortDir === "asc" ? "↑" : "↓"}</Text>}
                           </HStack>
                         </Th>
-                        <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" w="130px">
+                        <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" w="128px">
                           Estado
                         </Th>
                         <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" isNumeric
@@ -1251,7 +1269,7 @@ export default function HistorialPage() {
                             {sortBy === "total" && <Text opacity={0.6}>{sortDir === "asc" ? "↑" : "↓"}</Text>}
                           </HStack>
                         </Th>
-                        <Th color={FY} borderColor="transparent" w="120px">Acciones</Th>
+                        <Th color={FY} borderColor="transparent" fontSize="9px" letterSpacing="wider" w="148px">Acciones</Th>
                       </Tr>
                     </Thead>
                     <Tbody>

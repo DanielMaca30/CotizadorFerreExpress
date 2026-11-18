@@ -11,7 +11,8 @@ import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter,
   Button, Box, Text, HStack, VStack, Badge, Flex, useColorModeValue,
 } from "@chakra-ui/react";
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
+import { todayISO } from "../utils";
 import { FiRotateCcw, FiCheck, FiX } from "react-icons/fi";
 
 const FY   = "#F9BF20";
@@ -23,13 +24,21 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
   const lastRef     = useRef({ x: 0, y: 0 });
   const [trazos, setTrazos] = useState(0); // cuenta movimientos para detectar si está en blanco
   const bg       = useColorModeValue("white", "gray.800");
-  const canvasBg = useColorModeValue("#f8f8f7", "#1a1a1a");
-  const lineColor = useColorModeValue("#1a1a18", "#f0f0ee");
+  const notaC    = useColorModeValue("gray.400", "gray.500");
+  const bordeC   = useColorModeValue("gray.100", "whiteAlpha.100");
 
-  /* Inicializar canvas */
-  useEffect(() => {
-    if (!isOpen) return;
-    const canvas = canvasRef.current;
+  /* Al abrir se empieza en blanco */
+  const [abiertoAntes, setAbiertoAntes] = useState(isOpen);
+  if (abiertoAntes !== isOpen) {
+    setAbiertoAntes(isOpen);
+    if (isOpen) setTrazos(0);
+  }
+
+  /* El lienzo se prepara apenas aparece en pantalla. Antes se hacía en un
+     efecto que a veces corría antes de que la ventana dibujara el lienzo,
+     y la firma quedaba sobre fondo transparente. */
+  const prepararLienzo = useCallback((canvas) => {
+    canvasRef.current = canvas;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
@@ -38,8 +47,7 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    setTrazos(0);
-  }, [isOpen]);
+  }, []);
 
   /* Helpers para obtener coordenadas (mouse y touch) */
   const getXY = (e, canvas) => {
@@ -99,7 +107,7 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataURL = canvas.toDataURL("image/png");
-    onGuardar({ dataURL, firmante, fecha: new Date().toISOString() });
+    onGuardar({ dataURL, firmante, fecha: todayISO() });
     onClose();
   }, [trazos, firmante, onGuardar, onClose]);
 
@@ -121,7 +129,7 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
             {/* Línea guía debajo del canvas */}
             <Box w="full" position="relative">
               <canvas
-                ref={canvasRef}
+                ref={prepararLienzo}
                 width={560}
                 height={200}
                 style={{
@@ -138,9 +146,6 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
                 onPointerMove={draw}
                 onPointerUp={stopDraw}
                 onPointerLeave={stopDraw}
-                onTouchStart={startDraw}
-                onTouchMove={draw}
-                onTouchEnd={stopDraw}
               />
               {/* Línea guía */}
               <Box position="absolute" bottom="30px" left="12px" right="12px"
@@ -152,13 +157,13 @@ export default function FirmaModal({ isOpen, onClose, onGuardar, firmante = "", 
                 </Text>
               )}
             </Box>
-            <Text fontSize="11px" color={useColorModeValue("gray.400", "gray.500")} textAlign="center">
+            <Text fontSize="11px" color={notaC} textAlign="center">
               Al firmar, el cliente acepta la cotización {cotNumero} en sus términos.
             </Text>
           </VStack>
         </ModalBody>
 
-        <ModalFooter borderTop="1px solid" borderColor={useColorModeValue("gray.100", "whiteAlpha.100")} gap={2}>
+        <ModalFooter borderTop="1px solid" borderColor={bordeC} gap={2} flexWrap="wrap">
           <Button variant="ghost" colorScheme="gray" leftIcon={<FiX />} onClick={onClose} rounded="lg">
             Cancelar
           </Button>

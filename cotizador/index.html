@@ -2,39 +2,41 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Sistema de cotizaciones FerreExpress S.A.S." />
     <title>FerreExpress — Cotizador</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#F9BF20" />
     <meta name="mobile-web-app-capable" content="yes" />
 
-    <!-- iOS PWA -->
+    <!-- iOS: ícono PNG (el iPhone no usa SVG para la pantalla de inicio) -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Cotizador" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-    <!-- Pantalla completa en Android Chrome (safe area para notch) -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- iPhone/iPad: sin esto, al tocar una casilla con letra menor de 16 px
+         Safari hace zoom a la página y hay que alejarla a mano cada vez.
+         En iOS el zoom con dos dedos sigue funcionando; en Android no se toca. -->
+    <script>
+      (function () {
+        var ua = navigator.userAgent || "";
+        var ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        if (ios) {
+          var m = document.querySelector('meta[name="viewport"]');
+          if (m) m.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover");
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;0,9..40,800;0,9..40,900;1,9..40,400&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900;1,9..40,400&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <!-- Registrar Service Worker para funcionalidad offline e instalación -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .catch(() => { /* SW opcional: fallo silencioso */ });
-        });
-      }
-    </script>
   </body>
 </html>

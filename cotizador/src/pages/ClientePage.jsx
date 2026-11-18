@@ -25,9 +25,8 @@ import {
 } from "react-icons/fi";
 import { useCotizaciones, NEW_TAB_ID } from "../hooks/useCotizaciones";
 import { useClientesFrecuentes } from "../hooks/useClientesFrecuentes";
-import { TABS_BAR_H } from "../components/TabsBar";
-import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
-import { money, fmtDateShort, ESTADO_META, datosFacturacion } from "../utils";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
+import { money, fmtDateShort, fmtCantidad, ESTADO_META, datosFacturacion } from "../utils";
 
 const FY   = "#F9BF20";
 const DARK = "#3A3A38";
@@ -51,10 +50,11 @@ function Kpi({ label, value, sub, icon, accent }) {
           <Text fontSize="9px" fontWeight="700" letterSpacing="0.12em"
             textTransform="uppercase" color={muted} mb={1}>{label}</Text>
           {/* Sin cortar con "…": las fechas («26 de sept de 2026») bajan de línea */}
-          <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="900" lineHeight="1.15">{value}</Text>
+          <Text fontSize={{ base: "md", sm: "lg", md: "xl" }} fontWeight="900" lineHeight="1.15"
+            sx={{ fontVariantNumeric: "tabular-nums", overflowWrap: "normal" }}>{value}</Text>
           {sub && <Text fontSize="10px" color={muted} mt={1} noOfLines={1}>{sub}</Text>}
         </Box>
-        <Box bg={iconBg} rounded="lg" p={2} flex="0 0 auto">
+        <Box bg={iconBg} rounded="lg" p={2} flex="0 0 auto" display={{ base: "none", sm: "block" }}>
           <Icon as={icon} color={accent} boxSize={4} />
         </Box>
       </Flex>
@@ -142,28 +142,28 @@ export default function ClientePage() {
       {/* TOPBAR */}
       <Box bg={barBg} borderBottom="1px solid" borderColor={border}
         position="sticky" top={topOffset} zIndex={100}>
-        <Flex maxW="1200px" mx="auto" px={{ base: 3, md: 6 }} h="54px" align="center" gap={3}>
+        <Flex maxW="1200px" mx="auto" px={{ base: 2, md: 6 }} h="54px" align="center" gap={{ base: 2, md: 3 }}>
           {/* Volver conserva los filtros del historial porque usa el atrás del navegador */}
           <Tooltip label="Volver al listado" hasArrow>
-            <IconButton size="sm" variant="ghost" rounded="md" aria-label="Volver"
+            <IconButton size="sm" h="40px" w="40px" variant="ghost" rounded="md" aria-label="Volver" flexShrink={0}
               icon={<FiArrowLeft />} onClick={() => navigate(-1)} />
           </Tooltip>
-          <Icon as={FiUser} color={FY} />
-          <Text fontWeight="800" fontSize={{ base: "13px", md: "15px" }} noOfLines={1}>
+          <Icon as={FiUser} color={FY} flexShrink={0} display={{ base: "none", sm: "block" }} />
+          <Text fontWeight="800" fontSize={{ base: "14px", md: "15px" }} noOfLines={1} minW={0} flex="0 1 auto">
             {ficha.nombre || clienteNombre}
           </Text>
-          <Tag size="sm" colorScheme="gray" rounded="full">{suyas.length}</Tag>
+          <Tag size="sm" colorScheme="gray" rounded="full" flexShrink={0}>{suyas.length}</Tag>
           {/* Lo que se viene a hacer aquí: cotizarle otra vez. Antes el único
               botón decía «Historial» y llevaba al listado general. */}
-          <Button size="sm" rounded="md" ml="auto" bg={FY} color="#3A3A38" fontWeight="700"
-            _hover={{ bg: "#e0b010" }} leftIcon={<FiPlus />}
+          <Button size="sm" h={{ base: "40px", md: "32px" }} rounded="md" ml="auto" bg={FY} color="#3A3A38" fontWeight="700"
+            flexShrink={0} _hover={{ bg: "#e0b010" }} leftIcon={<FiPlus />}
             onClick={() => {
               openTab(NEW_TAB_ID);
               navigate("/cotizador", {
                 state: { clientePrefill: { ...ficha }, tipoPrefill: suyas[0]?.config?.tipo || "comercial" },
               });
             }}>
-            Nueva cotización
+            Nueva<Text as="span" display={{ base: "none", sm: "inline" }}>&nbsp;cotización</Text>
           </Button>
         </Flex>
       </Box>
@@ -242,7 +242,7 @@ export default function ClientePage() {
                       <Box>
                         <Text fontSize="9px" color={muted} fontWeight="700">UNIDADES EN TOTAL</Text>
                         <Text fontSize="2xl" fontWeight="900" color={FY} lineHeight="1.1">
-                          {hallazgos.unidades.toLocaleString("es-CO")}
+                          {fmtCantidad(hallazgos.unidades)}
                         </Text>
                       </Box>
                       <Box>
@@ -265,10 +265,10 @@ export default function ClientePage() {
                             {getNumero(f.cot)}
                           </Text>
                           <Text fontSize="12px" flex={1} noOfLines={1}>{f.desc}</Text>
-                          <Text fontSize="12px" fontWeight="800" w="70px" textAlign="right" flex="0 0 auto">
-                            {f.qty} {f.unit}
+                          <Text fontSize="12px" fontWeight="800" w="64px" textAlign="right" flex="0 0 auto">
+                            {fmtCantidad(f.qty)} {f.unit}
                           </Text>
-                          <Text fontSize="11px" color={muted} w="90px" textAlign="right" flex="0 0 auto">
+                          <Text fontSize="11px" color={muted} w="84px" textAlign="right" flex="0 0 auto">
                             {money(f.sub)}
                           </Text>
                           <Text fontSize="10px" color={mutedL} w="80px" textAlign="right"
@@ -283,11 +283,41 @@ export default function ClientePage() {
               )}
             </Box>
 
-            {/* Listado de sus cotizaciones */}
+            {/* Listado de sus cotizaciones — en el celular, renglones apilados:
+                la tabla de 6 columnas no cabía y se cortaba a la derecha. */}
             <Box bg={cardBg} border="1px solid" borderColor={border} rounded="xl" overflow="hidden"
-              boxShadow="0 2px 12px rgba(0,0,0,0.06)">
+              boxShadow="0 2px 12px rgba(0,0,0,0.06)" display={{ base: "block", md: "none" }}>
+              {suyas.map((c) => {
+                const meta = ESTADO_META[getEstado(c)] || ESTADO_META.borrador;
+                const prods = (c.items || []).filter((it) => it.desc).map((it) => it.desc);
+                const obra = c.config?.tipo === "obra";
+                return (
+                  <Box key={c.id} as="button" type="button" w="full" textAlign="left" px={4} py={3}
+                    borderBottom="1px solid" borderColor={border} _active={{ bg: hoverBg }}
+                    onClick={() => abrir(c.id)}>
+                    <Flex align="center" gap={2}>
+                      <Text fontWeight="800" fontSize="14px">{getNumero(c)}</Text>
+                      <Badge fontSize="8px" rounded="full" bg={obra ? "blue.100" : "green.100"} color={obra ? "blue.700" : "green.700"}>
+                        {obra ? "OBRA" : "COMERCIAL"}
+                      </Badge>
+                      <Badge colorScheme={meta.color} rounded="full" variant="subtle" fontSize="9px">{meta.label}</Badge>
+                      <Text ml="auto" fontWeight="800" fontSize="14px" whiteSpace="nowrap"
+                        sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        {money(getTotal(c), c.config?.moneda || "COP")}
+                      </Text>
+                    </Flex>
+                    <Text fontSize="12px" color={muted} noOfLines={1} mt={1}>{prods.join(", ") || "—"}</Text>
+                    <Text fontSize="11px" color={mutedL} mt={0.5}>
+                      {prods.length} ítem{prods.length !== 1 ? "s" : ""} · {fmtDateShort((c.updatedAt || "").slice(0, 10))}
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Box>
+            <Box bg={cardBg} border="1px solid" borderColor={border} rounded="xl" overflow="hidden"
+              boxShadow="0 2px 12px rgba(0,0,0,0.06)" display={{ base: "none", md: "block" }}>
               <TableContainer overflowX="auto">
-                <Table size="sm" variant="simple">
+                <Table size="sm" variant="simple" sx={{ tableLayout: "fixed" }}>
                   <Thead>
                     <Tr bg={theadBg}>
                       <Th color={FY} borderColor="transparent" fontSize="9px" w="110px">N°</Th>
@@ -326,7 +356,7 @@ export default function ClientePage() {
                             </Badge>
                           </Td>
                           <Td borderColor={border} isNumeric>
-                            <Text fontWeight="800" fontSize="13px" fontVariantNumeric="tabular-nums">
+                            <Text fontWeight="800" fontSize="13px" sx={{ fontVariantNumeric: "tabular-nums" }}>
                               {money(getTotal(c), c.config?.moneda || "COP")}
                             </Text>
                           </Td>

@@ -26,8 +26,7 @@ import {
   FiRotateCcw,
 } from "react-icons/fi";
 import AppLogo from "../components/AppLogo";
-import { TABS_BAR_H } from "../components/TabsBar";
-import { useOffsetSuperior, NAV_MOVIL_H } from "../components/NavegacionPrincipal";
+import { useOffsetSuperior, NAV_MOVIL_H } from "../lib/disposicion";
 import { useCotizaciones } from "../hooks/useCotizaciones";
 import {
   loadEmpresaLocal, saveEmpresaLocal, DEFAULT_EMPRESA, AVISO_LATERAL,
@@ -233,8 +232,8 @@ export default function PerfilPage() {
                   </Text>
                 </HStack>
               ) : <Box />}
-              <Button size="xs" variant="ghost" colorScheme="gray" rounded="md" color={muted}
-                leftIcon={<FiRotateCcw size={11} />} onClick={restaurar}>
+              <Button size="sm" variant="ghost" colorScheme="gray" rounded="md" color={muted}
+                minH="36px" leftIcon={<FiRotateCcw size={12} />} onClick={restaurar}>
                 Restaurar los originales
               </Button>
             </Flex>
