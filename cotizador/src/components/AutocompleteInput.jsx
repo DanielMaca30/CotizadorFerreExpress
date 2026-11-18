@@ -19,48 +19,121 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Box, Input, Text, useColorModeValue } from "@chakra-ui/react";
 
-/* ── Dropdown portal ── */
-function DropdownPortal({ sugerencias, highlighted, anchorRef, onAccept, onHighlight, bg, hoverBg, textC, subC, borderC, hintBg, FY, query }) {
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 220 });
+/* ── Dropdown portal ──
+   En celular la lista tiene que poder DESLIZARSE con el dedo. Antes cada
+   opción se aceptaba en el primer contacto (touchstart): al intentar bajar
+   por la lista se escogía lo que estuviera bajo el dedo, o el campo perdía
+   el foco y todo se cerraba. Ahora:
+   · un TOQUE (dedo que baja y sube sin moverse) escoge la opción;
+   · un DESLIZAMIENTO solo desplaza la lista;
+   · la lista mide lo que quepa en pantalla (descontando el teclado) y, si
+     abajo no hay espacio, se abre hacia arriba. */
+const TAP_TOLERANCIA = 10; // px que se puede mover el dedo y seguir contando como toque
+
+function DropdownPortal({ sugerencias, highlighted, anchorRef, dropdownRef, onAccept, onHighlight, onInteract, bg, hoverBg, textC, subC, borderC, hintBg, FY, query }) {
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 220, maxH: 320, arriba: false });
+  const toqueRef = useRef(null);
 
   useEffect(() => {
     const update = () => {
-      if (!anchorRef.current) return;
-      const r = anchorRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + window.scrollY + 2, left: r.left + window.scrollX, width: Math.max(r.width, 220) });
+      const a = anchorRef.current;
+      if (!a) return;
+      const r  = a.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const vTop = vv ? vv.offsetTop : 0;
+      const vH   = vv ? vv.height : window.innerHeight;
+      const vW   = vv ? vv.width : window.innerWidth;
+      const abajo  = vTop + vH - r.bottom - 10;
+      const encima = r.top - vTop - 10;
+      const arriba = abajo < 170 && encima > abajo;
+      const maxH = Math.max(110, Math.min(arriba ? encima : abajo, 340));
+      const width = Math.min(Math.max(r.width, 220), vW - 16);
+      const left = Math.max(8, Math.min(r.left, vW - width - 8)) + window.scrollX;
+      setPos({
+        top: (arriba ? r.top - 2 : r.bottom + 2) + window.scrollY,
+        left, width, maxH, arriba,
+      });
     };
     update();
+    const vv = window.visualViewport;
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
-    return () => { window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
-  }, [anchorRef]);
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+    };
+  }, [anchorRef, sugerencias.length]);
+
+  /* Con flechas del teclado: que la opción resaltada quede a la vista */
+  useEffect(() => {
+    if (highlighted < 0) return;
+    dropdownRef.current?.querySelector(`[data-sug-idx="${highlighted}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [highlighted, dropdownRef]);
+
+  /* Toque vs. deslizamiento */
+  const onPointerDown = (e, idx) => {
+    onInteract();
+    toqueRef.current = { x: e.clientX, y: e.clientY, idx, id: e.pointerId, movido: false };
+  };
+  const onPointerMove = (e) => {
+    const t = toqueRef.current;
+    if (!t || t.id !== e.pointerId) return;
+    if (Math.abs(e.clientX - t.x) > TAP_TOLERANCIA || Math.abs(e.clientY - t.y) > TAP_TOLERANCIA) t.movido = true;
+  };
+  const onPointerUp = (e, idx) => {
+    const t = toqueRef.current;
+    toqueRef.current = null;
+    if (!t || t.id !== e.pointerId || t.movido || t.idx !== idx) return;
+    onAccept(sugerencias[idx]);
+  };
 
   return createPortal(
-    <Box position="absolute" top={`${pos.top}px`} left={`${pos.left}px`} width={`${pos.width}px`}
-      zIndex={99999} bg={bg} border="1px solid" borderColor={borderC} rounded="md"
-      boxShadow="0 4px 16px rgba(0,0,0,0.12)" overflow="hidden" minW="200px" maxW="320px">
-      {sugerencias.map((sug, idx) => (
-        /* En celular cada opción va más alta: con el dedo, 17 px de alto
-           es imposible de acertar. En computador se queda compacta. */
-        <Box key={sug.desc} px={2.5} py={{ base: 2.5, md: 1.5 }} cursor="pointer"
-          bg={idx === highlighted ? hoverBg : "transparent"}
-          borderBottom={idx < sugerencias.length - 1 ? "1px solid" : "none"}
-          borderColor={borderC}
-          onMouseDown={(e) => { e.preventDefault(); onAccept(sug); }}
-          onTouchStart={(e) => { e.preventDefault(); onAccept(sug); }}
-          onMouseEnter={() => onHighlight(idx)}
-          onMouseLeave={() => onHighlight(-1)}>
-          <Text fontSize={{ base: "14px", md: "11px" }} fontWeight="600" color={textC} noOfLines={1}>
-            <HighlightMatch text={sug.desc} query={query} accent={FY} />
-          </Text>
-          <Text fontSize={{ base: "11.5px", md: "9.5px" }} color={subC}>
-            {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
-            {sug.unit ? ` · ${sug.unit}` : ""}
-            {sug.count > 1 && <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>}
-          </Text>
-        </Box>
-      ))}
-      <Box px={2.5} py={1} borderTop="1px solid" borderColor={borderC} bg={hintBg}>
+    <Box ref={dropdownRef}
+      position="absolute" top={`${pos.top}px`} left={`${pos.left}px`} width={`${pos.width}px`}
+      transform={pos.arriba ? "translateY(-100%)" : undefined}
+      zIndex={99999} bg={bg} border="1px solid" borderColor={borderC} rounded={{ base: "xl", md: "md" }}
+      boxShadow="0 8px 28px rgba(0,0,0,0.18)" overflow="hidden" minW="200px"
+      maxW={{ base: "calc(100vw - 16px)", md: "320px" }}
+      display="flex" flexDirection="column" maxH={`${pos.maxH}px`}
+      /* En computador: que el clic no le quite el foco al campo */
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerDownCapture={onInteract}>
+      <Box flex="1" minH={0} overflowY="auto"
+        sx={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        onPointerMove={onPointerMove}
+        onPointerCancel={() => { toqueRef.current = null; }}>
+        {sugerencias.map((sug, idx) => (
+          /* En celular cada opción va más alta (≥ 48 px): con el dedo, una
+             opción baja es imposible de acertar. En computador, compacta. */
+          <Box key={sug.desc} px={{ base: 3.5, md: 2.5 }} py={{ base: 3, md: 1.5 }} cursor="pointer"
+            role="option" aria-selected={idx === highlighted} data-sug-idx={idx}
+            bg={idx === highlighted ? hoverBg : "transparent"}
+            _active={{ bg: hoverBg }}
+            borderBottom={idx < sugerencias.length - 1 ? "1px solid" : "none"}
+            borderColor={borderC}
+            style={{ WebkitTapHighlightColor: "transparent", userSelect: "none" }}
+            onPointerDown={(e) => onPointerDown(e, idx)}
+            onPointerUp={(e) => onPointerUp(e, idx)}
+            onMouseEnter={() => onHighlight(idx)}
+            onMouseLeave={() => onHighlight(-1)}>
+            <Text fontSize={{ base: "15px", md: "11px" }} fontWeight="600" color={textC} noOfLines={1}>
+              <HighlightMatch text={sug.desc} query={query} accent={FY} />
+            </Text>
+            <Text fontSize={{ base: "12px", md: "9.5px" }} color={subC}>
+              {sug.price ? `$ ${Number(sug.price).toLocaleString("es-CO")}` : "Sin precio"}
+              {sug.unit ? ` · ${sug.unit}` : ""}
+              {sug.count > 1 && <Text as="span" color={FY} ml={1}>· {sug.count}×</Text>}
+            </Text>
+          </Box>
+        ))}
+      </Box>
+      {/* Atajos de teclado: solo tienen sentido en computador */}
+      <Box px={2.5} py={1} borderTop="1px solid" borderColor={borderC} bg={hintBg}
+        display={{ base: "none", md: "block" }} flexShrink={0}>
         <Text fontSize="8.5px" color={subC} letterSpacing="0.04em">
           ↑↓ navegar · Enter/Tab aceptar · Esc cerrar
         </Text>
@@ -76,8 +149,12 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
   const [closed, setClosed]           = useState(false); // el usuario cerró con Esc/Enter/Tab
   const [hasFocus, setHasFocus]       = useState(false);
 
-  const inputRef   = useRef(null);
-  const closeTimer = useRef(null);
+  const inputRef    = useRef(null);
+  const dropdownRef = useRef(null);
+  const closeTimer  = useRef(null);
+  /* true mientras el dedo/ratón está usando la lista: si en ese momento el
+     campo pierde el foco (en el celular pasa al tocar la lista), NO se cierra */
+  const usandoLista = useRef(false);
 
   const bg      = useColorModeValue("white", "#2d3748");
   const hoverBg = useColorModeValue("#fffbeb", "rgba(255,255,255,0.08)");
@@ -95,6 +172,7 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
 
   const aceptar = useCallback((sug) => {
     clearTimeout(closeTimer.current);
+    usandoLista.current = false;
     setClosed(true);
     setHighlighted(-1);
     onAccept({ desc: sug.desc, price: sug.price, unit: sug.unit });
@@ -172,17 +250,44 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
 
   const handleFocus = useCallback(() => {
     clearTimeout(closeTimer.current);
+    usandoLista.current = false;
     setHasFocus(true);
     setClosed(false); // al enfocar, permitir que el dropdown se muestre
   }, []);
 
+  const cerrarTodo = useCallback(() => {
+    clearTimeout(closeTimer.current);
+    usandoLista.current = false;
+    setHasFocus(false);
+    setClosed(true);
+    setHighlighted(-1);
+  }, []);
+
   const handleBlur = useCallback(() => {
     closeTimer.current = setTimeout(() => {
-      setHasFocus(false);
-      setClosed(true);
-      setHighlighted(-1);
+      /* Se fue el foco porque están deslizando/tocando la lista → seguir abierta */
+      if (usandoLista.current) return;
+      cerrarTodo();
     }, 160);
+  }, [cerrarTodo]);
+
+  const marcarUsoLista = useCallback(() => {
+    usandoLista.current = true;
+    clearTimeout(closeTimer.current);
   }, []);
+
+  /* Con la lista abierta, tocar en cualquier otra parte la cierra */
+  const abierta = open && sugerencias.length > 0;
+  useEffect(() => {
+    if (!abierta) return;
+    const fuera = (e) => {
+      const t = e.target;
+      if (dropdownRef.current?.contains(t) || inputRef.current?.contains(t)) return;
+      if (usandoLista.current || document.activeElement !== inputRef.current) cerrarTodo();
+    };
+    document.addEventListener("pointerdown", fuera, true);
+    return () => document.removeEventListener("pointerdown", fuera, true);
+  }, [abierta, cerrarTodo]);
 
   return (
     <>
@@ -219,7 +324,8 @@ export default function AutocompleteInput({ value, onChange, onAccept, getSugere
       {open && sugerencias.length > 0 && (
         <DropdownPortal
           sugerencias={sugerencias} highlighted={highlighted}
-          anchorRef={inputRef} onAccept={aceptar} onHighlight={setHighlighted}
+          anchorRef={inputRef} dropdownRef={dropdownRef} onAccept={aceptar} onHighlight={setHighlighted}
+          onInteract={marcarUsoLista}
           bg={bg} hoverBg={hoverBg} textC={textC} subC={subC}
           borderC={borderC} hintBg={hintBg} FY={FY} query={value}
         />

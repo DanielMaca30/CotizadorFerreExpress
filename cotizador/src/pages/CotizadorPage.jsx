@@ -175,6 +175,9 @@ function PriceInput({ value, onChange, dataRowId, dataField, inputBg, w = '88px'
   );
 }
 
+/* Un código de barras (EAN-8/13, UPC, ITF-14…) es puro número de 6 a 14 cifras */
+const ES_CODIGO_BARRAS = /^\d{6,14}$/;
+
 function focusInput(container, rowId, field, intentos = 6) {
   /* Si hay varias copias del mismo campo en el DOM, se enfoca la que está
      a la vista. Si la fila se acaba de crear y todavía no se ha dibujado,
@@ -1006,7 +1009,7 @@ export default function CotizadorPage() {
   const { imprimiendo, imprimir } = useImpresion();
   const { exportar: exportarExcel, loading: xlsxLoading } = useExcel();
   const { plantillas, guardarPlantilla, eliminarPlantilla, renombrarPlantilla } = usePlantillas();
-  const { getSugerencias } = useProductosFrecuentes();
+  const { getSugerencias, buscarPorCodigo } = useProductosFrecuentes();
   const { getClientes } = useClientesFrecuentes();
   const importHook = useImport();
 
@@ -1540,6 +1543,85 @@ export default function CotizadorPage() {
     });
   }, [toast]);
 
+  /* ── CÓDIGO DE BARRAS → PRODUCTO ──
+     Un solo punto de entrada para todo lo que trae un código: la cámara
+     del celular, la pistola lectora del computador (que "escribe" el
+     código y da Enter) o alguien que lo digita a mano.
+     · Si el código ya está en el catálogo aprendido → llena nombre,
+       precio y unidad, y el cursor queda en la cantidad.
+     · Si no → guarda el código en la referencia y pide el nombre. Al
+       guardar la cotización el catálogo lo aprende: la próxima vez que
+       se escanee, sale solo.
+     rowIdDestino: fila a llenar. Sin él se usa la última fila si está
+     vacía, o se crea una nueva. */
+  const agregarPorCodigo = useCallback((codigoCrudo, rowIdDestino = null) => {
+    const codigo = String(codigoCrudo || '').trim();
+    if (!codigo) return;
+    const prod = buscarPorCodigo(codigo);
+    const datos = prod
+      ? { ref: codigo, desc: prod.desc, price: prod.price || '', unit: prod.unit || 'Und',
+          sinIva: esTransporte(prod.desc) }
+      : { ref: codigo };
+
+    marcarHist(prod ? 'Producto escaneado' : 'Código escaneado');
+    const lista = itemsRef.current;
+    let destino = rowIdDestino && lista.some(r => r.id === rowIdDestino) ? rowIdDestino : null;
+    if (!destino) {
+      const ult = lista[lista.length - 1];
+      if (ult && !ult.desc?.trim() && !(parseFloat(ult.price) > 0) && !String(ult.ref || '').trim()) destino = ult.id;
+    }
+    if (destino) {
+      const id = destino;
+      setItems(p => p.map(r => {
+        if (r.id !== id) return r;
+        /* Si el código quedó escrito en el nombre (pistola con el cursor
+           ahí), ese "7702…" no es un nombre: se reemplaza o se limpia. */
+        const descEraCodigo = String(r.desc || '').trim() === codigo;
+        return { ...r, ...datos, ...(!prod && descEraCodigo ? { desc: '' } : null) };
+      }));
+    } else {
+      const row = { ...blankRow(), ...datos };
+      destino = row.id;
+      setItems(p => [...p, row]);
+    }
+    const campo = prod ? 'qty' : 'desc';
+    const id = destino;
+    /* Ya mismo (pistola) y otra vez cuando cierre la ventana del escáner */
+    requestAnimationFrame(() => focusInput(tableRef.current, id, campo));
+    setTimeout(() => focusInput(tableRef.current, id, campo), 320);
+    toast(prod
+      ? { title: prod.desc, description: `Código ${codigo} · escribe la cantidad`, status: 'success', duration: 1800, ...AVISO_LATERAL }
+      : { title: `Código ${codigo}`, description: 'Producto nuevo: escribe el nombre. Al guardar, la próxima vez saldrá solo.', status: 'info', duration: 3500, ...AVISO_LATERAL });
+  }, [buscarPorCodigo, marcarHist, toast]);
+
+  /* ── Pistola lectora en el computador, sin hacer clic en ninguna casilla ──
+     La pistola se comporta como un teclado que escribe MUY rápido y
+     termina con Enter. Si el cursor no está en ninguna casilla esas
+     teclas se perderían; aquí se recogen y el producto se agrega solo.
+     Una persona no teclea 4+ caracteres con menos de 60 ms entre cada
+     uno, así que no se confunde con alguien escribiendo. */
+  useEffect(() => {
+    if (esCelular || isPreview) return;
+    let buf = '';
+    let ultima = 0;
+    const onKey = (e) => {
+      const t = e.target;
+      const editable = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+      if (editable || e.ctrlKey || e.metaKey || e.altKey) { buf = ''; return; }
+      const ahora = performance.now();
+      if (ahora - ultima > 60) buf = '';
+      ultima = ahora;
+      if (e.key === 'Enter') {
+        if (buf.length >= 4) { e.preventDefault(); agregarPorCodigo(buf); }
+        buf = '';
+        return;
+      }
+      if (e.key.length === 1) buf += e.key;
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [esCelular, isPreview, agregarPorCodigo]);
+
   const handleTableKeyDown = useCallback(e => {
     const el = e.target;
     if (!el) return;
@@ -1560,6 +1642,21 @@ export default function CotizadorPage() {
     if (sugAbierta) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape') return;
       if ((e.key === 'Enter' || e.key === 'Tab') && haySeleccion) return;
+    }
+
+    /* ── Código de barras con la pistola (o digitado) ──
+       La pistola "escribe" el código donde esté el cursor y da Enter. En
+       la referencia vale cualquier código; en el nombre, solo si es puro
+       número de 6 a 14 cifras (un nombre de producto nunca es eso). */
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        (field === 'ref' || field === 'desc')) {
+      const v = String(el.value || '').trim();
+      if (field === 'ref' ? v.length >= 3 : ES_CODIGO_BARRAS.test(v)) {
+        e.preventDefault();
+        e.stopPropagation();
+        agregarPorCodigo(v, rowId);
+        return;
+      }
     }
 
     /* Escape — quitar foco */
@@ -1770,7 +1867,7 @@ export default function CotizadorPage() {
     /* Sin `items` en las dependencias a propósito: se lee de itemsRef.
        Si dependiera de items, este manejador se recrearía en cada tecla y
        anularía la memoización de toda la tabla de productos. */
-  }, [duplicateItem, upItem]);
+  }, [duplicateItem, upItem, agregarPorCodigo]);
 
   /* ── Guardado ── */
   const autoSave = useCallback(async () => {
@@ -2128,27 +2225,6 @@ export default function CotizadorPage() {
     if (!ok) toast({ title: 'Error generando Excel', status: 'error', duration: 3000 });
   }, [exportarExcel, items, cotConfig, cliente, empresa, aiuConfig, notas, descGNum, editingId, addEvento, toast]);
 
-  /* Código escaneado con la cámara (lista rápida): va al renglón vacío
-     del final si lo hay, o a uno nuevo, y el cursor queda en el nombre.
-     Antes se buscaba una casilla de referencia que esa lista no dibuja,
-     y el código leído se perdía sin aviso. */
-  const agregarConCodigo = useCallback((codigo) => {
-    marcarHist('Código escaneado');
-    let destino = null;
-    setItems(p => {
-      const ult = p[p.length - 1];
-      if (ult && !ult.desc?.trim() && !(parseFloat(ult.price) > 0)) {
-        destino = ult.id;
-        return p.map(r => r.id === ult.id ? { ...r, ref: codigo } : r);
-      }
-      const row = { ...blankRow(), ref: codigo };
-      destino = row.id;
-      return [...p, row];
-    });
-    /* Se espera a que cierre la ventana del escáner antes de mover el cursor */
-    setTimeout(() => { if (destino) focusInput(tableRef.current, destino, 'desc'); }, 320);
-    toast({ title: `Código ${codigo} agregado`, description: 'Escribe el nombre del producto.', status: 'success', duration: 2500, ...AVISO_LATERAL });
-  }, [marcarHist, toast]);
 
   /* ── Colores ── */
   const bg = useColorModeValue('gray.50', 'gray.900');
@@ -2179,7 +2255,7 @@ export default function CotizadorPage() {
     upItem, removeItem, duplicateItem, toggleSinIva,
     addItem, addItemSilencioso, addTransporte,
     getSugerencias, handleAcceptSugerencia, startRowDrag, dragId,
-    onCodigoEscaneado: agregarConCodigo,
+    onCodigoEscaneado: agregarPorCodigo,
   };
   const nItems = items.filter(r => r.desc || r.price).length;
   const textoGuardar = hasChanges || !editingId ? 'Guardar' : 'Guardado';

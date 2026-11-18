@@ -43,11 +43,13 @@ export const aprenderProductos = (items) => {
     if (!desc) return;
     const key = desc.toUpperCase();
     const prev = actual[key] || { desc, price: r.price, unit: r.unit, count: 0 };
+    const ref = String(r.ref || "").trim() || prev.ref || "";
     actual[key] = {
       desc,                              // conserva capitalización original
       price: r.price || prev.price,     // actualiza precio al más reciente
       unit:  r.unit  || prev.unit || "Und",
       count: prev.count + 1,
+      ...(ref ? { ref } : null),         // código de barras / referencia: permite escanear y autollenar
     };
   });
   persistir(actual);
@@ -61,7 +63,8 @@ const fusionar = (a, b) => {
     const prev = out[k];
     out[k] = prev
       ? { desc: v.desc || prev.desc, price: v.price || prev.price,
-          unit: v.unit || prev.unit || "Und", count: Math.max(prev.count || 0, v.count || 0) }
+          unit: v.unit || prev.unit || "Und", count: Math.max(prev.count || 0, v.count || 0),
+          ...((v.ref || prev.ref) ? { ref: v.ref || prev.ref } : null) }
       : v;
   });
   return out;
@@ -105,5 +108,17 @@ export function useProductosFrecuentes() {
       .slice(0, MAX_SUGERENCIAS);
   }, [frecuentes]);
 
-  return { getSugerencias, frecuentes };
+  /**
+   * Busca un producto por su código de barras / referencia (exacto,
+   * sin importar mayúsculas ni espacios). Devuelve null si no existe.
+   */
+  const buscarPorCodigo = useCallback((codigo) => {
+    const c = String(codigo || "").trim().toUpperCase().replace(/\s+/g, "");
+    if (!c) return null;
+    return Object.values(frecuentes).find(
+      (p) => p.ref && String(p.ref).trim().toUpperCase().replace(/\s+/g, "") === c
+    ) || null;
+  }, [frecuentes]);
+
+  return { getSugerencias, buscarPorCodigo, frecuentes };
 }

@@ -90,7 +90,7 @@ const FilaRapida = memo(function FilaRapida({
   r, index, esObra, cotConfig, inputBg, border, puedeBorrar,
   upItem, removeItem, duplicateItem, toggleSinIva,
   getSugerencias, onAceptarSugerencia, onSiguienteFila,
-  startRowDrag, dragId,
+  startRowDrag, dragId, onCodigoEscaneado,
 }) {
   const arrastrando = dragId === r.id;
   const siguienteDeEsta = useCallback(() => onSiguienteFila(r.id), [onSiguienteFila, r.id]);
@@ -142,7 +142,13 @@ const FilaRapida = memo(function FilaRapida({
             los dos casos. */}
         <Box flex={1} minW={0}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); enfocar(r.id, "qty"); }
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            /* Puro número de 6 a 14 cifras = código de barras (pistola o
+               digitado): se busca el producto en el catálogo. */
+            const v = String(r.desc || "").trim();
+            if (onCodigoEscaneado && /^\d{6,14}$/.test(v)) { onCodigoEscaneado(v, r.id); return; }
+            enfocar(r.id, "qty");
           }}>
           <AutocompleteInput
             value={r.desc}
@@ -353,6 +359,7 @@ export default function ListaRapidaProductos({
             removeItem={removeItem}
             duplicateItem={duplicateItem}
             toggleSinIva={toggleSinIva}
+            onCodigoEscaneado={onCodigoEscaneado}
             getSugerencias={getSugerencias}
             onAceptarSugerencia={handleAcceptSugerencia}
             onSiguienteFila={onSiguienteFila}
